@@ -1,0 +1,41 @@
+[tool.poetry]
+name = "forklift"
+version = "0.1.0"
+description = "Package for handling data automations between data sources"
+authors = ["Michal-Babins <michal.babinski@theiagen.com>"]
+license = "GPL-3.0"
+readme = "README.md"
+keywords = ["terra", "bigquery", "bioinformatics", "data-integration"]
+packages = [{include = "forklift", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pydantic = "^2.10.6"
+google = "^3.0.0"
+requests = "^2.32.3"
+google-api-python-client = "^2.160.0"
+pandas = "^2.2.3"
+google-cloud-bigquery = "^3.29.0"
+pyyaml = "^6.0.2"
+pyarrow = "^19.0.1"
+google-api-core = "^2.24.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+black = "^23.0.0"
+mypy = "^1.0.0"
+ruff = "^0.1.0"
+pytest-cov = "^4.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "I"]

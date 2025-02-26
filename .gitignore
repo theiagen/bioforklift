@@ -1,0 +1,72 @@
+# Ignore Python bytecode files
+*.py[cod]
+*.pyw
+*.pyo
+*.pyd
+*.pyz
+
+# Ignore virtual environment directories
+venv/
+env/
+ENV/
+.venv/
+.ENV/
+
+# Ignore distribution/build directories
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Ignore Python egg files
+*.egg
+*.egg-info
+.installed.cfg
+*.egg-info/
+
+# Ignore pipenv files
+Pipfile.lock
+
+# Ignore mypy cache
+.mypy_cache/
+
+# Ignore pyenv files
+.python-version
+
+# Ignore pytest cache
+.pytest_cache/
+
+# Ignore coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Ignore pyright type checking tool
+.pyright/
+
+# Ignore local configuration files
+*.local
+*.env
+
+# Ignore IDE specific files
+.vscode/
+
+# Ignore logs
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig

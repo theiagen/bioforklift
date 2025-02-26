@@ -1,0 +1,162 @@
+import io
+import pandas as pd
+from typing import Optional, List, Dict, Any
+from pathlib import Path
+from .utils import stream_terra_table
+from .client import TerraClient
+
+
+class TerraEntities:
+    """Class meant to handle common data operations in Terra"""
+
+    def __init__(self, client: TerraClient):
+        self.client = client
+
+    def download_table(
+        self,
+        entity_type: str,
+        destination: Optional[Path] = None,
+        attributes: Optional[List[str]] = None,
+        model: str = "flexible",
+        chunk_size: int = 8192,
+    ) -> pd.DataFrame:
+        """
+        Download table from Terra workspace
+
+        Args:
+            entity_type: Type of entity (e.g., 'specimen', 'sample')
+            destination: Path to save TSV file
+            attributes: Specific columns to download
+            model: Data model type ('flexible' or 'strict')
+            chunk_size: Size of chunks for streaming
+
+        Returns:
+            pandas DataFrame with table data
+        """
+        params = {"model": model}
+        if attributes:
+            params["attributeNames"] = ",".join(attributes)
+
+        response = self.client._http_request(
+            "GET", f"entities/{entity_type}/tsv", params=params, stream=True
+        )
+
+        return stream_terra_table(
+            response, destination=destination, chunk_size=chunk_size
+        )
+
+    def upload_entities(
+        self,
+        data: pd.DataFrame,
+        target: str,
+        model: str = "flexible",
+        delete_empty: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Upload entities to Terra
+
+        Args:
+            data: DataFrame containing entities to upload
+            target: Target entity type name
+            model: Data model type ('flexible' or 'strict')
+            delete_empty: Whether to delete empty values
+
+        Returns:
+            DataFrame with uploaded entities
+        """
+        # Make sure DataFrame is not empty
+        if len(data) == 0:
+            raise ValueError("DataFrame has no rows")
+
+        # Create working copy
+        upload_data = data.copy()
+
+        # Get the first column name and format target column name for Terra
+        first_col = upload_data.columns[0]
+        base_target = target[:-3] if target.endswith("_id") else target
+        target_col = f"entity:{base_target}_id"
+
+        # Rename first column for upload
+        column_mapping = {first_col: target_col}
+        upload_data = upload_data.rename(columns=column_mapping)
+
+        # Convert DataFrame to TSV content for upload to terra
+        tsv_buffer = io.StringIO()
+        upload_data.to_csv(tsv_buffer, sep="\t", index=False)
+        tsv_content = tsv_buffer.getvalue()
+
+        endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
+
+        files = {"entities": ("entities.tsv", tsv_content, "text/tab-separated-values")}
+
+        params = {"async": "false", "deleteEmptyValues": str(delete_empty).lower()}
+
+        self.client.post(endpoint, files=files, params=params)
+
+        return upload_data
+
+    def create_entity_set(
+        self,
+        set_name: str,
+        entity_type: str,
+        entities: pd.DataFrame | List[str],
+        model: str = "flexible",
+    ) -> Dict[str, Any]:
+        """
+        Create a new entity set
+
+        Args:
+            set_name: Name for the new set
+            entity_type: Type of entities in set
+            entities: DataFrame or List of entity identifiers
+            model: Data model type
+        """
+        # Convert entities to list if DataFrame
+        if isinstance(entities, pd.DataFrame):
+            entities = entities.iloc[:, 0].tolist()
+        elif not isinstance(entities, list):
+            raise ValueError("Entities must be a DataFrame or list")
+
+        if not entities:
+            raise ValueError("No entities to add to set")
+
+        # Create set membership TSV
+        membership_data = pd.DataFrame(
+            {
+                f"membership:{entity_type}_set_id": [set_name] * len(entities),
+                entity_type: entities,
+            }
+        )
+
+        # Convert to TSV string
+        tsv_data = membership_data.to_csv(sep="\t", index=False)
+
+        # Upload set
+        files = {"entities": ("set.tsv", tsv_data, "text/tab-separated-values")}
+
+        endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
+        return self.client.post(endpoint, files=files, params={"async": "false"})
+
+    def update_entity_attributes(
+        self, entity_type: str, entity_id: str, attributes: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Update attributes of an entity
+
+        Args:
+            entity_type: Type of entity
+            entity_id: Entity identifier
+            attributes: Dictionary of attributes to update
+        """
+        updates = [
+            {
+                "op": "AddUpdateAttribute",
+                "attributeName": name,
+                "addUpdateAttribute": value,
+            }
+            for name, value in attributes.items()
+        ]
+
+        return self.client.patch(
+            f"entities/{entity_type}/{entity_id}", data=updates
+        ).json()
