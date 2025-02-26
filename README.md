@@ -16,4 +16,6 @@ This is a first time dump of everything I've been putting together for an automa
 - Test scope of bigquery range
 - Test, Test, Test
 
+Biggest left to do is scope out what we actually want to include for the bigquery samples class and how we want to name key identifiers in the yamls, develops some internal schema for that, and then after that we should be flying. 
+
 🥶
