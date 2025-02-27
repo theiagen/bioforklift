@@ -34,6 +34,9 @@ response = bq_samples_ops.load_dataframe(
 
 # Load data into BigQuery
 updated_samples_df = bq_samples_ops.get_samples_created_today()
+if updated_samples_df.empty:
+    print("No samples created today")
+    exit(1)
 print(updated_samples_df.head())
 
 # # Drop system_value columns for Terra upload
@@ -92,7 +95,7 @@ example = {
 
 workflow_config = WorkflowConfig.model_validate(example)
 submission = terra.submissions.submit_workflow(workflow_config)
-print(f" Submitted {submission.get("submissionId")} ")
+print(f"Submitted {submission.get('submissionId')}")
 
 submission_id = submission.get("submissionId")
 if not submission_id:
