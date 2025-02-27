@@ -21,7 +21,7 @@ The dependencies will be automatically installed based on the locked versions in
 This is a first time dump of everything I've been putting together for an automation library for our data movement needs
 
 ### Overview
-<img src="assets/diagrams/Forklift_Base_Architecture.png" alt="Alt text describing the image" width="500"/>
+<img src="assets/diagrams/Forklift_Base_Architecture.png" alt="Forklift Base Architecture" width="800" style="max-width: 100%;" />
 
 # TODO:
 - Add target workspace entry for Terra class
