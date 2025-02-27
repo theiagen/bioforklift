@@ -16,7 +16,7 @@ class BigQuerySampleOperations:
         client: "BigQueryClient",
         table_name: str,
         sample_schema_yaml: Optional[str] = None,
-        schema: Optional[List[SchemaField]] = None,
+        sample_schema: Optional[List[SchemaField]] = None,
         location: str = "us-central1",
     ):
         self.bq_client = client
@@ -30,7 +30,7 @@ class BigQuerySampleOperations:
             self.schema = schema_info["schema"]
             self.field_attributes = schema_info["field_attributes"]
         else:
-            self.schema = schema
+            self.schema = sample_schema
 
     def _generate_system_values(self, row_count: int) -> Dict[str, List[Any]]:
         """Generate system values for auto-populated fields going into the table"""
@@ -55,6 +55,17 @@ class BigQuerySampleOperations:
                 field_name
                 for field_name, attrs in self.field_attributes.items()
                 if attrs.get("sample_identifier")
+            ),
+            None,
+        )
+        
+    def get_config_identifier_field(self) -> Optional[str]:
+        """Get the field name marked as sample_identifier"""
+        return next(
+            (
+                field_name
+                for field_name, attrs in self.field_attributes.items()
+                if attrs.get("config_identifier")
             ),
             None,
         )
@@ -279,64 +290,150 @@ class BigQuerySampleOperations:
         entity_to_id_mapping = {row.entity_identifier: row.id for row in results}
 
         return entity_to_id_mapping
-
-    def get_samples_created_today(self) -> pd.DataFrame:
+    
+    def get_samples_by_timeframe(
+        self, 
+        timeframe: str = "today",
+        days_back: int = None,
+        hours_back: int = None,
+        start_datetime: str = None, 
+        end_datetime: str = None,
+        uploaded_filter: str = "not_uploaded"
+    ) -> pd.DataFrame:
         """
-        Retrieves all samples that were created today using UTC timezone, but have not been uploaded yet.
+        Retrieves samples based on a configurable timeframe.
+        
+        Args:
+            timeframe: Predefined timeframe - "today", "yesterday", "week", "month", "custom", "hourly" for when to grab samples
+            days_back: Number of days to look back (used when timeframe is "custom")
+            hours_back: Number of hours to look back (used when timeframe is "hourly" or "custom")
+            start_datetime: Start datetime in 'YYYY-MM-DD HH:MM:SS' format (used when timeframe is "custom")
+            end_datetime: End datetime in 'YYYY-MM-DD HH:MM:SS' format (used when timeframe is "custom")
+            uploaded_filter: Filter for uploaded status - "not_uploaded", "uploaded", "all"
+        
+        Returns:
+            DataFrame containing the samples matching the timefrime criteria
         """
+        
+        # This function is a behomoth and a good candidate for refactoring
+        # But need to still figure out the best way to implement a more modular solution
+        # For how to configure when to grab samples to meet different use cases
+        # But trying to be flexible enough to meet ~most use cases
+        
         try:
-            # Build WHERE conditions, with uploaded_at being NULL
-            where_conditions = [
-                "DATE(created_at) = CURRENT_DATE()",
-                "uploaded_at IS NULL",
-            ]
-
+            # Determine date condition based on timeframe using match statement
+            # Love the python match statements from 3.10+
+            timeframe = timeframe.lower() if timeframe else "today"
+            
+            match timeframe:
+                case "today":
+                    date_condition = "DATE(created_at) = CURRENT_DATE()"
+                case "yesterday":
+                    date_condition = "DATE(created_at) = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)"
+                case "week":
+                    date_condition = "DATE(created_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)"
+                case "month":
+                    date_condition = "DATE(created_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
+                case "hourly":
+                    hours = hours_back if hours_back is not None else 1
+                    date_condition = f"created_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL {hours} HOUR)"
+                case "custom":
+                    if hours_back is not None:
+                        date_condition = f"created_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL {hours_back} HOUR)"
+                    elif days_back is not None:
+                        date_condition = f"DATE(created_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL {days_back} DAY)"
+                    elif start_datetime and end_datetime:
+                        date_condition = f"created_at BETWEEN DATETIME('{start_datetime}') AND DATETIME('{end_datetime}')"
+                    elif start_datetime:
+                        date_condition = f"created_at >= DATETIME('{start_datetime}')"
+                    else:
+                        # Default to today for any unrecognized custom timeframe
+                        date_condition = "DATE(created_at) = CURRENT_DATE()"
+                case _:
+                    # Default to today for any unrecognized timeframe - may want to be stricter here
+                    date_condition = "DATE(created_at) = CURRENT_DATE()"
+            
+            # Build WHERE conditions to feed to the bigquery query
+            where_conditions = [date_condition]
+            
+            # Add uploaded filter condition using match statement
+            uploaded_filter = uploaded_filter.lower() if uploaded_filter else "not_uploaded"
+            
+            # When all specified should just be for necessary overrides, not for general use
+            match uploaded_filter:
+                case "not_uploaded":
+                    where_conditions.append("uploaded_at IS NULL")
+                case "uploaded":
+                    where_conditions.append("uploaded_at IS NOT NULL")
+                case "all":
+                    pass
+            
             # Set up query parameters
             params = []
-
+            
             # Check if we have a config identifier field in attributes
-            config_id_field = next(
-                (
-                    field_name
-                    for field_name, attrs in self.field_attributes.items()
-                    if attrs.get("config_identifier")
-                ),
-                None,
-            )
-
+            config_id_field = self.get_config_identifier_field()
+                
             if config_id_field:
-                # If there is a config field in the schema - get its value from the field attributes
-                config_id = self.field_attributes[config_id_field].get("value")
-                if config_id:
-                    where_conditions.append(f"{config_id_field} = @config_id")
-                    params.append(
-                        bigquery.ScalarQueryParameter("config_id", "STRING", config_id)
-                    )
-
+                where_conditions.append(f"{config_id_field} = @config_id")
+                params.append(
+                    bigquery.ScalarQueryParameter("config_id", "STRING", config_id_field)
+                )
+            
             # Build complete query
-            samples_created_today_query = f"""
+            samples_query = f"""
             SELECT *
             FROM `{self.table_name}`
             WHERE {' AND '.join(where_conditions)}
             ORDER BY created_at DESC
             """
-
+            
+            print(samples_query)
+            
             # Configure and run query
             bigquery_query_job_config = bigquery.QueryJobConfig()
             bigquery_query_job_config.query_parameters = params
-
+            
             query_job = self.bq_client.query(
-                samples_created_today_query, job_config=bigquery_query_job_config
+                samples_query, job_config=bigquery_query_job_config
             )
-
+            
             # Convert results to dict
-            samples_created_today_list_dict = [dict(row) for row in query_job.result()]
-
-            return pd.DataFrame(samples_created_today_list_dict)
-
+            samples_list_dict = [dict(row) for row in query_job.result()]
+            
+            return pd.DataFrame(samples_list_dict)
+        
         except Exception as exc:
-            raise RuntimeError(f"Error getting samples created today: {str(exc)}")
+            raise RuntimeError(f"Error getting samples by timeframe: {str(exc)}")
 
+    def get_samples_created_today(self) -> pd.DataFrame:
+        """
+        Retrieves all samples that were created today using UTC timezone, but have not been uploaded yet.
+        This will be the most common use case for getting samples to upload.
+        """
+        return self.get_samples_by_timeframe(
+            timeframe="today", 
+            uploaded_filter="not_uploaded"
+        )
+        
+    def get_recent_samples_by_hour(self, hours: int = 1, uploaded_filter: str = "not_uploaded") -> pd.DataFrame:
+        """
+        Retrieves samples created within the last specified hours.
+        
+        Args:
+            hours: Number of hours to look back when processing the query
+            uploaded_filter: Filter for uploaded status - "not_uploaded", "uploaded", "all"
+            
+        Returns:
+            DataFrame containing the samples from the last specified hours
+        """
+        return self.get_samples_by_timeframe(
+            timeframe="hourly",
+            hours_back=hours,
+            uploaded_filter=uploaded_filter
+        )
+        
+    
     def bulk_update_samples(self, updates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Bulk update samples using a single query.
