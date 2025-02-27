@@ -7,7 +7,6 @@ from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
 from .utils import load_schema_from_yaml, parse_field_type
 
-
 class BigQuerySampleOperations:
     """Base operations for BigQuery tables with support for custom field attributes containing sample data"""
 
