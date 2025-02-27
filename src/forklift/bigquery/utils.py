@@ -63,7 +63,8 @@ def create_schema_field(name: str, field_def: Dict[str, Any]) -> Dict[str, Any]:
             fields=tuple(sub_fields),
         )
 
-    # Handle arrays
+    # Handle arrays - repeated mode for simple types, record mode for nested records
+    # https://cloud.google.com/bigquery/docs/nested-repeated
     elif field_type == "ARRAY":
         if "items" not in field_def:
             raise ValueError(f"Array field '{name}' must specify 'items' type")
