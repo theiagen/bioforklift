@@ -46,6 +46,83 @@ class BigQuerySampleOperations:
                 system_tracking_values[field_name] = [current_datetime] * row_count
 
         return system_tracking_values
+    
+    def _filter_existing_samples(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Remove rows with existing sample identifiers"""
+        try:
+            # Need to find the sample identifier field from attributes
+            sample_identifier_field = self.get_sample_identifier_field()
+
+            if not sample_identifier_field:
+                raise ValueError("No field marked as sample_identifier in schema")
+
+            # Get existing identifiers for samples in the database
+            existing_ids = set(self.get_existing_identifiers())
+
+            # Filter out existing samples
+            new_samples_df = df[~df[sample_identifier_field].isin(existing_ids)]
+
+            filtered_count = len(df) - len(new_samples_df)
+            if filtered_count > 0:
+                # Switch this to logger when integrated
+                print(f"Filtered out {filtered_count} existing samples")
+
+            return new_samples_df
+
+        except Exception as exc:
+            raise RuntimeError(f"Error filtering existing samples: {str(exc)}")
+        
+    def _get_schema_fields(self) -> List[str]:
+        """Get list of field names defined in the schema"""
+        return [field.name for field in self.schema]
+    
+    def _filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Keep only columns that are defined in the schema"""
+        schema_fields = self._get_schema_fields()
+        extra_columns = set(df.columns) - set(schema_fields)
+        if extra_columns:
+            filtered_out_excess_columns_df = df.drop(columns=extra_columns)
+        return filtered_out_excess_columns_df
+    
+    def _map_field_names(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Map source field names to BigQuery field names using mapping attributes"""
+
+        for field_name, attrs in self.field_attributes.items():
+            if "mapping" in attrs:
+                source_fields = attrs["mapping"]
+                if isinstance(source_fields, str):
+                    source_fields = [source_fields]
+
+                # Try each possible source field
+                for source_field in source_fields:
+                    if source_field in df.columns:
+                        mapped_columns_df = df.rename(
+                            columns={source_field: field_name}
+                        )
+                        break
+
+        return self._add_missing_schema_columns(mapped_columns_df)
+
+    def _prepare_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare DataFrame by filtering duplicates and adding system-generated values"""
+        df = df.copy()
+        # First we need to map field names from source to BigQuery
+        mapped_df = self._map_field_names(df)
+        # Filter to only include schema-defined columns since this is what will be loaded
+        bigquery_mapped_df = self._filter_columns(mapped_df)
+        # Filter out rows with existing sample identifiers as to not port duplicates
+        filtered_bigquery_mapped_df = self._filter_existing_samples(bigquery_mapped_df)
+
+        if len(filtered_bigquery_mapped_df) == 0:
+            return filtered_bigquery_mapped_df
+
+        # Then add system values (datetime tracking) for remaining rows
+        system_values = self._generate_system_values(len(df))
+
+        for field_name, values in system_values.items():
+            filtered_bigquery_mapped_df[field_name] = values
+
+        return filtered_bigquery_mapped_df
 
     def get_sample_identifier_field(self) -> Optional[str]:
         """Get the field name marked as sample_identifier"""
@@ -109,42 +186,6 @@ class BigQuerySampleOperations:
         except Exception as error:
             raise RuntimeError(f"Error fetching existing identifiers: {str(error)}")
 
-    def _filter_existing_samples(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Remove rows with existing sample identifiers"""
-        try:
-            # Need to find the sample identifier field from attributes
-            sample_identifier_field = self.get_sample_identifier_field()
-
-            if not sample_identifier_field:
-                raise ValueError("No field marked as sample_identifier in schema")
-
-            # Get existing identifiers for samples in the database
-            existing_ids = set(self.get_existing_identifiers())
-
-            # Filter out existing samples
-            new_samples_df = df[~df[sample_identifier_field].isin(existing_ids)]
-
-            filtered_count = len(df) - len(new_samples_df)
-            if filtered_count > 0:
-                print(f"Filtered out {filtered_count} existing samples")
-
-            return new_samples_df
-
-        except Exception as exc:
-            raise RuntimeError(f"Error filtering existing samples: {str(exc)}")
-
-    def _get_schema_fields(self) -> List[str]:
-        """Get list of field names defined in the schema"""
-        return [field.name for field in self.schema]
-
-    def _filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Keep only columns that are defined in the schema"""
-        schema_fields = self._get_schema_fields()
-        extra_columns = set(df.columns) - set(schema_fields)
-        if extra_columns:
-            filtered_out_excess_columns_df = df.drop(columns=extra_columns)
-        return filtered_out_excess_columns_df
-
     def _add_missing_schema_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add any missing schema columns to DataFrame with null values"""
 
@@ -156,46 +197,6 @@ class BigQuerySampleOperations:
                 df[field] = None
 
         return df
-
-    def _map_field_names(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Map source field names to BigQuery field names using mapping attributes"""
-
-        for field_name, attrs in self.field_attributes.items():
-            if "mapping" in attrs:
-                source_fields = attrs["mapping"]
-                if isinstance(source_fields, str):
-                    source_fields = [source_fields]
-
-                # Try each possible source field
-                for source_field in source_fields:
-                    if source_field in df.columns:
-                        mapped_columns_df = df.rename(
-                            columns={source_field: field_name}
-                        )
-                        break
-
-        return self._add_missing_schema_columns(mapped_columns_df)
-
-    def _prepare_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare DataFrame by filtering duplicates and adding system-generated values"""
-        df = df.copy()
-        # First we need to map field names from source to BigQuery
-        mapped_df = self._map_field_names(df)
-        # Filter to only include schema-defined columns since this is what will be loaded
-        bigquery_mapped_df = self._filter_columns(mapped_df)
-        # Filter out rows with existing sample identifiers as to not port duplicates
-        filtered_bigquery_mapped_df = self._filter_existing_samples(bigquery_mapped_df)
-
-        if len(filtered_bigquery_mapped_df) == 0:
-            return filtered_bigquery_mapped_df
-
-        # Then add system values (datetime tracking) for remaining rows
-        system_values = self._generate_system_values(len(df))
-
-        for field_name, values in system_values.items():
-            filtered_bigquery_mapped_df[field_name] = values
-
-        return filtered_bigquery_mapped_df
 
     def load_dataframe(
         self,
@@ -386,8 +387,6 @@ class BigQuerySampleOperations:
             WHERE {' AND '.join(where_conditions)}
             ORDER BY created_at DESC
             """
-            
-            print(samples_query)
             
             # Configure and run query
             bigquery_query_job_config = bigquery.QueryJobConfig()
