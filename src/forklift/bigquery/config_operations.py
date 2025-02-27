@@ -18,7 +18,7 @@ class BigQueryConfigOperations:
         client: "BigQueryClient",
         table_name: str,
         config_schema_yaml: Optional[str] = None,
-        schema: Optional[List[SchemaField]] = None,
+        config_schema: Optional[List[SchemaField]] = None,
         location: str = "us-central1",
     ):
         self.bq_client = client
@@ -32,7 +32,7 @@ class BigQueryConfigOperations:
             self.schema = schema_info["schema"]
             self.field_attributes = schema_info["field_attributes"]
         else:
-            self.schema = schema
+            self.schema = config_schema
 
     def _generate_system_values(self, row_count: int) -> Dict[str, List[Any]]:
         """Generate system values for auto-populated fields"""
