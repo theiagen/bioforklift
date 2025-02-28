@@ -40,7 +40,11 @@ class TerraEntities:
             params["attributeNames"] = ",".join(attributes)
 
         response = self.client._http_request(
-            "GET", f"entities/{entity_type}/tsv", params=params, stream=True, use_destination=use_destination
+            "GET",
+            f"entities/{entity_type}/tsv",
+            params=params,
+            stream=True,
+            use_destination=use_destination,
         )
 
         return stream_terra_table(
@@ -95,7 +99,9 @@ class TerraEntities:
 
         params = {"async": "false", "deleteEmptyValues": str(delete_empty).lower()}
 
-        self.client.post(endpoint, files=files, params=params, use_destination=use_destination)
+        self.client.post(
+            endpoint, files=files, params=params, use_destination=use_destination
+        )
 
         return upload_data
 
@@ -141,10 +147,19 @@ class TerraEntities:
         files = {"entities": ("set.tsv", tsv_data, "text/tab-separated-values")}
 
         endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
-        return self.client.post(endpoint, files=files, params={"async": "false"}, use_destination=use_destination)
+        return self.client.post(
+            endpoint,
+            files=files,
+            params={"async": "false"},
+            use_destination=use_destination,
+        )
 
     def update_entity_attributes(
-        self, entity_type: str, entity_id: str, attributes: Dict[str, Any], use_destination: bool = True
+        self,
+        entity_type: str,
+        entity_id: str,
+        attributes: Dict[str, Any],
+        use_destination: bool = True,
     ) -> Dict[str, Any]:
         """
         Update attributes of an entity
@@ -165,5 +180,7 @@ class TerraEntities:
         ]
 
         return self.client.patch(
-            f"entities/{entity_type}/{entity_id}", data=updates, use_destination=use_destination
+            f"entities/{entity_type}/{entity_id}",
+            data=updates,
+            use_destination=use_destination,
         ).json()

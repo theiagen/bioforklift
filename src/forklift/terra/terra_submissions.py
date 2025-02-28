@@ -3,13 +3,18 @@ from datetime import datetime
 from .models import WorkflowConfig, WorkflowMetadata, SubmissionInfo
 from .client import TerraClient
 
+
 class TerraSubmissions:
     """Class meant to handle Terra workflow/submissions"""
 
     def __init__(self, client: TerraClient):
         self.client = client
 
-    def submit_workflow(self, config: WorkflowConfig, use_destination: bool = True,) -> Dict[str, Any]:
+    def submit_workflow(
+        self,
+        config: WorkflowConfig,
+        use_destination: bool = True,
+    ) -> Dict[str, Any]:
         """
         Submit a workflow for execution
 
@@ -21,10 +26,16 @@ class TerraSubmissions:
             Dict containing submission response
         """
         return self.client.post(
-            "submissions", data=config.model_dump(exclude_none=True), use_destination=use_destination
+            "submissions",
+            data=config.model_dump(exclude_none=True),
+            use_destination=use_destination,
         ).json()
 
-    def get_submission_status(self, submission_id: str, use_destination: bool = True,) -> Dict[str, Any]:
+    def get_submission_status(
+        self,
+        submission_id: str,
+        use_destination: bool = True,
+    ) -> Dict[str, Any]:
         """
         Get status of a workflow submission
 
@@ -32,9 +43,15 @@ class TerraSubmissions:
             submission_id: ID of the submission to check
             use_destination: Whether to use destination workspace (True) or source workspace
         """
-        return self.client.get(f"submissions/{submission_id}", use_destination=use_destination).json()
+        return self.client.get(
+            f"submissions/{submission_id}", use_destination=use_destination
+        ).json()
 
-    def get_all_submissions(self, skip_aborted: bool = True, use_destination: bool = True,) -> List[SubmissionInfo]:
+    def get_all_submissions(
+        self,
+        skip_aborted: bool = True,
+        use_destination: bool = True,
+    ) -> List[SubmissionInfo]:
         """
         Get all submissions from workspace
 
@@ -71,7 +88,10 @@ class TerraSubmissions:
         return submissions
 
     def get_workflows_by_submission(
-        self, submission_id: str, skip_aborted: bool = True, use_destination: bool = False,
+        self,
+        submission_id: str,
+        skip_aborted: bool = True,
+        use_destination: bool = False,
     ) -> List[WorkflowMetadata]:
         """
         Get all workflows for a submission
@@ -84,7 +104,9 @@ class TerraSubmissions:
         Returns:
             List of workflow metadata
         """
-        response = self.client.get(f"submissions/{submission_id}", use_destination=use_destination).json()
+        response = self.client.get(
+            f"submissions/{submission_id}", use_destination=use_destination
+        ).json()
         workflows = []
 
         submission_entity = response.get("submissionEntity", {})
@@ -112,7 +134,10 @@ class TerraSubmissions:
         return workflows
 
     def get_workflows_by_entity(
-        self, entity_names: List[str], skip_aborted: bool = True, use_destination: bool = False,
+        self,
+        entity_names: List[str],
+        skip_aborted: bool = True,
+        use_destination: bool = False,
     ) -> Dict[str, WorkflowMetadata]:
         """
         Get workflow metadata for specific entities
@@ -125,7 +150,9 @@ class TerraSubmissions:
         Returns:
             Dict mapping entity names to their workflow metadata
         """
-        submissions = self.get_all_submissions(skip_aborted=skip_aborted, use_destination=use_destination)
+        submissions = self.get_all_submissions(
+            skip_aborted=skip_aborted, use_destination=use_destination
+        )
         workflow_dict = {}
 
         for submission in submissions:

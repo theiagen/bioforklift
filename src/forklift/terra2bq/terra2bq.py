@@ -10,4 +10,4 @@
 # 8. Update the BigQuery records to indicate the workflow submission status
 
 # Other Workflow
-#1. Sync metadata from Terra source table to Bigquery to Terra target table
+# 1. Sync metadata from Terra source table to Bigquery to Terra target table

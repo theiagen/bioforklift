@@ -3,6 +3,7 @@ from .client import BigQueryClient
 from .sample_operations import BigQuerySampleOperations
 from .config_operations import BigQueryConfigOperations
 
+
 class BigQuery:
     """
     Main interface for BigQuery operations.
@@ -58,41 +59,41 @@ class BigQuery:
     def table_exists(self, table_name: str) -> bool:
         """Check if a table exists"""
         return self.client.table_exists(table_name)
-        
+
     def get_sample_operations(
         self, table_name: str, sample_schema_yaml: str
     ) -> BigQuerySampleOperations:
         """
         Get a sample operations interface for a specific table
-        
+
         Args:
             table_name: Name of the samples table
             sample_schema_yaml: Path to the samples schema YAML file
-            
+
         Returns:
             BigQuerySampleOperations instance
         """
         return BigQuerySampleOperations(
             client=self.client,
             table_name=table_name,
-            sample_schema_yaml=sample_schema_yaml
+            sample_schema_yaml=sample_schema_yaml,
         )
-        
+
     def get_config_operations(
         self, table_name: str, config_schema_yaml: str
     ) -> BigQueryConfigOperations:
         """
         Get a config operations interface for a specific table
-        
+
         Args:
             table_name: Name of the config table
             config_schema_yaml: Path to the config schema YAML file
-            
+
         Returns:
             BigQueryConfigOperations instance
         """
         return BigQueryConfigOperations(
             client=self.client,
             table_name=table_name,
-            config_schema_yaml=config_schema_yaml
+            config_schema_yaml=config_schema_yaml,
         )

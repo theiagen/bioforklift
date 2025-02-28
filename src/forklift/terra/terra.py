@@ -42,12 +42,12 @@ class Terra:
 
         self.entities = TerraEntities(self.client)
         self.submissions = TerraSubmissions(self.client)
-        
+
     @property
     def source_workspace(self) -> str:
         """Get source workspace name"""
         return self.client.source_workspace
-    
+
     @property
     def source_project(self) -> str:
         """Get source project name"""
@@ -57,16 +57,18 @@ class Terra:
     def destination_workspace(self) -> str:
         """Get destination workspace name"""
         return self.client.destination_workspace
-    
+
     @property
     def destination_project(self) -> str:
         """Get destination project name"""
         return self.client.destination_project
-    
-    def update_source_workspace(self, source_workspace: str, source_project: Optional[str] = None) -> None:
+
+    def update_source_workspace(
+        self, source_workspace: str, source_project: Optional[str] = None
+    ) -> None:
         """
         Update the source workspace and optionally the source project
-        
+
         Args:
             source_workspace: New source workspace name
             source_project: Optional new source project name
@@ -74,11 +76,13 @@ class Terra:
         self.client.source_workspace = source_workspace
         if source_project:
             self.client.source_project = source_project
-        
-    def update_target_workspace(self, destination_workspace: str, destination_project: Optional[str] = None) -> None:
+
+    def update_target_workspace(
+        self, destination_workspace: str, destination_project: Optional[str] = None
+    ) -> None:
         """
         Update the destionation workspace and optionally the target project
-        
+
         Args:
             destination_workspace: New destination workspace name
             destination_project: Optional new destination project name

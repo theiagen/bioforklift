@@ -99,12 +99,14 @@ class TerraClient:
 
     def _build_firecloud_url(self, endpoint: str, use_destination: bool = False) -> str:
         """Helper function to build full API URL
-            
+
         Args:
             endpoint: API endpoint to access
             use_destination: Whether to use destination workspace (True) or source workspace (False)
         """
-        workspace = self.destination_workspace if use_destination else self.source_workspace
+        workspace = (
+            self.destination_workspace if use_destination else self.source_workspace
+        )
         project = self.destination_project if use_destination else self.source_project
         # Now we can use project and workdpace within function scope
         return f"{self.api_url}/workspaces/{project}/{workspace}/{endpoint}"
@@ -139,7 +141,7 @@ class TerraClient:
     ) -> requests.Response:
         """
         Make HTTP request to Terra Firecloud API with dynamic method
-        
+
         Args:
             method: HTTP method (GET, POST, etc.)
             endpoint: API endpoint
@@ -189,7 +191,13 @@ class TerraClient:
         use_destination: bool = False,
     ) -> requests.Response:
         """Make GET request"""
-        return self._http_request("GET", endpoint, params=params, stream=stream, use_destination=use_destination)
+        return self._http_request(
+            "GET",
+            endpoint,
+            params=params,
+            stream=stream,
+            use_destination=use_destination,
+        )
 
     def post(
         self,
@@ -201,9 +209,18 @@ class TerraClient:
     ) -> requests.Response:
         """Make POST request"""
         return self._http_request(
-            "POST", endpoint, data=data, files=files, params=params, use_destination=use_destination
+            "POST",
+            endpoint,
+            data=data,
+            files=files,
+            params=params,
+            use_destination=use_destination,
         )
 
-    def patch(self, endpoint: str, data: Dict, use_destination: bool = False ) -> requests.Response:
+    def patch(
+        self, endpoint: str, data: Dict, use_destination: bool = False
+    ) -> requests.Response:
         """Make PATCH request"""
-        return self._http_request("PATCH", endpoint, data=data, use_destination=use_destination)
+        return self._http_request(
+            "PATCH", endpoint, data=data, use_destination=use_destination
+        )

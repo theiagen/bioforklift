@@ -6,6 +6,7 @@ from google.cloud.bigquery import SchemaField
 # Utils mostly for handling schema and data transformations between BigQuery / yaml / pandas
 # This is a good place to put functions that don't fit into the main BigQueryClient class
 
+
 def parse_field_type(field_type: str) -> str:
     """Convert YAML schema types to BigQuery types"""
     type_mapping = {
@@ -22,7 +23,7 @@ def parse_field_type(field_type: str) -> str:
         "record": "RECORD",
         "array": "ARRAY",
         "object": "JSON",
-        "json": "JSON", 
+        "json": "JSON",
     }
     return type_mapping.get(field_type.lower(), "STRING")
 

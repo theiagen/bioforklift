@@ -37,7 +37,12 @@ class TestDownloadTable:
 
         # Verify correct request was made
         mock_terra_client._http_request.assert_called_once_with(
-            "GET", "entities/sample/tsv", params={"model": "flexible"}, stream=True, use_destination=False)
+            "GET",
+            "entities/sample/tsv",
+            params={"model": "flexible"},
+            stream=True,
+            use_destination=False,
+        )
 
         # Verify iter_content was called with correct chunk size
         mock_response.iter_content.assert_called_with(chunk_size=8192)
@@ -79,7 +84,9 @@ class TestDownloadTable:
         ]
 
         # Make the actual call
-        df = data_ops.download_table("sample", attributes=["id", "status", "date"], use_destination=False)
+        df = data_ops.download_table(
+            "sample", attributes=["id", "status", "date"], use_destination=False
+        )
 
         # Verify the request was made with correct parameters
         mock_terra_client._http_request.assert_called_once_with(
@@ -87,7 +94,7 @@ class TestDownloadTable:
             "entities/sample/tsv",
             params={"model": "flexible", "attributeNames": "id,status,date"},
             stream=True,
-            use_destination=False
+            use_destination=False,
         )
 
         # Verify iter_content was called with correct chunk size

@@ -82,35 +82,33 @@ class BigQueryClient:
             return True
         except exceptions.NotFound:
             return False
-        
+
     def insert_rows(self, table: str, rows: list) -> None:
         """Insert rows into a table using load job for immediate availability"""
 
         try:
             # Get table reference instance from google.cloud.bigquery
             table_obj = self.client.get_table(table)
-            
+
             # Configure load job
             job_config = bigquery.LoadJobConfig(
                 source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
                 schema=table_obj.schema,
                 # Set write disposition to append by default
-                write_disposition=bigquery.WriteDisposition.WRITE_APPEND
+                write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             )
-            
+
             # Convert rows to newline-delimited JSON
             json_rows = [json.dumps(row) for row in rows]
-            data = '\n'.join(json_rows).encode('utf-8')
-            
+            data = "\n".join(json_rows).encode("utf-8")
+
             # Create and run load job
             load_job = self.client.load_table_from_file(
-                io.BytesIO(data),
-                table,
-                job_config=job_config
+                io.BytesIO(data), table, job_config=job_config
             )
-            
-            load_job.result() 
-            
+
+            load_job.result()
+
             if load_job.errors:
                 raise Exception(f"Load job errors: {load_job.errors}")
 

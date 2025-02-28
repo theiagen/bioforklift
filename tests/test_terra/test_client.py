@@ -35,7 +35,9 @@ def mock_request(monkeypatch):
 @pytest.fixture
 def terra_client(mock_credentials):
     return TerraClient(
-        source_workspace="test-workspace", source_project="test-project", credentials=mock_credentials
+        source_workspace="test-workspace",
+        source_project="test-project",
+        credentials=mock_credentials,
     )
 
 
@@ -131,7 +133,9 @@ class TestTerraClientAuthentication:
             mock_default.side_effect = DefaultCredentialsError("No credentials found")
 
             with pytest.raises(TerraAuthenticationError) as exc:
-                TerraClient(source_workspace="test-workspace", source_project="test-project")
+                TerraClient(
+                    source_workspace="test-workspace", source_project="test-project"
+                )
             assert "Failed to get Google Cloud credentials" in str(exc.value)
             assert "Run 'gcloud auth application-default login'" in str(exc.value)
 

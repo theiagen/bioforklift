@@ -1,8 +1,10 @@
 from forklift.terra import Terra, WorkflowConfig
 
 terra = Terra(
-    source_workspace="CDPH_Automation_Development", source_project="cdph-terrabio-taborda-manual",
-    destination_workspace="Theiagen_Babinski_Sandbox", destination_project="theiagen-training-workspaces",
+    source_workspace="CDPH_Automation_Development",
+    source_project="cdph-terrabio-taborda-manual",
+    destination_workspace="Theiagen_Babinski_Sandbox",
+    destination_project="theiagen-training-workspaces",
 )
 
 # # Data operations

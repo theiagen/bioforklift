@@ -65,19 +65,25 @@ class TestTerraClientDestinationInit:
         assert client.source_workspace == "source-workspace"
         assert client.source_project == "source-project"
         assert client.destination_workspace == "destination-workspace"
-        assert client.destination_project == "source-project"  # Should default to source project
+        assert (
+            client.destination_project == "source-project"
+        )  # Should default to source project
 
 
 class TestTerraClientDestinationURLBuilding:
     def test_build_workspace_url_source(self, terra_client_with_destination):
         """Test URL building for source workspace"""
-        url = terra_client_with_destination._build_firecloud_url("entities", use_destination=False)
+        url = terra_client_with_destination._build_firecloud_url(
+            "entities", use_destination=False
+        )
         expected = "https://api.firecloud.org/api/workspaces/source-project/source-workspace/entities"
         assert url == expected
 
     def test_build_workspace_url_destination(self, terra_client_with_destination):
         """Test URL building for destination workspace"""
-        url = terra_client_with_destination._build_firecloud_url("entities", use_destination=True)
+        url = terra_client_with_destination._build_firecloud_url(
+            "entities", use_destination=True
+        )
         expected = "https://api.firecloud.org/api/workspaces/destination-project/destination-workspace/entities"
         assert url == expected
 
@@ -120,7 +126,9 @@ class TestTerraClientDestinationRequests:
         assert result == mock_response
 
     @patch("requests.request")
-    def test_post_request_destination(self, mock_request, terra_client_with_destination):
+    def test_post_request_destination(
+        self, mock_request, terra_client_with_destination
+    ):
         """Test POST request to destination workspace"""
         # Setup mock response
         mock_response = Mock()
@@ -130,7 +138,9 @@ class TestTerraClientDestinationRequests:
 
         # Make request to destination workspace
         data = {"name": "test_entity"}
-        result = terra_client_with_destination.post("entities", data=data, use_destination=True)
+        result = terra_client_with_destination.post(
+            "entities", data=data, use_destination=True
+        )
 
         # Verify request was made to destination workspace
         mock_request.assert_called_once()
@@ -140,7 +150,9 @@ class TestTerraClientDestinationRequests:
         assert result == mock_response
 
     @patch("requests.request")
-    def test_patch_request_destination(self, mock_request, terra_client_with_destination):
+    def test_patch_request_destination(
+        self, mock_request, terra_client_with_destination
+    ):
         """Test PATCH request to destination workspace"""
         # Setup mock response
         mock_response = Mock()
@@ -150,7 +162,9 @@ class TestTerraClientDestinationRequests:
 
         # Make request to destination workspace
         data = {"status": "updated"}
-        result = terra_client_with_destination.patch("entities/sample1", data=data, use_destination=True)
+        result = terra_client_with_destination.patch(
+            "entities/sample1", data=data, use_destination=True
+        )
 
         # Verify request was made to destination workspace
         mock_request.assert_called_once()
@@ -188,7 +202,9 @@ class TestTerraClientDestinationErrors:
         assert "Terra Firecloud API server error" in str(exc.value)
 
     @patch("requests.request")
-    def test_connection_error_destination(self, mock_request, terra_client_with_destination):
+    def test_connection_error_destination(
+        self, mock_request, terra_client_with_destination
+    ):
         """Test handling connection error when accessing destination workspace"""
         mock_request.side_effect = requests.ConnectionError()
 
