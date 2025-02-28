@@ -19,6 +19,7 @@ class TerraEntities:
         attributes: Optional[List[str]] = None,
         model: str = "flexible",
         chunk_size: int = 8192,
+        use_destination: bool = False,
     ) -> pd.DataFrame:
         """
         Download table from Terra workspace
@@ -29,6 +30,7 @@ class TerraEntities:
             attributes: Specific columns to download
             model: Data model type ('flexible' or 'strict')
             chunk_size: Size of chunks for streaming
+            use_destination: Whether to use destination workspace (True) or source workspace (False)
 
         Returns:
             pandas DataFrame with table data
@@ -38,7 +40,7 @@ class TerraEntities:
             params["attributeNames"] = ",".join(attributes)
 
         response = self.client._http_request(
-            "GET", f"entities/{entity_type}/tsv", params=params, stream=True
+            "GET", f"entities/{entity_type}/tsv", params=params, stream=True, use_destination=use_destination
         )
 
         return stream_terra_table(
@@ -51,6 +53,7 @@ class TerraEntities:
         target: str,
         model: str = "flexible",
         delete_empty: bool = False,
+        use_destination: bool = True,
     ) -> pd.DataFrame:
         """
         Upload entities to Terra
@@ -60,6 +63,7 @@ class TerraEntities:
             target: Target entity type name
             model: Data model type ('flexible' or 'strict')
             delete_empty: Whether to delete empty values
+            use_destination: Whether to use destination workspace (True) or source workspace (False)
 
         Returns:
             DataFrame with uploaded entities
@@ -91,7 +95,7 @@ class TerraEntities:
 
         params = {"async": "false", "deleteEmptyValues": str(delete_empty).lower()}
 
-        self.client.post(endpoint, files=files, params=params)
+        self.client.post(endpoint, files=files, params=params, use_destination=use_destination)
 
         return upload_data
 
@@ -101,6 +105,7 @@ class TerraEntities:
         entity_type: str,
         entities: pd.DataFrame | List[str],
         model: str = "flexible",
+        use_destination: bool = True,
     ) -> Dict[str, Any]:
         """
         Create a new entity set
@@ -110,6 +115,7 @@ class TerraEntities:
             entity_type: Type of entities in set
             entities: DataFrame or List of entity identifiers
             model: Data model type
+            use_destination: Whether to use destination workspace (True) or source workspace (False)
         """
         # Convert entities to list if DataFrame
         if isinstance(entities, pd.DataFrame):
@@ -135,10 +141,10 @@ class TerraEntities:
         files = {"entities": ("set.tsv", tsv_data, "text/tab-separated-values")}
 
         endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
-        return self.client.post(endpoint, files=files, params={"async": "false"})
+        return self.client.post(endpoint, files=files, params={"async": "false"}, use_destination=use_destination)
 
     def update_entity_attributes(
-        self, entity_type: str, entity_id: str, attributes: Dict[str, Any]
+        self, entity_type: str, entity_id: str, attributes: Dict[str, Any], use_destination: bool = True
     ) -> Dict[str, Any]:
         """
         Update attributes of an entity
@@ -147,6 +153,7 @@ class TerraEntities:
             entity_type: Type of entity
             entity_id: Entity identifier
             attributes: Dictionary of attributes to update
+            use_destination: Whether to destination workspace (True) or source workspace (False)
         """
         updates = [
             {
@@ -158,5 +165,5 @@ class TerraEntities:
         ]
 
         return self.client.patch(
-            f"entities/{entity_type}/{entity_id}", data=updates
+            f"entities/{entity_type}/{entity_id}", data=updates, use_destination=use_destination
         ).json()
