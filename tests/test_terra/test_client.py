@@ -35,19 +35,19 @@ def mock_request(monkeypatch):
 @pytest.fixture
 def terra_client(mock_credentials):
     return TerraClient(
-        workspace="test-workspace", project="test-project", credentials=mock_credentials
+        source_workspace="test-workspace", source_project="test-project", credentials=mock_credentials
     )
 
 
 class TestTerraClientInit:
     def test_successful_init(self, mock_credentials):
         client = TerraClient(
-            workspace="test-workspace",
-            project="test-project",
+            source_workspace="test-workspace",
+            source_project="test-project",
             credentials=mock_credentials,
         )
-        assert client.workspace == "test-workspace"
-        assert client.project == "test-project"
+        assert client.source_workspace == "test-workspace"
+        assert client.source_project == "test-project"
         assert client.api_url == "https://api.firecloud.org/api"
 
 
@@ -131,7 +131,7 @@ class TestTerraClientAuthentication:
             mock_default.side_effect = DefaultCredentialsError("No credentials found")
 
             with pytest.raises(TerraAuthenticationError) as exc:
-                TerraClient(workspace="test-workspace", project="test-project")
+                TerraClient(source_workspace="test-workspace", source_project="test-project")
             assert "Failed to get Google Cloud credentials" in str(exc.value)
             assert "Run 'gcloud auth application-default login'" in str(exc.value)
 
@@ -140,8 +140,8 @@ class TestTerraClientAuthentication:
         mock_credentials.refresh.side_effect = RefreshError("Token refresh failed")
 
         client = TerraClient(
-            workspace="test-workspace",
-            project="test-project",
+            source_workspace="test-workspace",
+            source_project="test-project",
             credentials=mock_credentials,
         )
 
@@ -155,8 +155,8 @@ class TestTerraClientAuthentication:
         mock_credentials.token = "test-token"
 
         client = TerraClient(
-            workspace="test-workspace",
-            project="test-project",
+            source_workspace="test-workspace",
+            source_project="test-project",
             credentials=mock_credentials,
         )
 
@@ -180,8 +180,8 @@ class TestTerraClientAuthentication:
         mock_credentials.token = "test-token"
 
         client = TerraClient(
-            workspace="test-workspace",
-            project="test-project",
+            source_workspace="test-workspace",
+            source_project="test-project",
             credentials=mock_credentials,
         )
 
@@ -208,8 +208,8 @@ class TestTerraClientAuthentication:
         mock_credentials.refresh.side_effect = Exception("Unexpected credential error")
 
         client = TerraClient(
-            workspace="test-workspace",
-            project="test-project",
+            source_workspace="test-workspace",
+            source_project="test-project",
             credentials=mock_credentials,
         )
 

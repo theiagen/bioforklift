@@ -61,9 +61,9 @@ class TestSubmissionStatus:
         mock_response.json.return_value = response_data
         mock_terra_client.get.return_value = mock_response
 
-        result = workflow_ops.get_submission_status("123")
+        result = workflow_ops.get_submission_status("123", use_destination=False)
 
-        mock_terra_client.get.assert_called_once_with("submissions/123")
+        mock_terra_client.get.assert_called_once_with("submissions/123", use_destination=False)
         assert result["status"] == "Done"
 
 
