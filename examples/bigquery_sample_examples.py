@@ -11,7 +11,7 @@ from forklift.terra.models import WorkflowConfig
 
 # Initialize Terra interface
 terra = Terra(
-    workspace="CDPH_Automation_Development", project="cdph-terrabio-taborda-manual"
+    source_workspace="CDPH_Automation_Development", source_project="cdph-terrabio-taborda-manual"
 )
 
 terra_df = terra.entities.download_table("data")
