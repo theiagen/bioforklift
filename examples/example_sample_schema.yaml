@@ -9,19 +9,17 @@ fields:
   entity_identifier:
     type: string
     required: true
-    mapping: ["entity:data_id"]
+    column_mappings: ["entity:data_id"]
     description: External entity identifier
     sample_identifier: true
 
   read1:
     type: string
-    required: true
     description: Read 1 sequence
     sequence_file: true
 
   read2:
     type: string
-    required: true
     description: Read 2 sequence
     sequence_file: true
 

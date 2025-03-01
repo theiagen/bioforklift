@@ -7,6 +7,10 @@ from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
 from .utils import load_schema_from_yaml, parse_field_type
 
+# This class is a bit of a beast and could use some refactoring, but I needed to get all of the functionality
+# ported over from the original google-workflows codebase. I will be refactoring this in the future to make it
+# more modular and easier to use for different use cases. But for now, it works for the current use cases.
+
 class BigQuerySampleOperations:
     """Base operations for BigQuery tables with support for custom field attributes containing sample data"""
 
@@ -76,6 +80,32 @@ class BigQuerySampleOperations:
         """Get list of field names defined in the schema"""
         return [field.name for field in self.schema]
     
+    def _add_missing_schema_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add any missing schema columns to DataFrame with null values"""
+
+        schema_fields = self._get_schema_fields()
+
+        # Add any missing columns with None/null values
+        for field in schema_fields:
+            if field not in df.columns:
+                df[field] = None
+
+        return df
+    
+    def _get_config_source_fields(self) -> Dict[str, str]:
+        """
+        Get fields that should be populated from parent configuration.
+        
+        Returns:
+            Dictionary mapping field names to their config source fields
+            e.g., {'config_identifier': 'id', 'workflow_name': 'terra_analysis_method'}
+        """
+        return {
+            field_name: attrs.get('inherit_from_config')
+            for field_name, attrs in self.field_attributes.items()
+            if attrs.get('inherit_from_config')
+        }
+        
     def _filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep only columns that are defined in the schema"""
         schema_fields = self._get_schema_fields()
@@ -85,11 +115,13 @@ class BigQuerySampleOperations:
         return filtered_out_excess_columns_df
     
     def _map_field_names(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Map source field names to BigQuery field names using mapping attributes"""
+        """Map source field names to BigQuery field names using column_mappings attributes"""
 
+        mapped_columns_df = df.copy()
+        
         for field_name, attrs in self.field_attributes.items():
-            if "mapping" in attrs:
-                source_fields = attrs["mapping"]
+            if "column_mappings" in attrs:
+                source_fields = attrs["column_mappings"]
                 if isinstance(source_fields, str):
                     source_fields = [source_fields]
 
@@ -101,9 +133,45 @@ class BigQuerySampleOperations:
                         )
                         break
 
+        # Always return the DataFrame, whether mappings were applied or not
         return self._add_missing_schema_columns(mapped_columns_df)
+    
+    def _validate_sequence_files(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate that each sample has at least one sequence file field with a value.
+        Removes rows that don't have any sequence files.
+        
+        Args:
+            df: DataFrame containing the data to validate
+            
+        Returns:
+            DataFrame with only valid samples that have at least one sequence file
+        """
+        try:
+            # Get fields marked as sequence_file
+            sequence_file_fields = self.get_sequence_file_fields()
+            
+            if not sequence_file_fields:
+                # If no sequence file fields defined in schema, return original DataFrame
+                return df
+            
+            # Check if at least one sequence file field has a value for each row, fill with boolean
+            has_sequence_file = df[sequence_file_fields].notna().any(axis=1)
+            
+            # Filter DataFrame to keep only rows with at least one sequence file
+            valid_samples_df = df[has_sequence_file]
+            
+            filtered_count = len(df) - len(valid_samples_df)
+            if filtered_count > 0:
+                # Switch this to logger when integrated
+                print(f"Filtered out {filtered_count} samples without sequence files")
+                
+            return valid_samples_df
+            
+        except Exception as exc:
+            raise RuntimeError(f"Error validating sequence files: {str(exc)}")
 
-    def _prepare_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+    def prepare_samples_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare DataFrame by filtering duplicates and adding system-generated values"""
         df = df.copy()
         # First we need to map field names from source to BigQuery
@@ -115,15 +183,23 @@ class BigQuerySampleOperations:
 
         if len(filtered_bigquery_mapped_df) == 0:
             return filtered_bigquery_mapped_df
+        
+        # Validate that each sample has at least one sequence file
+        validated_sequence_df = self._validate_sequence_files(filtered_bigquery_mapped_df)
+
+        
+        if len(validated_sequence_df) == 0:
+            return validated_sequence_df
+
 
         # Then add system values (datetime tracking) for remaining rows
-        system_values = self._generate_system_values(len(df))
+        system_values = self._generate_system_values(len(validated_sequence_df))
 
         for field_name, values in system_values.items():
-            filtered_bigquery_mapped_df[field_name] = values
+            validated_sequence_df[field_name] = values
 
-        return filtered_bigquery_mapped_df
-
+        return validated_sequence_df
+    
     def get_sample_identifier_field(self) -> Optional[str]:
         """Get the field name marked as sample_identifier"""
         return next(
@@ -145,6 +221,14 @@ class BigQuerySampleOperations:
             ),
             None,
         )
+        
+    def get_sequence_file_fields(self) -> List[str]:
+        """Get list of field names that are marked as sequence files in the schema"""
+        return [
+            field_name
+            for field_name, attrs in self.field_attributes.items()
+            if attrs.get("sequence_file") is True
+        ]
 
     def get_sync_fields(self) -> List[str]:
         """
@@ -162,6 +246,59 @@ class BigQuerySampleOperations:
 
         return sync_fields
     
+    def apply_configuration_sourced_fields(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Apply configuration values to fields in a DataFrame of samples.
+        
+        Args:
+            df: DataFrame containing sample records
+            config: Dictionary containing configuration values
+            
+        Returns:
+            DataFrame with configuration values applied to inheritance fields
+        """
+        if df.empty or not config:
+            return df
+        
+        # Get fields that inherit from configuration
+        config_inheritance_fields = self._get_config_source_fields()
+        
+        if not config_inheritance_fields:
+            return df
+        
+        config_sourced_field_df = df.copy()
+        
+        for field_name, config_field in config_inheritance_fields.items():
+            if config_field in config:
+                # Apply the configuration field value to all rows in the DataFrame
+                config_sourced_field_df[field_name] = config[config_field]
+            else:
+                # Log warning if configuration field not found
+                print(f"Warning: Configuration field '{config_field}' not found in configuration")
+        
+        return config_sourced_field_df
+    
+    def prepare_samples_with_config(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Full preparation of samples with configuration applied.
+        
+        Args:
+            df: DataFrame containing sample data
+            config: Dictionary containing configuration values
+            
+        Returns:
+            DataFrame ready for upload with all validations and transformations applied
+        """
+        
+        # Apply standard preparation
+        prepared_df = self.prepare_samples_dataframe(df)
+        
+        if prepared_df.empty:
+            return prepared_df
+        
+        # Apply configuration inheritance, if no config identifier field, will return prepared_df
+        return self.apply_configuration_sourced_fields(prepared_df, config)
+        
     def get_existing_identifiers(self) -> List[str]:
         """Get all existing sample identifiers from the table"""
         try:
@@ -186,23 +323,13 @@ class BigQuerySampleOperations:
         except Exception as error:
             raise RuntimeError(f"Error fetching existing identifiers: {str(error)}")
 
-    def _add_missing_schema_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add any missing schema columns to DataFrame with null values"""
-
-        schema_fields = self._get_schema_fields()
-
-        # Add any missing columns with None/null values
-        for field in schema_fields:
-            if field not in df.columns:
-                df[field] = None
-
-        return df
 
     def load_dataframe(
         self,
         df: pd.DataFrame,
         schema: Optional[List[SchemaField]] = None,
         write_disposition: str = "WRITE_APPEND",
+        config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Load DataFrame into BigQuery table using load jobs
@@ -227,7 +354,12 @@ class BigQuerySampleOperations:
 
             # Prepare DataFrame with filtering and system values
             initial_count = len(df)
-            prepared_df = self._prepare_dataframe(df)
+            
+            if config:
+                prepared_df = self.prepare_samples_with_config(df, config)
+            else:
+                prepared_df = self.prepare_samples_dataframe(df)
+            print("Length of prepared dataframe", len(prepared_df))
             filtered_count = initial_count - len(prepared_df)
 
             # Skip if all records were filtered

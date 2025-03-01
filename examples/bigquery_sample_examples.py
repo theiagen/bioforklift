@@ -16,7 +16,7 @@ terra = Terra(
 )
 
 terra_df = terra.entities.download_table("data")
-
+print(terra_df.head())
 bq = BigQuery(
     project="general-theiagen",
     dataset="automation_test",
@@ -27,7 +27,7 @@ bq_samples_ops = bq.get_sample_operations(
 )
 
 response = bq_samples_ops.load_dataframe(df=terra_df)
-
+print(response)
 # This looks messy right now, but will be cleaned up in the integration layer
 
 # Load data into BigQuery
