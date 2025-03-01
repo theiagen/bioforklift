@@ -34,21 +34,6 @@ class BigQueryConfigOperations:
         else:
             self.schema = config_schema
 
-    def _generate_system_values(self, row_count: int) -> Dict[str, List[Any]]:
-        """Generate system values for auto-populated fields"""
-        current_datetime = pd.Timestamp.now(tz="UTC")
-        system_tracking_values = {}
-
-        for field_name, attrs in self.field_attributes.items():
-            if attrs.get("uuid_field"):
-                system_tracking_values[field_name] = [
-                    str(uuid.uuid4()) for _ in range(row_count)
-                ]
-            elif attrs.get("created_datetime"):
-                system_tracking_values[field_name] = [current_datetime] * row_count
-
-        return system_tracking_values
-
     def _get_schema_fields(self) -> List[str]:
         """Get list of field names defined in the schema"""
         return [field.name for field in self.schema]
@@ -61,7 +46,7 @@ class BigQueryConfigOperations:
         # Generate uuid if not provided and required by schema
         if "id" not in config:
             for field_name, attrs in self.field_attributes.items():
-                if attrs.get("uuid_field") and field_name not in config:
+                if attrs.get("primary_key") and field_name not in config:
                     config[field_name] = str(uuid.uuid4())
 
         # Set created_at datetime if not provided

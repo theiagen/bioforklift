@@ -103,7 +103,7 @@ class TestBigQueryClient:
 
         # Create a minimal field attributes structure that matches what's returned
         field_attributes = {
-            "id": {"system_value": True, "uuid_field": True},
+            "id": {"system_value": True, "primary_key": True},
             "active": {"default": True},
             "created_at": {"created_datetime": True, "system_value": True},
             "terra_method_config": {
@@ -152,7 +152,7 @@ class TestBigQueryClient:
         # Check key fields exist with key properties
         assert "id" in result["field_attributes"]
         assert result["field_attributes"]["id"]["system_value"] == True
-        assert result["field_attributes"]["id"]["uuid_field"] == True
+        assert result["field_attributes"]["id"]["primary_key"] == True
 
         assert "active" in result["field_attributes"]
         assert result["field_attributes"]["active"]["default"] == True
@@ -178,7 +178,7 @@ class TestBigQueryClient:
 
         # Create a minimal field attributes structure
         field_attributes = {
-            "id": {"system_value": True, "uuid_field": True},
+            "id": {"system_value": True, "primary_key": True},
             "active": {"default": True},
             "created_at": {"created_datetime": True, "system_value": True},
             "terra_method_config": {
@@ -221,7 +221,7 @@ class TestBigQueryClient:
         # Check key fields exist with key properties
         assert "id" in result["field_attributes"]
         assert result["field_attributes"]["id"]["system_value"] == True
-        assert result["field_attributes"]["id"]["uuid_field"] == True
+        assert result["field_attributes"]["id"]["primary_key"] == True
 
         assert "active" in result["field_attributes"]
         assert result["field_attributes"]["active"]["default"] == True

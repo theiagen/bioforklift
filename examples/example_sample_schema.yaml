@@ -3,7 +3,7 @@ fields:
     type: string
     required: true
     description: Unique identifier for the record
-    uuid_field: true  # This field will be auto-populated with UUID
+    primary_key: true  # This field will be auto-populated with UUID
     system_value: true
   
   entity_identifier:

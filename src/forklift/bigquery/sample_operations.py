@@ -38,7 +38,7 @@ class BigQuerySampleOperations:
         system_tracking_values = {}
 
         for field_name, attrs in self.field_attributes.items():
-            if attrs.get("uuid_field"):
+            if attrs.get("primary_key"):
                 system_tracking_values[field_name] = [
                     str(uuid.uuid4()) for _ in range(row_count)
                 ]

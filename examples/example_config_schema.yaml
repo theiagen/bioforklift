@@ -3,7 +3,7 @@ fields:
     type: string
     required: true
     description: Configuration ID
-    uuid_field: true
+    primary_key: true
     system_value: true
 
   name:
