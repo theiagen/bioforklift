@@ -12,10 +12,13 @@ This project uses `poetry` for project management
 If you don't have poetry present, please install it with:
 `pip install poetry`
 
-Then shell into the poetry env:
-`poetry shell`
+Then run poetry env activate which will create your environment:
+`poetry env activate`
 
-The dependencies will be automatically installed based on the locked versions in the `poetry.lock` file, since I already ran `poetry install` and pushed the lock file. For more information on poetry, read here: https://python-poetry.org/docs/basic-usage/
+Finally, install the dependencies listed in `poetry.lock` utilizing:
+`poetry install`
+
+The dependencies will be installed based on the locked versions in the `poetry.lock` file, since I already ran `poetry install` and pushed the lock file. For more information on poetry, read here: https://python-poetry.org/docs/basic-usage/
 
 ### Note
 This is a first time dump of everything I've been putting together for an automation library for our data movement needs
