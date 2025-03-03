@@ -2,7 +2,6 @@ import requests
 from typing import Optional, Dict
 from datetime import datetime, timedelta, timezone
 from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
 from google.oauth2.credentials import Credentials
 from google.auth import default
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
