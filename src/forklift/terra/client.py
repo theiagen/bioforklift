@@ -79,9 +79,9 @@ class TerraClient:
             return self._token
         try:
             self._credentials.refresh(google_requests.Request())
-            self._token = self._credentials.token
-            # Google auth token good for one hour
-            self._token_expiry = now + timedelta(hours=1)
+            self._token = self._credentials.id_token
+            # Get exp from token and convert to datetime
+            self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc)
             return self._token
         except RefreshError as refresh_error:
             raise TerraAuthenticationError(
