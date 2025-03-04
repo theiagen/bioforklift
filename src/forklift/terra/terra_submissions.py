@@ -27,7 +27,7 @@ class TerraSubmissions:
         Returns:
             Dict containing submission response
         """
-        
+
         logger.info(f"Submitting workflow with config:")
         for key, value in config.dict().items():
             logger.info(f"{key}: {value}")
@@ -70,12 +70,14 @@ class TerraSubmissions:
         Returns:
             List of submission information
         """
+        logger.info("Fetching all submissions")
         response = self.client.get("submissions").json()
         submissions = []
 
         for submission in response:
             # Skip aborted submissions if requested
             if skip_aborted and submission.get("status") == "Aborted":
+                logger.info(f"Skipping aborted submission: {submission['submissionId']}")
                 continue
 
             if (
@@ -92,7 +94,7 @@ class TerraSubmissions:
                         status=submission.get("status"),
                     )
                 )
-
+        logger.info(f"Fetched {len(submissions)} submissions")
         return submissions
 
     def get_workflows_by_submission(
@@ -112,16 +114,18 @@ class TerraSubmissions:
         Returns:
             List of workflow metadata
         """
+        logger.info(f"Fetching workflows for submission ID: {submission_id}")
         response = self.client.get(
             f"submissions/{submission_id}", use_destination=use_destination
         ).json()
+        logger.info(f"Workflows within {submission_id} fetched.")
         workflows = []
-
         submission_entity = response.get("submissionEntity", {})
         submission_date = datetime.fromisoformat(response["submissionDate"].rstrip("Z"))
 
         for workflow in response.get("workflows", []):
             if skip_aborted and workflow.get("status") == "Aborted":
+                logger.info(f"Skipping aborted workflow: {workflow['workflowId']}")
                 continue
 
             if (
@@ -138,7 +142,7 @@ class TerraSubmissions:
                         upload_source=submission_entity.get("entityName"),
                     )
                 )
-
+        logger.info(f"Fetched {len(workflows)} workflows")
         return workflows
 
     def get_workflows_by_entity(

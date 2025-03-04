@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 def setup_logger(
         name: str,
         log_file: str | Path = "forklift.log",
-        file_mode: str = "w",
+        file_mode: str = "a",
         level: int = logging.INFO,
         max_bytes: int = 5_242_880,  # 5MB
         backup_count: int = 3,

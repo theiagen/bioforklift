@@ -123,7 +123,6 @@ class TerraClient:
         """Handle error responses from Terra API"""
         try:
             terra_error_data = response.json()
-            print(terra_error_data)
         except ValueError:
             logger.exception("Failed to parse Terra Firecloud API error response, likely not JSON: \n{response.text}\n")  
             terra_error_data = {"message": response.text}
