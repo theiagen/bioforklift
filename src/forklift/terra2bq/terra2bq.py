@@ -2,8 +2,9 @@ import logging
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple, Union
+from typing import Optional, Dict, Any, List
 import pandas as pd
+import pytz
 from forklift.bigquery import BigQuery
 from forklift.terra import Terra
 from forklift.bigquery.utils import drop_system_value_columns
@@ -27,45 +28,71 @@ class Terra2BQ:
 
     def __init__(
         self,
-        bq_project: str,
-        bq_dataset: str,
-        bq_location: str = "us-central1",
-        bq_credentials: Optional[Dict] = None,
+        bigquery_project: str,
+        bigquery_dataset: str,
+        bigquery_location: str = "us-central1",
+        google_credentials_json: Optional[Path] = None,
         samples_table: str = "samples",
         configs_table: str = "configs",
+        lookup_timeframe: str = "today",
+        lookup_days_back: Optional[int] = None,
+        lookup_hours_back: Optional[int] = None,
         samples_schema_yaml: Optional[Path] = None,
         configs_schema_yaml: Optional[Path] = None,
         source_workspace: Optional[str] = None,
         source_project: Optional[str] = None,
+        source_datatable: Optional[str] = None,
         destination_workspace: Optional[str] = None,
         destination_project: Optional[str] = None,
+        destination_datatable: Optional[str] = None,
+        project_timezone = "UTC",
+        bigquery_upload_df: Optional[pd.DataFrame] = None,
         metadata_cleanup_fn: Optional[callable] = None,
     ):
         """
         Initialize Terra2BQ with BigQuery and Terra information.
         
         Args:
-            bq_project: GCP project ID for BigQuery
-            bq_dataset: BigQuery dataset name
-            bq_location: BigQuery dataset location
-            bq_credentials: Optional service account credentials dict for BigQuery
+            bigquery_project: GCP project ID for BigQuery
+            bigquery_dataset: BigQuery dataset name
+            bigquery_location: BigQuery dataset location
+            google_credentials_json: Optional service account credentials dict for BigQuery
             samples_table: Name of the samples table in BigQuery
             configs_table: Name of the configs table in BigQuery
+            lookup_timeframe: Default timeframe for sample lookup (default: "today", options: "today", "yesterday", "week", "month", "custom")
+            lookup_days_back: Number of days to look back for custom timeframe (this must be provided or lookup_hours_back if lookup_timeframe is "custom")
+            lookup_hours_back: Number of hours to look back for custom timeframe (this must be provided or lookup_days_back if lookup_timeframe is "custom")
             samples_schema_yaml: Path to samples schema YAML file
             configs_schema_yaml: Path to configs schema YAML file
             source_workspace: Default source workspace for Terra, if not provided in configuration
             source_project: Default source project for Terra, if not provided in configuration
+            source_datatable: Source data table for Terra, if not provided in configuration
             destination_workspace: Destination workspace for Terra, if not provided in configuration
             destination_project:  Destination project for Terra, if not provided in configuration
+            destination_datatable: Destination data table for Terra, if not provided in configuration
+            destination_datatable: Destination data table for Terra, if not provided in configuration
+            project_timezone: Timezone for the project
+            bigquery_upload_df: Optional DataFrame to use for BigQuery upload, would bypass download from Terra
             metadata_cleanup_fn: Optional function to clean up metadata before upload to BigQuery
         """
+        
+        # Set up credentials if provided
+        self.google_credentials_json = google_credentials_json
+        
         # Initialize bigquery client
         self.bigquery = BigQuery(
-            project=bq_project,
-            dataset=bq_dataset,
-            credentials=bq_credentials,
-            location=bq_location,
+            project=bigquery_project,
+            dataset=bigquery_dataset,
+            credentials=self.google_credentials_json,
+            location=bigquery_location,
         )
+        
+        # Store lookup timeframe and days/hours back
+        self.lookup_timeframe = lookup_timeframe
+        self.lookup_days_back = lookup_days_back
+        self.lookup_hours_back = lookup_hours_back
+        if self.lookup_timeframe == "custom" and not (self.lookup_days_back or self.lookup_hours_back):
+            raise ValueError("Custom lookup timeframe requires lookup_days_back or lookup_hours_back")
         
         # Store table names and schema paths
         self.samples_table = samples_table
@@ -81,11 +108,40 @@ class Terra2BQ:
         # Store Terra workspace/project information, if provided, otherwise will take from config
         self.source_workspace = source_workspace
         self.source_project = source_project
+        self.source_datatable = source_datatable
         self.destination_workspace = destination_workspace
         self.destination_project = destination_project
+        self.destination_datatable = destination_datatable
+        
+        # Store project timezone, default to UTC
+        self.project_timezone = project_timezone
+        
+        # Store DataFrame for upload if provided
+        self.bigquery_upload_df = bigquery_upload_df
         
         # Metadata cleanup function via dependency injection
         self.metadata_cleanup_fn = metadata_cleanup_fn
+        
+        # Initialize operations objects
+        self.initialize_operations()
+        
+    def _get_target_entity_from_config(self, config: Dict[str, Any]) -> str:
+        """
+        Get the target entity name from a configuration.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Target entity name
+        """
+        target_entity = config.get("terra_method_config", {}).get("entityType")
+        if not target_entity:
+            raise ValueError(f"Configuration {config.get('id')} is missing terra_entity_type field")
+        
+        target_entity_clean = target_entity.replace("_set", "")
+        
+        return target_entity_clean
 
     def initialize_operations(self) -> None:
         """Initialize BigQuery operations objects if not already initialized."""
@@ -119,31 +175,32 @@ class Terra2BQ:
         
         source_workspace = self.source_workspace
         if not source_workspace:
-            source_workspace = config.get("terra_workspace")
+            source_workspace = config.get("terra_source_workspace")
             if not source_workspace:
                 raise ValueError(f"No source workspace provided for configuration {config.get('id')}")
         
         source_project = self.source_project
         if not source_project:
-            source_project = config.get("terra_project")
+            source_project = config.get("terra_source_project")
             if not source_project:
                 raise ValueError(f"No source project provided for configuration {config.get('id')}")
         
         # Determine destination workspace/project else fall back to source if not specified
         destination_workspace = self.destination_workspace
         if not destination_workspace:
-            destination_workspace = config.get("destination_workspace", source_workspace)
+            destination_workspace = config.get("terra_destination_workspace", source_workspace)
         
         destination_project = self.destination_project
         if not destination_project:
-            destination_project = config.get("destination_project", source_project)
+            destination_project = config.get("terra_destination_project", source_project)
         
         # Initialize Terra client
         self.terra = Terra(
             source_workspace=source_workspace,
             source_project=source_project,
             destination_workspace=destination_workspace,
-            destination_project=destination_project
+            destination_project=destination_project,
+            credentials=self.google_credentials_json
         )
         
         logger.info(
@@ -161,7 +218,6 @@ class Terra2BQ:
         Returns:
             List of active configuration dictionaries
         """
-        self.initialize_operations()
         
         if not self.config_ops:
             raise ValueError("Config operations not initialized. Make sure configs_schema_yaml is provided.")
@@ -171,72 +227,111 @@ class Terra2BQ:
                    (f" for entity type '{entity_type}'" if entity_type else ""))
         
         return configs
-
-    def process_configuration(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    
+    def download_from_terra_to_bigquery(
+        self, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        Process a single configuration by executing the complete workflow.
+        Pull data from source Terra table and load it into BigQuery.
         
         Args:
             config: Configuration dictionary
             
         Returns:
-            Dictionary containing results of the operation
+            Dictionary with load results and status
         """
-        # Get the bigqeury operations objects
-        self.initialize_operations()
-        
         if not self.samples_ops:
-            raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided.")
+            raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided")
         
-        # Set up Terra client for this configuration
-        self.setup_terra_client(config)
+        # Set up Terra client for this configuration if not already done
+        if not self.terra:
+            self.setup_terra_client(config)
         
-        # 1. Grab data from Source Terra entity table
-        entity_type = config.get("entity_type")
+        # Get entity type from config
+        entity_type = config.get("entity_type", self.source_datatable)
         if not entity_type:
             raise ValueError(f"Configuration {config.get('id')} is missing entity_type field")
         
-        logger.info(f"Downloading data from Terra entity type: {entity_type}")
-        # Download data from Terra and return dataframe
-        terra_df = self.terra.entities.download_table(entity_type)
+        # Download data from Terra if not provided
+        if not self.bigquery_upload_df:
+            logger.info(f"Downloading data from Terra entity type: {entity_type}")
+            terra_df = self.terra.entities.download_table(entity_type)
+        else:
+            terra_df = self.bigquery_upload_df
         
         if terra_df.empty:
             logger.warning(f"No data found in Terra table: {entity_type}")
-            return {"status": "no_data", "config_id": config.get("id")}
+            return {"status": "no_data", "config_id": config.get('id')}
+            
+        # Apply metadata cleanup function if provided
+        if self.metadata_cleanup_fn:
+            logger.info("Applying metadata cleanup function to Terra data")
+            try:
+                original_count = len(terra_df)
+                terra_df = self.metadata_cleanup_fn(terra_df)
+                logger.info(f"Metadata cleanup: {original_count} rows before, {len(terra_df)} rows after")
+                
+                if terra_df.empty:
+                    logger.warning("All rows were filtered out by the metadata cleanup function")
+                    return {"status": "no_data_after_cleanup", "config_id": config.get('id')}
+                    
+            except Exception as exc:
+                logger.error(f"Error in metadata cleanup function: {str(exc)}")
+                return {
+                    "status": "error", 
+                    "message": f"Metadata cleanup error: {str(exc)}",
+                    "config_id": config.get('id')
+                }
         
-        # 2. Load data into bigquery for unique sample IDs
+        # Load data into BigQuery
         logger.info(f"Loading {len(terra_df)} rows into BigQuery")
-        load_result = self.samples_ops.load_dataframe(df=terra_df, config=config)
+        bq_load_result = self.samples_ops.load_dataframe(df=terra_df, config=config)
         
-        if not load_result.get("success"):
-            logger.error(f"Failed to load data into BigQuery: {load_result.get('errors')}")
+        if not bq_load_result.get("success"):
+            logger.error(f"Failed to load data into BigQuery: {bq_load_result.get('errors')}")
             return {
                 "status": "error", 
-                "message": f"Failed to load data: {load_result.get('errors')}",
+                "message": f"Failed to load data: {bq_load_result.get('errors')}",
                 "config_id": config.get("id")
             }
         
-        # Get the prepared samples that were successfully loaded
-        samples_df = self.samples_ops.get_samples_by_timeframe(
-            timeframe="today", 
-            uploaded_filter="not_uploaded"
-        )
+        return {
+            "status": "success",
+            "config_id": config.get("id"),
+            "loaded_count": bq_load_result.get("loaded", 0),
+            "filtered_count": bq_load_result.get("filtered", 0)
+        }
         
-        if samples_df.empty:
-            logger.info("No new samples to process after filtering")
-            return {
-                "status": "no_new_samples", 
-                "loaded": load_result.get("loaded", 0),
-                "filtered": load_result.get("filtered", 0),
-                "config_id": config.get("id")
-            }
+    def upload_to_terra(
+        self,
+        config: Dict[str, Any],
+        samples_df: pd.DataFrame,
+        upload_df: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """
+        Upload data to Terra destination table and create entity set.
         
-        # 3. Prepare data for upload to Terra
-        # Remove system columns before uploading to Terra
-        upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
+        Args:
+            config: Configuration dictionary
+            samples_df: DataFrame with full sample data including system columns
+            upload_df: DataFrame prepared for upload to Terra (system columns removed)
+            
+        Returns:
+            Dictionary with upload results including set name
+        """
         
-        # 4. Upload data to Terra target
-        target_entity = f"{config.get('prefix', 'target')}"
+        if not self.samples_ops:
+            raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided")
+        
+        # Set up Terra client for this configuration if not already done
+        if not self.terra:
+            self.setup_terra_client(config)
+        
+        # Use the target entity from user provided value or configuration
+        target_entity = self.destination_datatable
+        if not target_entity:
+            target_entity = self._get_target_entity_from_config(config)
         logger.info(f"Uploading {len(upload_df)} samples to Terra entity: {target_entity}")
         
         try:
@@ -253,10 +348,20 @@ class Terra2BQ:
                 "config_id": config.get("id")
             }
         
-        # 5. Create a Set name and create Set in Terra
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        set_name = f"{config.get('prefix', 'upload')}_{timestamp}"
-        target_entity_set = f"{target_entity}_set"
+        # Create a Set name and create Set in Terra
+        current_datetime = datetime.now(pytz.utc)
+        
+        # Format for database storage (ISO format)
+        current_time_str = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Convert to project timezone
+        project_timezone = pytz.timezone(self.project_timezone)
+        project_datetime = current_datetime.astimezone(project_timezone)
+        # Format for set name (compact format)
+        current_project_time = project_datetime.strftime("%Y%m%d_%H%M%S")
+
+        # Create set name using the formatted datetime in project timezone
+        set_name = f"{config.get('prefix', 'entity_type')}_{current_project_time}"
         
         logger.info(f"Creating entity set in Terra: {set_name}")
         try:
@@ -266,28 +371,24 @@ class Terra2BQ:
                 entities=uploaded_df,
                 use_destination=True
             )
-        except Exception as exc:
-            logger.error(f"Failed to create entity set in Terra: {str(exc)}")
+        except Exception as e:
+            logger.error(f"Failed to create entity set in Terra: {str(e)}")
             return {
                 "status": "error", 
-                "message": f"Failed to create entity set: {str(exc)}",
+                "message": f"Failed to create entity set: {str(e)}",
                 "config_id": config.get("id")
             }
-        
-        # 6. Update bigquery records to indicate they've been uploaded
-        # Current datetime in ISO format
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Get IDs from the samples DataFrame
         id_values = samples_df["id"].tolist()
         
-        # Create updates for bulk update after upload
+        # Create updates for bulk update
         updates = [
-            {"id": sample_id, "uploaded_at": current_time, "upload_source": set_name}
+            {"id": sample_id, "uploaded_at": current_time_str, "upload_source": set_name}
             for sample_id in id_values
         ]
         
-        # Update the records in the sample table
+        # Update the records in BigQuery
         logger.info(f"Updating {len(updates)} records in BigQuery with upload status")
         update_result = self.samples_ops.bulk_update_samples(updates)
         
@@ -296,11 +397,95 @@ class Terra2BQ:
                 f"Failed to update {len(update_result['failed_updates'])} records in BigQuery"
             )
         
-        # 7. Submit a workflow to Terra
+        # Return success results
+        return {
+            "status": "success",
+            "config_id": config.get("id"),
+            "set_name": set_name,
+            "uploaded_count": update_result.get("updated_count", 0)
+        }
+    
+    def get_samples_for_submission(
+        self,
+        config: Dict[str, Any],
+        set_name: Optional[str] = None,
+        config_id: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Get samples from BigQuery that have been uploaded but not yet submitted to a workflow.
+        
+        Args:
+            config: Configuration dictionary
+            set_name: Optional specific set name to filter by
+            config_id: Optional specific config_id to filter by
+            
+        Returns:
+            DataFrame with samples ready for submission
+        """
+        
+        if not self.samples_ops:
+            raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided")
+        
+        # If a specific config_id is not provided, try to get it from the config
+        if not config_id and config:
+            config_id = config.get("id")
+        
+        logger.info(f"Retrieving samples for submission" + 
+                    (f" from set: {set_name}" if set_name else f" from today"))
+        
+        # Get samples that have been uploaded but not submitted
+        samples_for_submission_df = self.samples_ops.get_samples_by_timeframe(
+            timeframe=self.lookup_timeframe,
+            days_back=self.lookup_days_back,
+            hours_back=self.lookup_hours_back,
+            uploaded_filter="uploaded",
+            submitted_filter="not_submitted",
+            config_id=config_id,
+            set_name=set_name
+        )
+        
+        if samples_for_submission_df.empty:
+            logger.info("No samples found ready for submission")
+        else:
+            logger.info(f"Found {len(samples_for_submission_df)} samples ready for submission")
+        
+        return samples_for_submission_df
+
+    def submit_workflow(
+        self,
+        config: Dict[str, Any],
+        set_name: str,
+        samples_df: pd.DataFrame,
+    ) -> Dict[str, Any]:
+        """
+        Submit a workflow to Terra for the given set and update tracking info.
+        
+        Args:
+            config: Configuration dictionary
+            set_name: Terra entity set name to submit
+            
+        Returns:
+            Dictionary with submission results
+        """
+        
+        if not self.samples_ops:
+            raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided")
+        
+        # Set up Terra client for this configuration if not already done
+        if not self.terra:
+            self.setup_terra_client(config)
+        
         # Get workflow configuration details from config
         terra_method_config = config.get("terra_method_config", {})
         
-        # If it's a JSON string, try to parse it or bigquery will throw an error
+        
+        # Make backwards compatible
+        if 'userCommentTemplate' in terra_method_config:
+            current_datetime = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
+            terra_method_config['userComment'] = terra_method_config['userCommentTemplate'].format(date=current_datetime)
+            del terra_method_config['userCommentTemplate']
+        
+        # If it's a string (JSON), parse it
         if isinstance(terra_method_config, str):
             try:
                 terra_method_config = json.loads(terra_method_config)
@@ -309,7 +494,8 @@ class Terra2BQ:
                 return {
                     "status": "error", 
                     "message": "Invalid terra_method_config JSON",
-                    "config_id": config.get("id")
+                    "config_id": config.get("id"),
+                    "set_name": set_name
                 }
         
         # Prepare workflow configuration
@@ -322,9 +508,9 @@ class Terra2BQ:
                 "methodConfigurationName", 
                 config.get("terra_analysis_method")
             ),
-            "entityType": terra_method_config.get("entityType", target_entity_set),
+            "entityType": terra_method_config.get("entityType"),
             "entityName": set_name,
-            "expression": terra_method_config.get("expression", f"this.{target_entity}s"),
+            "expression": terra_method_config.get("expression"),
             "useCallCache": terra_method_config.get("useCallCache", True),
             "deleteIntermediateOutputFiles": terra_method_config.get("deleteIntermediateOutputFiles", True),
             "useReferenceDisks": terra_method_config.get("useReferenceDisks", True),
@@ -350,78 +536,203 @@ class Terra2BQ:
                 
             logger.info(f"Workflow submitted successfully with ID: {submission_id}")
             
-        except Exception as exc:
-            logger.error(f"Failed to submit workflow to Terra: {str(exc)}")
+        except Exception as e:
+            logger.error(f"Failed to submit workflow to Terra: {str(e)}")
             return {
                 "status": "error", 
-                "message": f"Failed to submit workflow: {str(exc)}",
+                "message": f"Failed to submit workflow: {str(e)}",
                 "config_id": config.get("id"),
-                "set_name": set_name,
-                "uploaded_count": update_result.get("updated_count", 0)
+                "set_name": set_name
             }
         
-        # 8. Update bigquery records with workflow submission information
-        # Extract entity names from workflows
+        # Update BigQuery records with workflow submission information
         entity_names = []
         for workflow in submission.get("workflows", []):
             entity_name = workflow.get("workflowEntity", {}).get("entityName")
             if entity_name:
                 entity_names.append(entity_name)
         
-        # Get mapping between entity identifiers and bigquery IDs
-        entity_to_id_mapping = self.samples_ops.get_entity_id_mapping()
+        current_time = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
         
         # Create updates for each entity
         workflow_updates = []
         for entity_name in entity_names:
-            # Get the bigquery ID for the entity
-            id_value = entity_to_id_mapping.get(entity_name)
+            # Get the BigQuery ID for the entity
+            id_value = samples_df["id"].tolist()
             if id_value:
                 workflow_updates.append({
-                    "id": id_value,
+                    "id": id,
                     "submitted_at": current_time,
                     "terra_submission_id": submission_id,
                     "workflow_state": "Submitted"
-                })
+                }
+                for id in id_value)
         
-        # Update bigquery with workflow submission information
+        # Update BigQuery with workflow submission information
         if workflow_updates:
             logger.info(f"Updating {len(workflow_updates)} records with workflow submission information")
             workflow_update_result = self.samples_ops.bulk_update_samples(workflow_updates)
             
-            if workflow_update_result.get("failed_updates"):
-                logger.warning(
-                    f"Failed to update {len(workflow_update_result['failed_updates'])} records "
-                    f"with workflow information"
-                )
+        if workflow_update_result.get("failed_updates"):
+            logger.warning(
+                f"Failed to update {len(workflow_update_result['failed_updates'])} records "
+                f"with workflow information"
+            )
         
         # Return success results
         return {
             "status": "success",
             "config_id": config.get("id"),
-            "loaded_count": load_result.get("loaded", 0),
-            "uploaded_count": update_result.get("updated_count", 0),
             "set_name": set_name,
             "submission_id": submission_id,
             "workflow_count": len(entity_names)
         }
     
+    def process_upload_and_submit(
+        self, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Process a configuration by uploading data and submitting a workflow.
+        This is a wrapper function that handles the sequence:
+        1. Get samples from BigQuery that need to be uploaded
+        2. Upload to Terra and create a set
+        3. Submit workflow for that set
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary containing results of the operation
+        """
+        try:
+            
+            if not self.samples_ops:
+                raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided")
+            
+            # 1. Get samples from BigQuery that need to be uploaded
+            logger.info(f"Retrieving samples that need to be uploaded to Terra")
+            samples_df = self.samples_ops.get_samples_by_timeframe(
+                timeframe=self.lookup_timeframe,
+                days_back=self.lookup_days_back,
+                hours_back=self.lookup_hours_back,
+                uploaded_filter="not_uploaded",
+                config_id=config.get("id")
+            )
+            
+            if samples_df.empty:
+                logger.info("No samples to upload")
+                return {
+                    "status": "no_new_samples",
+                    "config_id": config.get("id")
+                }
+            
+            # Prepare upload DataFrame by removing system columns
+            upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
+            logger.info(f"Prepared {len(upload_df)} samples for upload to Terra")
+            
+            # 2. Upload data to Terra and create entity set
+            upload_result = self.upload_to_terra(config, samples_df, upload_df)
+            
+            if upload_result.get("status") != "success":
+                return upload_result
+            
+            set_name = upload_result.get("set_name")
+            if not set_name:
+                return {
+                    "status": "error",
+                    "message": "Upload successful but set_name not returned",
+                    "config_id": config.get("id")
+                }
+            
+            # 3. Get latest sample data after upload
+            submission_samples = self.get_samples_for_submission(config, set_name=set_name)
+            
+            if submission_samples.empty:
+                return {
+                    "status": "error",
+                    "message": "No samples found for submission after upload",
+                    "config_id": config.get("id"),
+                    "set_name": set_name,
+                    "uploaded_count": upload_result.get("uploaded_count", 0)
+                }
+            
+            # 4. Submit workflow
+            submission_result = self.submit_workflow(config, set_name, submission_samples)
+            
+            # Combine results
+            combined_result = {
+                **submission_result,
+                "uploaded_count": upload_result.get("uploaded_count", 0)
+            }
+            
+            return combined_result
+            
+        except Exception as e:
+            logger.error(f"Error processing configuration {config.get('id')}: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "config_id": config.get("id")
+            }
+
+    def process_configuration(
+        self, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Process a single configuration by executing the complete workflow.
+        This is a wrapper function that calls the main stages of the workflow.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary containing results of the operation
+        """
+        try:
+            # 1. Download data from Terra and load into BigQuery
+            download_result = self.download_from_terra_to_bigquery(config)
+            
+            if download_result.get("status") != "success":
+                return download_result
+            
+            # 2. Upload to Terra and submit workflow
+            process_result = self.process_upload_and_submit(config)
+            
+            # Combine results from both steps
+            combined_result = {
+                **process_result,
+                "loaded_count": download_result.get("loaded_count", 0),
+                "filtered_count": download_result.get("filtered_count", 0)
+            }
+            
+            return combined_result
+            
+        except Exception as e:
+            logger.error(f"Error processing configuration {config.get('id')}: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "config_id": config.get("id")
+            }
+    
     def sync_metadata_from_workflows(
         self, 
-        hours_back: int = 24,
+        days_back: int = 30,
         update_terra: bool = True
     ) -> Dict[str, Any]:
         """
         Sync workflow metadata from Terra to BigQuery and optionally back to Terra.
         
         This method:
-        1. Gets samples that have been submitted to Terra in the last N hours
+        1. Gets samples that have been submitted to Terra in the last X days
         2. Checks Terra for workflow status updates
         3. Updates BigQuery with the latest workflow status
         4. Optionally updates Terra entities with metadata from workflows
         
         Args:
-            hours_back: Number of hours to look back for submitted samples
+            days_back: Number of hours to look back for submitted samples
             update_terra: Whether to update Terra entities with metadata
             
         Returns:
@@ -433,15 +744,17 @@ class Terra2BQ:
             raise ValueError("Sample operations not initialized")
         
         # Get samples that have been submitted within the time window
-        logger.info(f"Fetching samples submitted in the last {hours_back} hours")
+        logger.info(f"Fetching samples submitted in the last {days_back} hours")
         submitted_samples = self.samples_ops.get_samples_by_timeframe(
-            timeframe="custom",
-            hours_back=hours_back,
-            uploaded_filter="uploaded"  # Only get samples that have been uploaded
+            timeframe=self.lookup_timeframe,
+            days_back=self.lookup_days_back,
+            hours_back=self.lookup_hours_back,
+            uploaded_filter="uploaded",
+            submitted_filter="submitted"
         )
         
         if submitted_samples.empty:
-            logger.info(f"No samples found that were submitted in the last {hours_back} hours")
+            logger.info(f"No samples found that were submitted in the last {days_back} hours")
             return {"status": "no_data", "synced_count": 0}
         
         # Get samples with Terra submission IDs

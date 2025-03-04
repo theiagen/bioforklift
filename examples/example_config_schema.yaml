@@ -26,7 +26,7 @@ fields:
     required: true
     description: Original entity from source table
     
-  terra_project:
+  terra_source_project:
     type: string
     required: true
     description: Terra project identifier
@@ -35,7 +35,17 @@ fields:
     type: string
     description: Predeccessor configuration ID
     
-  terra_workspace:
+  terra_source_workspace:
+    type: string
+    required: true
+    description: Terra workspace identifier
+
+  terra_destination_project:
+    type: string
+    required: true
+    description: Terra project identifier
+
+  terra_destination_workspace:
     type: string
     required: true
     description: Terra workspace identifier
@@ -69,7 +79,7 @@ fields:
         required: true
         description: Entity type for the method
       
-      entityNameTemplate:
+      entityName:
         type: string
         required: true
         description: Template for entity names
@@ -104,7 +114,7 @@ fields:
         required: true
         description: Workflow failure mode
       
-      userCommentTemplate:
+      userComment:
         type: string
         required: true
         description: Template for user comments
