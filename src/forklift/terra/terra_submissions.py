@@ -2,7 +2,9 @@ from typing import Dict, Any, List
 from datetime import datetime
 from .models import WorkflowConfig, WorkflowMetadata, SubmissionInfo
 from .client import TerraClient
+from forklift.forklift_logging import setup_logger
 
+logger = setup_logger("terra_submissions.py")
 
 class TerraSubmissions:
     """Class meant to handle Terra workflow/submissions"""
@@ -25,6 +27,11 @@ class TerraSubmissions:
         Returns:
             Dict containing submission response
         """
+        
+        logger.info(f"Submitting workflow with config:")
+        for key, value in config.dict().items():
+            logger.info(f"{key}: {value}")
+
         return self.client.post(
             "submissions",
             data=config.model_dump(exclude_none=True),
@@ -43,6 +50,7 @@ class TerraSubmissions:
             submission_id: ID of the submission to check
             use_destination: Whether to use destination workspace (True) or source workspace
         """
+        logger.info(f"Fetching status for submission ID: {submission_id}")
         return self.client.get(
             f"submissions/{submission_id}", use_destination=use_destination
         ).json()
