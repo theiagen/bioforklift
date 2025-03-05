@@ -36,7 +36,7 @@ class Terra:
             source_project=source_project,
             destination_workspace=destination_workspace,
             destination_project=destination_project,
-            credentials=credentials,
+            google_credentials_json=credentials,
             firecloud_api_url=firecloud_api_url,
         )
 

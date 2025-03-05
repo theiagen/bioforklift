@@ -359,7 +359,7 @@ class BigQuerySampleOperations:
                 prepared_df = self.prepare_samples_with_config(df, config)
             else:
                 prepared_df = self.prepare_samples_dataframe(df)
-            print("Length of prepared dataframe", len(prepared_df))
+
             filtered_count = initial_count - len(prepared_df)
 
             # Skip if all records were filtered
@@ -430,7 +430,10 @@ class BigQuerySampleOperations:
         hours_back: int = None,
         start_datetime: str = None, 
         end_datetime: str = None,
-        uploaded_filter: str = "not_uploaded"
+        uploaded_filter: str = "not_uploaded",
+        submitted_filter: str = "not_submitted",
+        config_id: str = None, 
+        set_name: str = None
     ) -> pd.DataFrame:
         """
         Retrieves samples based on a configurable timeframe.
@@ -442,6 +445,9 @@ class BigQuerySampleOperations:
             start_datetime: Start datetime in 'YYYY-MM-DD HH:MM:SS' format (used when timeframe is "custom")
             end_datetime: End datetime in 'YYYY-MM-DD HH:MM:SS' format (used when timeframe is "custom")
             uploaded_filter: Filter for uploaded status - "not_uploaded", "uploaded", "all"
+            submitted_filter: Filter for submission status - "not_submitted", "submitted", "all"
+            config_id: Configuration identifier to filter samples by
+            set_name: Name of the set to filter samples by
         
         Returns:
             DataFrame containing the samples matching the timefrime criteria
@@ -499,19 +505,37 @@ class BigQuerySampleOperations:
                     where_conditions.append("uploaded_at IS NOT NULL")
                 case "all":
                     pass
+                
+            submitted_filter = submitted_filter.lower() if submitted_filter else "all"
+            # Grab samples that have been submitted at yet or not
+            match submitted_filter:
+                case "not_submitted":
+                    where_conditions.append("submitted_at IS NULL")
+                case "submitted":
+                    where_conditions.append("submitted_at IS NOT NULL")
+                case "all":
+                    pass
             
             # Set up query parameters
             params = []
             
-            # Check if we have a config identifier field in attributes
-            config_id_field = self.get_config_identifier_field()
-                
-            if config_id_field:
-                where_conditions.append(f"{config_id_field} = @config_id")
-                params.append(
-                    bigquery.ScalarQueryParameter("config_id", "STRING", config_id_field)
-                )
+            if config_id:
+                config_id_field = self.get_config_identifier_field()
+                if config_id_field:
+                    where_conditions.append(f"{config_id_field} = @config_id")
+                    params.append(
+                        bigquery.ScalarQueryParameter("config_id", "STRING", config_id)
+                    )
+                else:
+                    print("Config identifier source field not found in sample schema, ignoring config_id filter")
             
+            # Add filter by set name (upload_source) if provided
+            if set_name:
+                where_conditions.append("upload_source = @set_name")
+                params.append(
+                    bigquery.ScalarQueryParameter("set_name", "STRING", set_name)
+                )
+                
             # Build complete query
             samples_query = f"""
             SELECT *

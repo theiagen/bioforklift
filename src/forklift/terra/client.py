@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from forklift.forklift_logging import setup_logger
 from google.auth.transport import requests as google_requests
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google.auth import default
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from .exceptions import (
@@ -40,7 +41,7 @@ class TerraClient:
         source_project: str,
         destination_workspace: Optional[str] = None,
         destination_project: Optional[str] = None,
-        credentials: Optional[Credentials] = None,
+        google_credentials_json: Optional[str] = None,
         firecloud_api_url: str = "https://api.firecloud.org/api",
         token_audience: str = "https://api.firecloud.org",
     ):
@@ -50,7 +51,10 @@ class TerraClient:
         self.destination_project = destination_project or source_project
         self.api_url = firecloud_api_url.rstrip("/")
         self.token_audience = token_audience
-        self._credentials = credentials or self._get_default_credentials()
+        if google_credentials_json:
+            self._credentials = self._get_credentials_from_json(google_credentials_json)
+        else:
+            self._credentials = self._get_default_credentials()
         # Set token explicitly to avoid refreshing on every request
         self._token = None
         self._token_expiry = None
@@ -67,6 +71,26 @@ class TerraClient:
                 "Failed to get Google Cloud credentials. "
                 "Make sure you're authenticated with gcloud or provide credentials explicitly. "
                 "Run 'gcloud auth application-default login'"
+            ) from error
+            
+    def _get_credentials_from_json(self, json_path: str) -> Credentials:
+        """Get Google Cloud credentials from a service account JSON file"""
+        try:
+            # Create credentials with appropriate scopes for Terra
+            scopes = [
+                "https://www.googleapis.com/auth/userinfo.profile",
+                "https://www.googleapis.com/auth/userinfo.email",
+                "https://www.googleapis.com/auth/cloud-platform"
+            ]
+            
+            credentials = service_account.Credentials.from_service_account_file(
+                json_path, scopes=scopes
+            )
+            
+            return credentials
+        except Exception as error:
+            raise TerraAuthenticationError(
+                f"Failed to load credentials from JSON file: {str(error)}"
             ) from error
 
     def _get_token(self) -> str:

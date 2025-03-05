@@ -13,7 +13,7 @@ class BigQueryClient:
         self,
         project: str,
         dataset: str,
-        credentials: Optional[Dict] = None,
+        credentials: Optional[str] = None,
         location: str = "us-central1",
     ):
         self.project = project
@@ -22,7 +22,8 @@ class BigQueryClient:
 
         # Initialize the actual client
         if credentials:
-            self.client = bigquery.Client.from_service_account_info(credentials)
+            credentials_json = json.loads(credentials)
+            self.client = bigquery.Client.from_service_account_info(credentials_json)
         else:
             self.client = bigquery.Client()
 
