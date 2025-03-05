@@ -72,6 +72,24 @@ class BigQueryConfigOperations:
                         config[field_name] = json.dumps(config[field_name])
 
         return config
+    
+    def get_prefix_fields(self) -> str:
+        """
+        Get the field name that is marked with use_as_prefix=True
+        
+        Returns:
+            String with the name of the field to be used as prefix
+        """
+        return next(
+            (
+                field_name
+                for field_name, attrs in self.field_attributes.items()
+                if attrs.get("use_as_prefix")
+            ),
+            None,
+        )
+        
+        
 
     def create_config(
         self, config_data: Union[Dict[str, Any], str, Path]

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Dict, Any, List
 import pandas as pd
 import yaml
@@ -165,7 +166,7 @@ def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFr
     # Extract field attributes based on input type
     field_attributes = {}
 
-    if isinstance(schema_info, str):
+    if isinstance(schema_info, str | Path):
         # Assume it's a path to a YAML file - solidfy to Path type in the future
         schema_result = load_schema_from_yaml(schema_info)
         field_attributes = schema_result["field_attributes"]

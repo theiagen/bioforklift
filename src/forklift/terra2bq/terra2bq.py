@@ -135,10 +135,12 @@ class Terra2BQ:
         Returns:
             Target entity name
         """
-        target_entity = config.get("terra_method_config", {}).get("entityType")
-        if not target_entity:
-            raise ValueError(f"Configuration {config.get('id')} is missing terra_entity_type field")
-        
+        try:
+            method_confiuration = json.loads(config.get("terra_method_config", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            raise ValueError(f"Invalid terra_method_config JSON in configuration: {config.get('id')}")
+            
+        target_entity = method_confiuration.get("entityType")
         target_entity_clean = target_entity.replace("_set", "")
         
         return target_entity_clean
@@ -327,12 +329,12 @@ class Terra2BQ:
         # Set up Terra client for this configuration if not already done
         if not self.terra:
             self.setup_terra_client(config)
-        
+        print(f"Destination datatable: {self.destination_datatable}")
         # Use the target entity from user provided value or configuration
         target_entity = self.destination_datatable
         if not target_entity:
             target_entity = self._get_target_entity_from_config(config)
-        logger.info(f"Uploading {len(upload_df)} samples to Terra entity: {target_entity}")
+        print(f"Uploading {len(upload_df)} samples to Terra entity: {target_entity}")
         
         try:
             uploaded_df = self.terra.entities.upload_entities(
@@ -340,11 +342,11 @@ class Terra2BQ:
                 target=target_entity,
                 use_destination=True
             )
-        except Exception as e:
-            logger.error(f"Failed to upload data to Terra: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Failed to upload data to Terra: {str(exc)}")
             return {
                 "status": "error", 
-                "message": f"Failed to upload to Terra: {str(e)}",
+                "message": f"Failed to upload to Terra: {str(exc)}",
                 "config_id": config.get("id")
             }
         
@@ -361,7 +363,8 @@ class Terra2BQ:
         current_project_time = project_datetime.strftime("%Y%m%d_%H%M%S")
 
         # Create set name using the formatted datetime in project timezone
-        set_name = f"{config.get('prefix', 'entity_type')}_{current_project_time}"
+        prefix_field = self.config_ops.get_prefix_fields()
+        set_name = f"{config.get(prefix_field)}_{current_project_time}"
         
         logger.info(f"Creating entity set in Terra: {set_name}")
         try:
@@ -371,11 +374,11 @@ class Terra2BQ:
                 entities=uploaded_df,
                 use_destination=True
             )
-        except Exception as e:
-            logger.error(f"Failed to create entity set in Terra: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Failed to create entity set in Terra: {str(exc)}")
             return {
                 "status": "error", 
-                "message": f"Failed to create entity set: {str(e)}",
+                "message": f"Failed to create entity set: {str(exc)}",
                 "config_id": config.get("id")
             }
         
@@ -536,48 +539,42 @@ class Terra2BQ:
                 
             logger.info(f"Workflow submitted successfully with ID: {submission_id}")
             
-        except Exception as e:
-            logger.error(f"Failed to submit workflow to Terra: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Failed to submit workflow to Terra: {str(exc)}")
             return {
                 "status": "error", 
-                "message": f"Failed to submit workflow: {str(e)}",
+                "message": f"Failed to submit workflow: {str(exc)}",
                 "config_id": config.get("id"),
                 "set_name": set_name
             }
         
-        # Update BigQuery records with workflow submission information
-        entity_names = []
-        for workflow in submission.get("workflows", []):
-            entity_name = workflow.get("workflowEntity", {}).get("entityName")
-            if entity_name:
-                entity_names.append(entity_name)
         
         current_time = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
         
         # Create updates for each entity
-        workflow_updates = []
-        for entity_name in entity_names:
-            # Get the BigQuery ID for the entity
-            id_value = samples_df["id"].tolist()
-            if id_value:
-                workflow_updates.append({
-                    "id": id,
-                    "submitted_at": current_time,
-                    "terra_submission_id": submission_id,
-                    "workflow_state": "Submitted"
-                }
-                for id in id_value)
+        id_values = samples_df["id"].tolist()
+        
+        workflow_updates = [
+            {
+                "id": id_value,
+                "submitted_at": current_time,
+                "terra_submission_id": submission_id,
+                "workflow_state": "Submitted"
+            }
+            for id_value in id_values
+        ]
+
         
         # Update BigQuery with workflow submission information
         if workflow_updates:
             logger.info(f"Updating {len(workflow_updates)} records with workflow submission information")
             workflow_update_result = self.samples_ops.bulk_update_samples(workflow_updates)
             
-        if workflow_update_result.get("failed_updates"):
-            logger.warning(
-                f"Failed to update {len(workflow_update_result['failed_updates'])} records "
-                f"with workflow information"
-            )
+            if workflow_update_result.get("failed_updates"):
+                logger.warning(
+                    f"Failed to update {len(workflow_update_result['failed_updates'])} records "
+                    f"with workflow information"
+                )
         
         # Return success results
         return {
@@ -585,7 +582,7 @@ class Terra2BQ:
             "config_id": config.get("id"),
             "set_name": set_name,
             "submission_id": submission_id,
-            "workflow_count": len(entity_names)
+            "workflow_count": len(samples_df)
         }
     
     def process_upload_and_submit(
@@ -611,7 +608,7 @@ class Terra2BQ:
                 raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided")
             
             # 1. Get samples from BigQuery that need to be uploaded
-            logger.info(f"Retrieving samples that need to be uploaded to Terra")
+            print(f"Retrieving samples that need to be uploaded to Terra")
             samples_df = self.samples_ops.get_samples_by_timeframe(
                 timeframe=self.lookup_timeframe,
                 days_back=self.lookup_days_back,
@@ -619,6 +616,7 @@ class Terra2BQ:
                 uploaded_filter="not_uploaded",
                 config_id=config.get("id")
             )
+            print (f"Samples_df: {len(samples_df)}")
             
             if samples_df.empty:
                 logger.info("No samples to upload")
@@ -629,15 +627,17 @@ class Terra2BQ:
             
             # Prepare upload DataFrame by removing system columns
             upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
-            logger.info(f"Prepared {len(upload_df)} samples for upload to Terra")
+            print(f"Prepared {len(upload_df)} samples for upload to Terra")
             
             # 2. Upload data to Terra and create entity set
             upload_result = self.upload_to_terra(config, samples_df, upload_df)
-            
+            print(f"Upload result: {upload_result}")
             if upload_result.get("status") != "success":
                 return upload_result
             
+            print(f"Upload successful, created entity set: {upload_result.get('set_name')}")
             set_name = upload_result.get("set_name")
+            print(f"Upload successful, created entity set: {set_name}")
             if not set_name:
                 return {
                     "status": "error",
@@ -659,6 +659,7 @@ class Terra2BQ:
             
             # 4. Submit workflow
             submission_result = self.submit_workflow(config, set_name, submission_samples)
+            print(f"Submission result: {submission_result}")
             
             # Combine results
             combined_result = {
@@ -668,11 +669,11 @@ class Terra2BQ:
             
             return combined_result
             
-        except Exception as e:
-            logger.error(f"Error processing configuration {config.get('id')}: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Error processing configuration {config.get('id')}: {str(exc)}")
             return {
                 "status": "error",
-                "message": str(e),
+                "message": str(exc),
                 "config_id": config.get("id")
             }
 
@@ -693,12 +694,15 @@ class Terra2BQ:
         try:
             # 1. Download data from Terra and load into BigQuery
             download_result = self.download_from_terra_to_bigquery(config)
+            print(f"Download result: {download_result}")
             
             if download_result.get("status") != "success":
                 return download_result
             
             # 2. Upload to Terra and submit workflow
+            print(f"Processing configuration {config.get('id')}")
             process_result = self.process_upload_and_submit(config)
+            logger.info(f"Process result: {process_result}")
             
             # Combine results from both steps
             combined_result = {
@@ -709,11 +713,11 @@ class Terra2BQ:
             
             return combined_result
             
-        except Exception as e:
-            logger.error(f"Error processing configuration {config.get('id')}: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Error processing configuration {config.get('id')}: {str(exc)}")
             return {
                 "status": "error",
-                "message": str(e),
+                "message": str(exc),
                 "config_id": config.get("id")
             }
     

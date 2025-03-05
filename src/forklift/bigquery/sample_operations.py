@@ -359,7 +359,7 @@ class BigQuerySampleOperations:
                 prepared_df = self.prepare_samples_with_config(df, config)
             else:
                 prepared_df = self.prepare_samples_dataframe(df)
-            print("Length of prepared dataframe", len(prepared_df))
+
             filtered_count = initial_count - len(prepared_df)
 
             # Skip if all records were filtered
@@ -527,7 +527,7 @@ class BigQuerySampleOperations:
                         bigquery.ScalarQueryParameter("config_id", "STRING", config_id)
                     )
                 else:
-                    print("Config identifier field not found in schema, ignoring config_id filter")
+                    print("Config identifier source field not found in sample schema, ignoring config_id filter")
             
             # Add filter by set name (upload_source) if provided
             if set_name:

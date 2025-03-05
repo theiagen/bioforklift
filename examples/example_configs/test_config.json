@@ -8,10 +8,10 @@
     "terra_destination_project": "cdph-terrabio-taborda-manual",
     "terra_destination_workspace": "CDPH_Automation_Development",
     "active": true,
-    "terra_analysis_method": "TheiaCoV_Illumina_PE_PHB_dashboard",
+    "terra_analysis_method": "TheiaCoV_Illumina_PE_PHB",
     "terra_method_config": {
       "methodConfigurationNamespace": "cdph-terrabio-taborda-manual",
-      "methodConfigurationName": "TheiaCoV_Illumina_PE_PHB_dashboard",
+      "methodConfigurationName": "TheiaCoV_Illumina_PE_PHB",
       "entityType": "target_set",
       "entityName": "test-specimen-{date}",
       "expression": "this.targets",
