@@ -3,6 +3,9 @@ from typing import Dict, Any, List
 import pandas as pd
 import yaml
 from google.cloud.bigquery import SchemaField
+from forklift.forklift_logging import setup_logger
+
+logger = setup_logger(__name__)
 
 # Utils mostly for handling schema and data transformations between BigQuery / yaml / pandas
 # This is a good place to put functions that don't fit into the main BigQueryClient class
@@ -48,12 +51,14 @@ def create_schema_field(name: str, field_def: Dict[str, Any]) -> Dict[str, Any]:
                 fields: list (optional, for RECORD type)
             }
     """
+    logger.info(f"Creating schema field: {name} - {field_def}")
     field_type = parse_field_type(field_def["type"])
     mode = parse_mode(field_def.get("required", False))
     description = field_def.get("description", "")
 
     # Handle nested records
     if field_type == "RECORD":
+        logger.info(f"Creating nested record: {name}")
         sub_fields = []
         for sub_name, sub_def in field_def.get("fields", {}).items():
             sub_fields.append(create_schema_field(sub_name, sub_def))
@@ -68,7 +73,9 @@ def create_schema_field(name: str, field_def: Dict[str, Any]) -> Dict[str, Any]:
     # Handle arrays - repeated mode for simple types, record mode for nested records
     # https://cloud.google.com/bigquery/docs/nested-repeated
     elif field_type == "ARRAY":
+        logger.info(f"Creating array field: {name}")
         if "items" not in field_def:
+            logger.error(f"Array field '{name}' must specify 'items' type")
             raise ValueError(f"Array field '{name}' must specify 'items' type")
 
         item_def = field_def["items"]
@@ -132,6 +139,8 @@ def load_schema_from_yaml(yaml_path: str) -> Dict[str, Any]:
             type: datetime
     ```
     """
+    logger.info(f"Loading schema from yaml: {yaml_path}")
+
     with open(yaml_path) as f:
         schema_def = yaml.safe_load(f)
 
@@ -164,6 +173,7 @@ def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFr
         df with system_value columns removed
     """
     # Extract field attributes based on input type
+    logger.info("Dropping columns marked as system_value from DataFrame")
     field_attributes = {}
 
     if isinstance(schema_info, str | Path):
@@ -178,6 +188,7 @@ def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFr
             # Assume it's already a field_attributes dictionary - maybe from a previous call
             field_attributes = schema_info
     else:
+        logger.error("schema_info must be a YAML file path, schema dictionary, or field attributes dictionary")
         raise TypeError(
             "schema_info must be a YAML file path, schema dictionary, or field attributes dictionary"
         )

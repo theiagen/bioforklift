@@ -10,7 +10,7 @@ def setup_logger(
         level: int = logging.INFO,
         max_bytes: int = 5_242_880,  # 5MB
         backup_count: int = 3,
-        log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s"
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level)

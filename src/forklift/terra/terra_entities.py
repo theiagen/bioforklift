@@ -96,7 +96,7 @@ class TerraEntities:
         upload_data.to_csv(tsv_buffer, sep="\t", index=False)
         tsv_content = tsv_buffer.getvalue()
 
-        logger.info("Entities formatted for upload to {target}")
+        logger.info(f"Entities formatted for upload to {target}")
 
         endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
 
