@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 import uuid
 import pandas as pd
 from google.cloud import bigquery
@@ -217,7 +217,7 @@ class BigQuerySampleOperations:
             (
                 field_name
                 for field_name, attrs in self.field_attributes.items()
-                if attrs.get("config_identifier")
+                if attrs.get("config_identifier") or attrs.get("configuration_identifier") or attrs.get("config_id")
             ),
             None,
         )
@@ -664,7 +664,7 @@ class BigQuerySampleOperations:
                         bigquery.ScalarQueryParameter(param_name, param_type, value)
                     )
 
-            # Build update query
+            # Build update query, automatically update updated_at field
             update_query = f"""
             UPDATE `{self.table_name}`
             SET 
@@ -731,3 +731,301 @@ class BigQuerySampleOperations:
                 "updated_ids": [],
                 "failed_updates": failed_updates,
             }
+            
+    def query_samples(
+        self,
+        conditions: List[str] = None,
+        parameters: Dict[str, Any] = None,
+        fields: List[str] = None,
+        order_by: str = "created_at DESC",
+        limit: int = None,
+        return_as_df: bool = True
+    ) -> Union[pd.DataFrame, List[Dict[str, Any]]]:
+        """
+        Execute a custom query against the samples table with flexible conditions.
+        
+        Args:
+            conditions: List of SQL WHERE conditions (will be joined with AND)
+            parameters: Dictionary of query parameters (for safe parameterized queries)
+            fields: List of fields to select (defaults to all fields)
+            order_by: Field(s) to order results by
+            limit: Maximum number of results to return
+            return_as_df: Whether to return results as DataFrame (True) or list of dicts (False)
+            
+        Returns:
+            Either pandas DataFrame or list of dictionaries with query results
+        """
+        # Needed to add more generic query function to allow for more flexible querying
+        try:
+            # Set default values
+            if conditions is None:
+                conditions = []
+            if parameters is None:
+                parameters = {}
+            
+            # Build field selection
+            select_clause = "*"
+            if fields:
+                select_clause = ", ".join(fields)
+            
+            # Build WHERE clause
+            where_clause = ""
+            if conditions:
+                where_clause = f"WHERE {' AND '.join(conditions)}"
+            
+            # Build ORDER BY clause
+            order_clause = ""
+            if order_by:
+                order_clause = f"ORDER BY {order_by}"
+            
+            # Build LIMIT clause
+            limit_clause = ""
+            if limit:
+                limit_clause = f"LIMIT {limit}"
+            
+            # Construct full query
+            query = f"""
+            SELECT {select_clause}
+            FROM `{self.table_name}`
+            {where_clause}
+            {order_clause}
+            {limit_clause}
+            """
+            
+            # Set up query parameters
+            query_params = []
+            for name, value in parameters.items():
+                # Determine parameter type based on Python type
+                param_type = "STRING"
+                if isinstance(value, int):
+                    param_type = "INT64"
+                elif isinstance(value, float):
+                    param_type = "FLOAT64"
+                elif isinstance(value, bool):
+                    param_type = "BOOL"
+                elif isinstance(value, (datetime, pd.Timestamp)):
+                    param_type = "TIMESTAMP"
+                
+                query_params.append(
+                    bigquery.ScalarQueryParameter(name, param_type, value)
+                )
+            
+            # Configure and execute query
+            job_config = bigquery.QueryJobConfig()
+            job_config.query_parameters = query_params
+            
+            query_job = self.bq_client.query(query, job_config=job_config)
+            results = query_job.result()
+            
+            # Convert to desired output format
+            if return_as_df:
+                return pd.DataFrame([dict(row) for row in results])
+            else:
+                return [dict(row) for row in results]
+        
+        except Exception as exc:
+            raise RuntimeError(f"Error executing query: {str(exc)}")
+
+    def get_unique_submission_ids(
+        self,
+        config_id: str,
+        need_workflow_id: bool = True,
+        days_back: int = 30
+    ) -> List[str]:
+        """
+        Get unique Terra submission IDs for samples associated with a configuration.
+        
+        Args:
+            config_id: Configuration ID to filter by
+            need_workflow_id: If True, only return IDs for samples missing workflow IDs
+            days_back: Number of days to look back
+            
+        Returns:
+            List of unique submission IDs
+        """
+        try:
+            # Get config identifier field
+            config_identifier_field = self.get_config_identifier_field()
+            if not config_identifier_field:
+                raise ValueError("No config_identifier field defined in sample schema")
+            
+            # Build query conditions
+            conditions = [
+                f"{config_identifier_field} = @config_id",
+                "terra_submission_id IS NOT NULL",
+                "terra_submission_id != ''",
+                f"created_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL {days_back} DAY)"
+            ]
+            
+            # Add workflow id condition if needed
+            if need_workflow_id:
+                conditions.append("(terra_workflow_id IS NULL OR terra_workflow_id = '')")
+            
+            # Execute a simpler query that doesn't try to order by created_at
+            query = f"""
+            SELECT DISTINCT terra_submission_id
+            FROM `{self.table_name}`
+            WHERE {' AND '.join(conditions)}
+            """
+            
+            # Configure and execute query
+            job_config = bigquery.QueryJobConfig()
+            job_config.query_parameters = [
+                bigquery.ScalarQueryParameter("config_id", "STRING", config_id)
+            ]
+            
+            query_job = self.bq_client.query(query, job_config=job_config)
+            results = query_job.result()
+            
+            # Extract submission IDs
+            submission_ids = [row.terra_submission_id for row in results if row.terra_submission_id]
+            
+            return submission_ids
+            
+        except Exception as exc:
+            raise RuntimeError(f"Error getting unique submission IDs: {str(exc)}")
+
+    def get_samples_by_entity_names(
+        self,
+        config_id: str,
+        entity_names: List[str]
+    ) -> pd.DataFrame:
+        """
+        Get samples matching specific entity names for a configuration.
+        
+        Args:
+            config_id: Configuration ID to filter by
+            entity_names: List of entity names to match
+            
+        Returns:
+            DataFrame containing matched samples
+        """
+        try:
+            if not entity_names:
+                return pd.DataFrame()  # Return empty DataFrame if no entity names provided
+                
+            # Get config identifier field
+            config_identifier_field = self.get_config_identifier_field()
+            if not config_identifier_field:
+                raise ValueError("No config_identifier field defined in sample schema")
+            
+            # Get sample identifier field
+            sample_identifier_field = self.get_sample_identifier_field()
+            if not sample_identifier_field:
+                raise ValueError("No sample_identifier field defined in sample schema")
+            
+            # Create parameter placeholders for entity names
+            placeholders = []
+            params = {"config_id": config_id}
+            
+            for i, name in enumerate(entity_names):
+                param_name = f"entity_{i}"
+                placeholders.append(f"@{param_name}")
+                params[param_name] = name
+            
+            # Build conditions, use standard IN operator with the list of parameters
+            conditions = [
+                f"{config_identifier_field} = @config_id",
+                f"{sample_identifier_field} IN ({', '.join(placeholders)})"
+            ]
+            
+            # Execute query
+            return self.query_samples(
+                conditions=conditions,
+                parameters=params
+            )
+            
+        except Exception as exc:
+            raise RuntimeError(f"Error getting samples by entity names: {str(exc)}")
+
+    def get_incomplete_workflow_samples(
+        self,
+        config_id: str,
+        days_back: int = 30,
+        limit: int = 1000
+    ) -> pd.DataFrame:
+        """
+        Get samples with incomplete workflow states.
+        
+        Args:
+            config_id: Configuration ID to filter by
+            days_back: Number of days to look back
+            limit: Maximum number of samples to return
+            
+        Returns:
+            DataFrame containing samples with incomplete workflow states
+        """
+        # Sometimes workflow metadata is not immediately available, so we need to check for incomplete states
+        try:
+            # Get config identifier field
+            config_identifier_field = self.get_config_identifier_field()
+            if not config_identifier_field:
+                raise ValueError("No config_identifier field defined in sample schema")
+            
+            # Build conditions
+            conditions = [
+                f"{config_identifier_field} = @config_id",
+                "terra_workflow_id IS NOT NULL",
+                "terra_workflow_id != ''",
+                "(workflow_state IS NULL OR workflow_state = '' OR workflow_state NOT IN ('Succeeded', 'Failed', 'Aborted'))",
+                f"created_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL {days_back} DAY)"
+            ]
+            
+            # Execute query
+            return self.query_samples(
+                conditions=conditions,
+                parameters={"config_id": config_id},
+                limit=limit
+            )
+            
+        except Exception as exc:
+            raise RuntimeError(f"Error getting incomplete workflow samples: {str(exc)}")
+
+    def get_workflow_state_summary(
+        self,
+        config_id: str
+    ) -> Dict[str, int]:
+        """
+        Get a summary of workflow states for a configuration.
+        
+        Args:
+            config_id: Configuration ID to filter by
+            
+        Returns:
+            Dictionary mapping workflow states to counts
+        """
+        try:
+            # Get config identifier field
+            config_identifier_field = self.get_config_identifier_field()
+            if not config_identifier_field:
+                raise ValueError("No config_identifier field defined in sample schema")
+            
+            # Build query
+            query = f"""
+            SELECT workflow_state, COUNT(*) as count
+            FROM `{self.table_name}`
+            WHERE {config_identifier_field} = @config_id
+            GROUP BY workflow_state
+            """
+            
+            # Configure and execute query
+            job_config = bigquery.QueryJobConfig()
+            job_config.query_parameters = [
+                bigquery.ScalarQueryParameter("config_id", "STRING", config_id)
+            ]
+            
+            query_job = self.bq_client.query(query, job_config=job_config)
+            results = query_job.result()
+            
+            # Build summary dictionary
+            summary = {}
+            for row in results:
+                state = row.get('workflow_state')
+                if state is None:
+                    state = 'None'
+                summary[state] = row.get('count', 0)
+            
+            return summary
+            
+        except Exception as exc:
+            raise RuntimeError(f"Error getting workflow state summary: {str(exc)}")

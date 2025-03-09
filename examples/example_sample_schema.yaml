@@ -13,6 +13,13 @@ fields:
     description: External entity identifier
     sample_identifier: true
 
+  config_id:
+    type: string
+    description: Configuration ID
+    inherit_from_config: id
+    configuration_identifier: true # Maybe roll this into wher inherit_from_config is set to id
+    system_value: true
+
   read1:
     type: string
     description: Read 1 sequence
