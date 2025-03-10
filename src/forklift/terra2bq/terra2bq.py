@@ -192,11 +192,11 @@ class Terra2BQ:
         # Determine destination workspace/project else fall back to source if not specified
         destination_workspace = self.destination_workspace
         if not destination_workspace:
-            destination_workspace = config.get("terra_destination_workspace", source_workspace)
-        
+            destination_workspace = config.get("terra_destination_workspace", destination_workspace)
+    
         destination_project = self.destination_project
         if not destination_project:
-            destination_project = config.get("terra_destination_project", source_project)
+            destination_project = config.get("terra_destination_project", destination_project)
         
         # Initialize Terra client
         self.terra = Terra(
@@ -723,168 +723,6 @@ class Terra2BQ:
                 "config_id": config.get("id")
             }
     
-    def sync_metadata_from_workflows(
-        self, 
-        days_back: int = 30,
-        update_terra: bool = True
-    ) -> Dict[str, Any]:
-        """
-        Sync workflow metadata from Terra to BigQuery and optionally back to Terra.
-        
-        This method:
-        1. Gets samples that have been submitted to Terra in the last X days
-        2. Checks Terra for workflow status updates
-        3. Updates BigQuery with the latest workflow status
-        4. Optionally updates Terra entities with metadata from workflows
-        
-        Args:
-            days_back: Number of hours to look back for submitted samples
-            update_terra: Whether to update Terra entities with metadata
-            
-        Returns:
-            Dictionary with sync results
-        """
-        self.initialize_operations()
-        
-        if not self.samples_ops:
-            raise ValueError("Sample operations not initialized")
-        
-        # Get samples that have been submitted within the time window
-        logger.info(f"Fetching samples submitted in the last {days_back} hours")
-        submitted_samples = self.samples_ops.get_samples_by_timeframe(
-            timeframe=self.lookup_timeframe,
-            days_back=self.lookup_days_back,
-            hours_back=self.lookup_hours_back,
-            uploaded_filter="uploaded",
-            submitted_filter="submitted"
-        )
-        
-        if submitted_samples.empty:
-            logger.info(f"No samples found that were submitted in the last {days_back} hours")
-            return {"status": "no_data", "synced_count": 0}
-        
-        # Get samples with Terra submission IDs
-        submitted_samples = submitted_samples[submitted_samples["terra_submission_id"].notna()]
-        
-        if submitted_samples.empty:
-            logger.info("No samples found with Terra submission IDs")
-            return {"status": "no_data", "synced_count": 0}
-        
-        # Group samples by terra_submission_id
-        submissions_groups = submitted_samples.groupby("terra_submission_id")
-        
-        total_updated = 0
-        failed_updates = []
-        
-        # Process each submission
-        for submission_id, group in submissions_groups:
-            if not self.terra:
-                # Try to guess the Terra workspace from the first sample's upload_source
-                first_sample = group.iloc[0]
-                config_id = first_sample.get("config_identifier")
-                
-                if config_id:
-                    config = self.config_ops.get_config(config_id)
-                    if config:
-                        self.setup_terra_client(config)
-                    else:
-                        logger.error(f"Could not find configuration for ID: {config_id}")
-                        continue
-                else:
-                    logger.error("No Terra client set up and no config identifier found in sample")
-                    continue
-            
-            try:
-                # Get submission status
-                submission_status = self.terra.submissions.get_submission_status(submission_id)
-                
-                # Get workflows for this submission
-                workflows = self.terra.submissions.get_workflows_by_submission(submission_id)
-                
-                # Create a mapping of entity names to workflow statuses
-                entity_to_workflow = {}
-                for workflow in workflows:
-                    if workflow.entity_name:
-                        entity_to_workflow[workflow.entity_name] = {
-                            "workflow_id": workflow.workflow_id,
-                            "status": workflow.status
-                        }
-                
-                # Prepare updates for bigquery
-                updates = []
-                for _, sample in group.iterrows():
-                    sample_id = sample.get("id")
-                    entity_id = sample.get("entity_identifier")
-                    
-                    if entity_id and entity_id in entity_to_workflow:
-                        workflow_info = entity_to_workflow[entity_id]
-                        updates.append({
-                            "id": sample_id,
-                            "workflow_state": workflow_info["status"],
-                            "terra_workflow_id": workflow_info["workflow_id"],
-                            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        })
-                
-                # Update bigquery with workflow statuses
-                if updates:
-                    logger.info(f"Updating {len(updates)} records with workflow status for submission {submission_id}")
-                    update_result = self.samples_ops.bulk_update_samples(updates)
-                    
-                    if update_result.get("failed_updates"):
-                        failed_updates.extend(update_result["failed_updates"])
-                    
-                    total_updated += update_result.get("updated_count", 0)
-                
-                # If requested, update Terra entities with additional metadata
-                if update_terra:
-                    # Get the sync fields from the sample schema
-                    sync_fields = self.samples_ops.get_sync_fields()
-                    
-                    if sync_fields:
-                        for _, sample in group.iterrows():
-                            entity_id = sample.get("entity_identifier")
-                            
-                            if entity_id and entity_id in entity_to_workflow:
-                                # Create a dictionary of fields to update
-                                entity_updates = {}
-                                for field in sync_fields:
-                                    if field in sample and sample[field] is not None:
-                                        entity_updates[field] = sample[field]
-                                
-                                if entity_updates:
-                                    # Only update if there are fields to update
-                                    try:
-                                        # Determine entity type from config or default to "data"
-                                        config_id = sample.get("config_identifier")
-                                        entity_type = "data"  # Default
-                                        
-                                        if config_id:
-                                            config = self.config_ops.get_config(config_id)
-                                            if config:
-                                                entity_type = config.get("entity_type", "data")
-                                        
-                                        logger.info(f"Updating Terra entity {entity_id} with fields: {entity_updates.keys()}")
-                                        self.terra.entities.update_entity_attributes(
-                                            entity_type=entity_type,
-                                            entity_id=entity_id,
-                                            attributes=entity_updates
-                                        )
-                                    except Exception as exc:
-                                        logger.error(f"Failed to update Terra entity {entity_id}: {str(exc)}")
-                
-            except Exception as exc:
-                logger.error(f"Error processing submission {submission_id}: {str(exc)}")
-                failed_updates.append({
-                    "submission_id": submission_id,
-                    "error": str(exc)
-                })
-        
-        return {
-            "status": "success" if total_updated > 0 else "no_updates",
-            "synced_count": total_updated,
-            "failed_updates": failed_updates
-        }
-    
     def process_all_configs(self, entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Process all active configurations.
@@ -939,3 +777,598 @@ class Terra2BQ:
                 })
         
         return results
+    
+    def sync_metadata_from_workflows(
+        self, 
+        days_back: int = 30,
+        update_bigquery: bool = True,
+        update_destination: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Sync metadata between Terra data tables and BigQuery, and update destination Terra datatable.
+        
+        This method:
+        1. Gets samples from BigQuery that were created/updated in the last X days
+        2. Downloads Terra data tables for active configurations
+        3. Compares fields marked with sync_field=true
+        4. Updates BigQuery records where sync fields are empty in BigQuery but filled in Terra
+        5. Updates destination Terra datatable ONLY for the entities that were just updated in BigQuery
+        
+        Args:
+            days_back: Number of days to look back for samples
+            update_bigquery: Whether to update BigQuery with Terra metadata (set to False for dry run)
+            update_destination: Whether to update destination Terra datatable (set to False for dry run)
+            
+        Returns:
+            Dictionary with sync results
+        """
+        # This is a complex operation that requires multiple steps
+        # I needed to put it all here to make it functional and follow the logic
+        # But would look good broken down
+        self.initialize_operations()
+        
+        if not self.samples_ops:
+            raise ValueError("Sample operations not initialized")
+        
+        # Get active configurations
+        configs = self.get_active_configs()
+        if not configs:
+            logger.info("No active configurations found")
+            return {"status": "no_configs", "synced_count": 0}
+        
+        # Get samples from BigQuery created/updated in specified timeframe
+        logger.info(f"Fetching samples created/updated in the last {days_back} days")
+        
+        # Use custom timeframe with days_back
+        bq_samples_df = self.samples_ops.get_samples_by_timeframe(
+            timeframe="custom",
+            days_back=days_back,
+            uploaded_filter="all",  # Get all samples regardless of upload status - here we are syncing metadata
+            submitted_filter="all"  # Get all samples regardless of submission status
+        )
+        
+        if bq_samples_df.empty:
+            logger.info(f"No samples found in the last {days_back} days")
+            return {"status": "no_samples", "synced_count": 0}
+        
+        # Get the fields that should be synced
+        sync_fields = self.samples_ops.get_sync_fields()
+        if not sync_fields:
+            logger.info("No sync fields defined in the sample schema")
+            return {"status": "no_sync_fields", "synced_count": 0}
+        
+        logger.info(f"Found {len(sync_fields)} fields to sync: {sync_fields}")
+        
+        # Track metrics for reporting
+        bq_updated_count = 0
+        destination_updated_count = 0
+        failed_updates = []
+        processed_configs = 0
+        
+        # Process each active configuration
+        for config in configs:
+            try:
+                processed_configs += 1
+                config_id = config.get('id')
+                entity_type = config.get('entity_type')
+                
+                # Determine destination entity type
+                destination_entity_type = self._get_target_entity_from_config(config)
+                
+                if not entity_type:
+                    logger.warning(f"Configuration {config_id} missing entity_type field, skipping")
+                    continue
+                
+                # Set up Terra client for this configuration
+                self.setup_terra_client(config)
+                
+                # Get samples from BigQuery for this configuration
+                config_identifier_field = self.samples_ops.get_config_identifier_field()
+                if not config_identifier_field:
+                    logger.warning(f"No config_identifier field defined in sample schema, skipping config {config_id}")
+                    continue
+                    
+                # Filter samples by this configuration
+                config_samples = bq_samples_df[bq_samples_df[config_identifier_field] == config_id].copy()
+                
+                if config_samples.empty:
+                    logger.info(f"No samples found for configuration {config_id}")
+                    continue
+                    
+                logger.info(f"Processing {len(config_samples)} samples for configuration {config.get('name')} ({config_id})")
+                
+                # Get the sample identifier field
+                sample_identifier_field = self.samples_ops.get_sample_identifier_field()
+                if not sample_identifier_field:
+                    logger.warning(f"No sample_identifier field defined in sample schema, skipping config {config_id}")
+                    continue
+                
+                # STEP 1: Download data from Terra and update BigQuery
+                terra_df = None
+                try:
+                    logger.info(f"Downloading data from Terra entity type: {entity_type}")
+                    terra_df = self.terra.entities.download_table(entity_type)
+                    
+                    if terra_df.empty:
+                        logger.info(f"No data found in Terra table: {entity_type}")
+                        continue
+                        
+                    logger.info(f"Downloaded {len(terra_df)} samples from Terra")
+                    
+                except Exception as exc:
+                    logger.error(f"Failed to download data from Terra: {str(exc)}")
+                    failed_updates.append({
+                        "config_id": config_id,
+                        "error": f"Failed to download data from Terra: {str(exc)}"
+                    })
+                    continue
+                
+                # Prepare updates list for BigQuery
+                bq_updates = []
+                
+                # Dictionary to track which entities were updated and with what fields
+                updated_entities = {}
+                
+                # For each sample in BigQuery, check if it exists in Terra
+                for _, bq_sample in config_samples.iterrows():
+                    bq_id = bq_sample['id']  # BigQuery primary key
+                    entity_id = bq_sample[sample_identifier_field]  # Terra entity identifier
+                    
+                    # Try to find this entity in the Terra data
+                    terra_rows = terra_df[terra_df.iloc[:, 0] == entity_id]
+                    
+                    if terra_rows.empty:
+                        # Entity not found in Terra data
+                        continue
+                    
+                    # Take the first matching row, should only be one for that configuration
+                    terra_row = terra_rows.iloc[0]
+                    
+                    # Check each sync field
+                    sample_update = {"id": bq_id}
+                    entity_updates = {}
+                    needs_update = False
+                    
+                    for field_to_sync in sync_fields:
+                        # Skip fields that already have values in BigQuery
+                        if field_to_sync in bq_sample and pd.notna(bq_sample[field_to_sync]) and bq_sample[field_to_sync] != "":
+                            continue
+                        
+                        # Get column name in Terra data, column name might be in terra table or needs to be mapped
+                        terra_field = None
+                        
+                        # First try exact match
+                        if field_to_sync in terra_row:
+                            terra_field = field_to_sync
+                        else:
+                            # Try to find a matching column based on field_attributes.column_mappings
+                            for col_name in terra_row.index:
+                                if (field_to_sync in self.samples_ops.field_attributes and 
+                                    'column_mappings' in self.samples_ops.field_attributes[field_to_sync]):
+                                    mappings = self.samples_ops.field_attributes[field_to_sync]['column_mappings']
+                                    if isinstance(mappings, str):
+                                        mappings = [mappings]
+                                    
+                                    if col_name in mappings:
+                                        terra_field = col_name
+                                        break
+                        
+                        if terra_field and pd.notna(terra_row[terra_field]) and terra_row[terra_field] != "":
+                            value = terra_row[terra_field]
+                            sample_update[field_to_sync] = value
+                            entity_updates[field_to_sync] = value
+                            needs_update = True
+                    
+                    if needs_update:
+                        bq_updates.append(sample_update)
+                        # Track which entities were updated and with what fields
+                        updated_entities[entity_id] = entity_updates
+                
+                # Perform BigQuery updates if any
+                if bq_updates and update_bigquery:
+                    logger.info(f"Updating {len(bq_updates)} samples with metadata from Terra")
+                    try:
+                        update_result = self.samples_ops.bulk_update_samples(bq_updates)
+                        
+                        if update_result.get("failed_updates"):
+                            failed_updates.extend(update_result["failed_updates"])
+                        
+                        actual_updates = update_result.get("updated_count", 0)
+                        bq_updated_count += actual_updates
+                        
+                        logger.info(f"Successfully updated {actual_updates} samples in BigQuery")
+                        
+                        # If no actual updates, clear the updated_entities list
+                        if actual_updates == 0:
+                            updated_entities = {}
+                        
+                    except Exception as update_exc:
+                        logger.error(f"Error updating samples for config {config_id}: {str(update_exc)}")
+                        failed_updates.append({
+                            "config_id": config_id,
+                            "error": str(update_exc)
+                        })
+                        # Clear updated_entities since the update failed
+                        updated_entities = {}
+                elif bq_updates:
+                    # Dry run - don't perform updates
+                    logger.info(f"This is a Dry Run, would update {len(bq_updates)} samples with metadata from Terra")
+                    bq_updated_count += len(bq_updates)
+                else:
+                    # No updates needed
+                    logger.info(f"No BQ updates needed for config {config_id} - all sync fields are up to date")
+                
+                # Update only the entities in destination Terra that were just updated in BigQuery
+                if updated_entities and update_destination:
+                    logger.info(f"Updating {len(updated_entities)} entities in destination Terra datatable that were just updated in BigQuery")
+                    updated_successfully = 0
+                    
+                    for entity_id, attributes in updated_entities.items():
+                        try:
+                            print(f"Updating entity {entity_id} with {attributes} in {destination_entity_type}")
+                            
+                            if update_destination:  # Actually perform the update
+                                res = self.terra.entities.update_entity_attributes(
+                                    entity_type=destination_entity_type,
+                                    entity_id=entity_id,
+                                    attributes=attributes,
+                                    use_destination=True
+                                )
+                                updated_successfully += 1
+                            else:  # Dry run
+                                logger.info(f"Would update entity {entity_id} with {attributes}")
+                                updated_successfully += 1
+                                
+                        except Exception as terra_exc:
+                            logger.error(f"Error updating Terra entity {entity_id}: {str(terra_exc)}")
+                            failed_updates.append({
+                                "config_id": config_id,
+                                "entity_id": entity_id,
+                                "error": str(terra_exc)
+                            })
+                    
+                    destination_updated_count += updated_successfully
+                    logger.info(f"Successfully updated {updated_successfully} entities in destination Terra datatable")
+                elif updated_entities:
+                    # Dry run with updates
+                    logger.info(f"Would update {len(updated_entities)} entities in destination Terra datatable (dry run)")
+                    destination_updated_count += len(updated_entities)
+                else:
+                    # No updates to destination needed
+                    logger.info(f"No destination Terra updates needed - no entities were updated in BigQuery")
+                    
+            except Exception as exc:
+                logger.error(f"Error processing configuration {config.get('id')}: {str(exc)}")
+                failed_updates.append({
+                    "config_id": config.get('id'),
+                    "error": str(exc)
+                })
+        
+        # Return results
+        return {
+            "status": "success" if (bq_updated_count > 0 or destination_updated_count > 0) else "no_updates",
+            "bq_updated_count": bq_updated_count,
+            "destination_updated_count": destination_updated_count,
+            "total_updated_count": bq_updated_count + destination_updated_count,
+            "processed_configs": processed_configs,
+            "failed_updates": failed_updates
+        }
+    
+    def update_workflow_status(
+        self, 
+        days_back: int = 30,
+        batch_size: int = 100,
+        update_bigquery: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Update workflow_ids and states from Terra submissions.
+        
+        This method:
+        1. Finds samples in BigQuery that have terra_submission_id but no terra_workflow_id
+        2. Fetches workflow information from Terra for each submission
+        3. Updates BigQuery records with workflow ids and states
+        4. Optionally updates workflow states for workflows with ids but incomplete states
+        
+        Args:
+            days_back: Number of days to look back for samples
+            batch_size: Number of updates to batch together
+            update_bigquery: Whether to update BigQuery
+            
+        Returns:
+            Dictionary with update results
+        """
+        # Same thing as function above, will want to make this more modular
+        # But need to follow the logic all the way down first
+        # I struggle with breaking things down for bigquery since it's so operationally heavy
+        self.initialize_operations()
+        
+        if not self.samples_ops:
+            raise ValueError("Sample operations not initialized")
+        
+        # Get active configurations
+        configs = self.get_active_configs()
+        if not configs:
+            logger.info("No active configurations found")
+            return {"status": "no_configs", "updated_count": 0}
+        
+        # Track metrics for reporting
+        total_updated = 0
+        submission_count = 0
+        failed_updates = []
+        processed_configs = 0
+        status_summary = {}
+        
+        # Process each active configuration
+        for config in configs:
+            try:
+                processed_configs += 1
+                config_id = config.get('id')
+                
+                # Set up Terra client for this configuration
+                self.setup_terra_client(config)
+                
+                # Get config identifier field
+                config_identifier_field = self.samples_ops.get_config_identifier_field()
+                if not config_identifier_field:
+                    logger.warning(f"No config_identifier field defined in sample schema, skipping config {config_id}")
+                    continue
+                
+                logger.info(f"Processing workflow updates for configuration {config.get('name')} ({config_id})")
+                
+                # First we need to grab submission ids for config
+                try:
+                    submission_ids = self.samples_ops.get_unique_submission_ids(
+                        config_id=config_id,
+                        need_workflow_id=True,
+                        days_back=days_back
+                    )
+                    
+                    submission_count += len(submission_ids)
+                    logger.info(f"Found {len(submission_ids)} submission IDs to process")
+                    
+                except Exception as exc:
+                    logger.error(f"Error getting submission IDs: {str(exc)}")
+                    failed_updates.append({
+                        "config_id": config_id,
+                        "error": f"Failed to get submission IDs: {str(exc)}"
+                    })
+                    continue
+                
+                # Then we need to process each submission
+                for submission_id in submission_ids:
+                    try:
+                        # Get submission status from Terra
+                        logger.info(f"Getting workflow information for submission {submission_id}")
+                        # Already using destination datatable, default set to true
+                        submission_data = self.terra.submissions.get_submission_status(submission_id)
+                        workflows = submission_data.get('workflows', [])
+                        
+                        if not workflows:
+                            logger.info(f"No workflows found for submission {submission_id}")
+                            continue
+                        
+                        # Extract entity names from workflows
+                        entity_names = []
+                        entity_to_workflow = {}
+                        
+                        # Maybe move parsing terra parsing functions to terra client/utils
+                        for workflow in workflows:
+                            if 'workflowEntity' in workflow and 'entityName' in workflow['workflowEntity']:
+                                entity_name = workflow['workflowEntity']['entityName']
+                                entity_names.append(entity_name)
+                                entity_to_workflow[entity_name] = {
+                                    'workflow_id': workflow.get('workflowId', ''),
+                                    'state': workflow.get('status', 'Unknown')
+                                }
+                        
+                        if not entity_names:
+                            logger.info(f"No entity names found in workflows for submission {submission_id}")
+                            continue
+                        
+                        # Get samples matching these entity names
+                        samples = self.samples_ops.get_samples_by_entity_names(
+                            config_id=config_id,
+                            entity_names=entity_names
+                        )
+                        
+                        if samples.empty:
+                            logger.info(f"No matching samples found for entity names in submission {submission_id}")
+                            continue
+                        
+                        # Create updates for samples
+                        sample_id_field = self.samples_ops.get_sample_identifier_field()
+                        batch_updates = []
+                        
+                        for _, sample in samples.iterrows():
+                            entity_id = sample.get(sample_id_field)
+                            if entity_id in entity_to_workflow:
+                                workflow_info = entity_to_workflow[entity_id]
+                                batch_updates.append({
+                                    'id': sample.get('id'),
+                                    'terra_workflow_id': workflow_info['workflow_id'],
+                                    'workflow_state': workflow_info['state']
+                                })
+                                
+                                # Update status summary
+                                state = workflow_info['state']
+                                if state not in status_summary:
+                                    status_summary[state] = 0
+                                status_summary[state] += 1
+                        
+                        # Apply updates in batches, I was doing this to avoid overloading Terra API in previous iterations
+                        # But it might not be necessary, was necessary before when I was backfilling data
+                        if batch_updates and update_bigquery:
+                            for i in range(0, len(batch_updates), batch_size):
+                                batch = batch_updates[i:i+batch_size]
+                                logger.info(f"Updating {len(batch)} samples with workflow information (batch {i//batch_size + 1})")
+                                update_result = self.samples_ops.bulk_update_samples(batch)
+                                
+                                if update_result.get("failed_updates"):
+                                    failed_updates.extend(update_result["failed_updates"])
+                                
+                                total_updated += update_result.get("updated_count", 0)
+                        elif batch_updates:
+                            # Dry run
+                            logger.info(f"Would update {len(batch_updates)} samples with workflow information (dry run)")
+                            total_updated += len(batch_updates)
+                        
+                        logger.info(f"Processed submission {submission_id}: {len(batch_updates)} samples updated")
+                        
+                    except Exception as submission_exc:
+                        logger.error(f"Error processing submission {submission_id}: {str(submission_exc)}")
+                        failed_updates.append({
+                            "config_id": config_id,
+                            "submission_id": submission_id,
+                            "error": str(submission_exc)
+                        })
+                
+                # Check for incomplete workflows in case metadata was not updated immediately after submission
+                # Me and Andrew Hale noticed this happening
+                try:
+                    incomplete_samples = self.samples_ops.get_incomplete_workflow_samples(
+                        config_id=config_id,
+                        days_back=days_back,
+                        limit=1000
+                    )
+                    
+                    if not incomplete_samples.empty:
+                        logger.info(f"Found {len(incomplete_samples)} samples with incomplete workflow states")
+                        
+                        # Process in batches to avoid overloading Terra API
+                        state_updates = []
+                        
+                        for _, sample in incomplete_samples.iterrows():
+                            sample_id = sample.get('id')
+                            workflow_id = sample.get('terra_workflow_id')
+                            submission_id = sample.get('terra_submission_id')
+                            
+                            try:
+                                # Get workflow metadata
+                                workflows = self.terra.submissions.get_workflows_by_submission(submission_id)
+                                
+                                # Find matching workflow
+                                for workflow in workflows:
+                                    if workflow.workflow_id == workflow_id:
+                                        state_updates.append({
+                                            'id': sample_id,
+                                            'workflow_state': workflow.status
+                                        })
+                                        
+                                        # Update status summary
+                                        if workflow.status not in status_summary:
+                                            status_summary[workflow.status] = 0
+                                        status_summary[workflow.status] += 1
+                                        break
+                                
+                                # Apply updates in batches
+                                if len(state_updates) >= batch_size:
+                                    if update_bigquery:
+                                        logger.info(f"Updating {len(state_updates)} workflow states")
+                                        update_result = self.samples_ops.bulk_update_samples(state_updates)
+                                        
+                                        if update_result.get("failed_updates"):
+                                            failed_updates.extend(update_result["failed_updates"])
+                                        
+                                        total_updated += update_result.get("updated_count", 0)
+                                    else:
+                                        # Dry run
+                                        logger.info(f"Would update {len(state_updates)} workflow states (dry run)")
+                                        total_updated += len(state_updates)
+                                    
+                                    state_updates = []
+                                    
+                            except Exception as workflow_exc:
+                                logger.error(f"Error getting workflow metadata for {workflow_id}: {str(workflow_exc)}")
+                        
+                        # Update any remaining state updates
+                        if state_updates and update_bigquery:
+                            logger.info(f"Updating {len(state_updates)} workflow states")
+                            update_result = self.samples_ops.bulk_update_samples(state_updates)
+                            
+                            if update_result.get("failed_updates"):
+                                failed_updates.extend(update_result["failed_updates"])
+                            
+                            total_updated += update_result.get("updated_count", 0)
+                        elif state_updates:
+                            # Dry run
+                            logger.info(f"Would update {len(state_updates)} workflow states (dry run)")
+                            total_updated += len(state_updates)
+                            
+                except Exception as incomplete_exc:
+                    logger.error(f"Error processing incomplete workflows: {str(incomplete_exc)}")
+                    failed_updates.append({
+                        "config_id": config_id,
+                        "error": f"Failed to process incomplete workflows: {str(incomplete_exc)}"
+                    })
+                
+            except Exception as exc:
+                logger.error(f"Error processing configuration {config.get('id')}: {str(exc)}")
+                failed_updates.append({
+                    "config_id": config.get('id'),
+                    "error": str(exc)
+                })
+        
+        # Return summary of workflow status results
+        return {
+            "status": "success" if total_updated > 0 else "no_updates",
+            "updated_count": total_updated,
+            "processed_configs": processed_configs,
+            "processed_submissions": submission_count,
+            "workflow_states": status_summary,
+            "failed_updates": failed_updates
+        }
+        
+    def get_workflow_summary_all_configs(self) -> Dict[str, Any]:
+        """
+        Get workflow state summaries for all active configurations.
+        
+        Returns:
+            Dictionary with workflow state summaries for each configuration
+        """
+        # Will properly want to create a Terra2BQAlerter class to handle this
+        self.initialize_operations()
+        
+        if not self.samples_ops:
+            raise ValueError("Sample operations not initialized")
+        
+        # Get active configurations
+        configs = self.get_active_configs()
+        if not configs:
+            logger.info("No active configurations found")
+            return {"status": "no_configs", "summaries": {}}
+        
+        # Process each configuration
+        result = {
+            "status": "success",
+            "summaries": {},
+            "overall": {}
+        }
+        
+        for config in configs:
+            config_id = config.get('id')
+            config_name = config.get('name', 'Unknown')
+            
+            try:
+                # Get workflow state summary for this config
+                summary = self.samples_ops.get_workflow_state_summary(config_id)
+                
+                # Add to result
+                result["summaries"][config_name] = summary
+                
+                # Add to overall counts
+                for state, count in summary.items():
+                    if state not in result["overall"]:
+                        result["overall"][state] = 0
+                    result["overall"][state] += count
+                    
+                logger.info(f"Generated workflow state summary for {config_name}: {summary}")
+                
+            except Exception as exc:
+                logger.error(f"Error generating workflow state summary for {config_name}: {str(exc)}")
+                result["summaries"][config_name] = {"error": str(exc)}
+        
+        # Add the metadata to result
+        result["configs_processed"] = len(result["summaries"])
+        result["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        return result
