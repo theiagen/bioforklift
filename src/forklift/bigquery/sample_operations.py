@@ -797,6 +797,7 @@ class BigQuerySampleOperations:
             Either pandas DataFrame or list of dictionaries with query results
         """
         # Needed to add more generic query function to allow for more flexible querying
+        logger.info(f"Querying samples with conditions: {conditions}, parameters: {parameters}")
         try:
             # Set default values
             if conditions is None:
@@ -854,17 +855,22 @@ class BigQuerySampleOperations:
             # Configure and execute query
             job_config = bigquery.QueryJobConfig()
             job_config.query_parameters = query_params
-            
+
+            logger.info(f"Executing query with parameters: {query_params}")
+
             query_job = self.bq_client.query(query, job_config=job_config)
             results = query_job.result()
             
             # Convert to desired output format
             if return_as_df:
+                logger.info("Returning results as DataFrame")
                 return pd.DataFrame([dict(row) for row in results])
             else:
+                logger.info("Returning results in array format")
                 return [dict(row) for row in results]
         
         except Exception as exc:
+            logger.exception(f"Error executing query: {str(exc)}")
             raise RuntimeError(f"Error executing query: {str(exc)}")
 
     def get_unique_submission_ids(
@@ -888,6 +894,7 @@ class BigQuerySampleOperations:
             # Get config identifier field
             config_identifier_field = self.get_config_identifier_field()
             if not config_identifier_field:
+                logger.error("No config_identifier field defined in sample schema")
                 raise ValueError("No config_identifier field defined in sample schema")
             
             # Build query conditions
