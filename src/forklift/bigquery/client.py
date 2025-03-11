@@ -4,7 +4,9 @@ from typing import Optional, Dict, Any, List
 from google.cloud import bigquery
 from .utils import load_schema_from_yaml
 from google.api_core import exceptions
+from forklift.forklift_logging import setup_logger
 
+logger = setup_logger(__name__)
 
 class BigQueryClient:
     """Base client for BigQuery operations"""
@@ -53,12 +55,14 @@ class BigQueryClient:
         # Create table reference
         table_id = f"{self.project}.{self.dataset}.{table_name}"
         table = bigquery.Table(table_id, schema=schema)
+        logger.info(f"BigQuery table created: {table_id}")
 
         try:
             # Check if table exists
             existing_table = self.client.get_table(table_id)
 
             if not exists_ok:
+                logger.error(f"Table {table_id} already exists")
                 raise ValueError(f"Table {table_id} already exists")
 
             return {
@@ -68,6 +72,7 @@ class BigQueryClient:
 
         except exceptions.NotFound:
             # Table doesn't exist, create it
+            logger.info(f"Creating new table: {table_id}")
             created_table = self.client.create_table(table)
             return {
                 "table": created_table,
@@ -86,11 +91,13 @@ class BigQueryClient:
 
     def insert_rows(self, table: str, rows: list) -> None:
         """Insert rows into a table using load job for immediate availability"""
+        logger.info(f"Inserting {len(rows)} rows into {table}")
 
         try:
             # Get table reference instance from google.cloud.bigquery
             table_obj = self.client.get_table(table)
 
+            logger.info("Configuring row insert job config")
             # Configure load job
             job_config = bigquery.LoadJobConfig(
                 source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
@@ -104,6 +111,7 @@ class BigQueryClient:
             data = "\n".join(json_rows).encode("utf-8")
 
             # Create and run load job
+            logger.info("Running row insert job")
             load_job = self.client.load_table_from_file(
                 io.BytesIO(data), table, job_config=job_config
             )
@@ -111,6 +119,7 @@ class BigQueryClient:
             load_job.result()
 
             if load_job.errors:
+                logger.error(f"Error in loading job: {load_job.errors}")
                 raise Exception(f"Load job errors: {load_job.errors}")
 
         except Exception as exc:

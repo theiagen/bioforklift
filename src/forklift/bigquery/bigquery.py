@@ -2,7 +2,9 @@ from typing import Optional, Dict, Any
 from .client import BigQueryClient
 from .sample_operations import BigQuerySampleOperations
 from .config_operations import BigQueryConfigOperations
+from forklift.forklift_logging import setup_logger
 
+logger = setup_logger(__name__)
 
 class BigQuery:
     """
@@ -73,6 +75,7 @@ class BigQuery:
         Returns:
             BigQuerySampleOperations instance
         """
+        logger.info("Creating sample operations")
         return BigQuerySampleOperations(
             client=self.client,
             table_name=table_name,

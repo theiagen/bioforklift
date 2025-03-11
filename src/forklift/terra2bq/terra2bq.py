@@ -9,8 +9,9 @@ from forklift.bigquery import BigQuery
 from forklift.terra import Terra
 from forklift.bigquery.utils import drop_system_value_columns
 from forklift.terra.models import WorkflowConfig
+from forklift.forklift_logging import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class Terra2BQ:
@@ -146,6 +147,7 @@ class Terra2BQ:
         return target_entity_clean
 
     def initialize_operations(self) -> None:
+        logger.info("Initializing Terra2BQ operations objects")
         """Initialize BigQuery operations objects if not already initialized."""
         # Helper function to get the expected operation classes
         if not self.samples_ops and self.samples_schema_yaml:

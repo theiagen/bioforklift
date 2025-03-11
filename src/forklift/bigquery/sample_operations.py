@@ -6,6 +6,9 @@ from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
 from .utils import load_schema_from_yaml, parse_field_type
+from forklift.forklift_logging import setup_logger
+
+logger = setup_logger(__name__)
 
 # This class is a bit of a beast and could use some refactoring, but I needed to get all of the functionality
 # ported over from the original google-workflows codebase. I will be refactoring this in the future to make it
@@ -32,15 +35,17 @@ class BigQuerySampleOperations:
             schema_info = load_schema_from_yaml(sample_schema_yaml)
             self.schema = schema_info["schema"]
             self.field_attributes = schema_info["field_attributes"]
+            logger.info(f"Schema loaded from YAML: {sample_schema_yaml}")
         else:
             self.schema = sample_schema
+            logger.info("Schema loaded from parameter")
 
     def _generate_system_values(self, row_count: int) -> Dict[str, List[Any]]:
         """Generate system values for auto-populated fields going into the table"""
         # Need to cast the pandas equivalent to a BigQuery datetime - weirdly called Timestamp
         current_datetime = pd.Timestamp.now(tz="UTC")
         system_tracking_values = {}
-
+        logger.info(f"Timestamp for system values: {current_datetime}")
         for field_name, attrs in self.field_attributes.items():
             if attrs.get("primary_key"):
                 system_tracking_values[field_name] = [
@@ -58,6 +63,7 @@ class BigQuerySampleOperations:
             sample_identifier_field = self.get_sample_identifier_field()
 
             if not sample_identifier_field:
+                logger.error("No field marked as sample_identifier in schema")
                 raise ValueError("No field marked as sample_identifier in schema")
 
             # Get existing identifiers for samples in the database
@@ -68,12 +74,12 @@ class BigQuerySampleOperations:
 
             filtered_count = len(df) - len(new_samples_df)
             if filtered_count > 0:
-                # Switch this to logger when integrated
-                print(f"Filtered out {filtered_count} existing samples")
+                logger.info(f"Filtered out {filtered_count} existing samples")
 
             return new_samples_df
 
         except Exception as exc:
+            logger.exception("Error filtering existing samples")
             raise RuntimeError(f"Error filtering existing samples: {str(exc)}")
         
     def _get_schema_fields(self) -> List[str]:
@@ -88,6 +94,7 @@ class BigQuerySampleOperations:
         # Add any missing columns with None/null values
         for field in schema_fields:
             if field not in df.columns:
+                logger.info(f"Adding missing schema field: {field}")
                 df[field] = None
 
         return df
@@ -111,6 +118,7 @@ class BigQuerySampleOperations:
         schema_fields = self._get_schema_fields()
         extra_columns = set(df.columns) - set(schema_fields)
         if extra_columns:
+            logger.info(f"Filtering out extra columns: {extra_columns}")
             filtered_out_excess_columns_df = df.drop(columns=extra_columns)
         return filtered_out_excess_columns_df
     
@@ -152,6 +160,7 @@ class BigQuerySampleOperations:
             sequence_file_fields = self.get_sequence_file_fields()
             
             if not sequence_file_fields:
+                logger.info("No sequence file fields defined in schema, returning original DataFrame")
                 # If no sequence file fields defined in schema, return original DataFrame
                 return df
             
@@ -163,8 +172,7 @@ class BigQuerySampleOperations:
             
             filtered_count = len(df) - len(valid_samples_df)
             if filtered_count > 0:
-                # Switch this to logger when integrated
-                print(f"Filtered out {filtered_count} samples without sequence files")
+                logger.info(f"_validate_sequence_files: Filtered out {filtered_count} samples without sequence files")\
                 
             return valid_samples_df
             
@@ -172,6 +180,7 @@ class BigQuerySampleOperations:
             raise RuntimeError(f"Error validating sequence files: {str(exc)}")
 
     def prepare_samples_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        logger.info("Preparing samples; filtering duplicates and adding time tracking")
         """Prepare DataFrame by filtering duplicates and adding system-generated values"""
         df = df.copy()
         # First we need to map field names from source to BigQuery
@@ -182,6 +191,7 @@ class BigQuerySampleOperations:
         filtered_bigquery_mapped_df = self._filter_existing_samples(bigquery_mapped_df)
 
         if len(filtered_bigquery_mapped_df) == 0:
+            logger.info("No new samples to load after filtering duplicates")
             return filtered_bigquery_mapped_df
         
         # Validate that each sample has at least one sequence file
@@ -342,28 +352,40 @@ class BigQuerySampleOperations:
         try:
             # Skip if DataFrame is empty
             if len(df) == 0:
+                logger.info("No data to load, dataframe is empty")
                 return {"success": True, "loaded": 0, "filtered": 0, "errors": None}
 
             job_config = LoadJobConfig()
             job_config.write_disposition = write_disposition
+            logger.info(f"JobConfig created with write_disposition set to: {write_disposition}")
 
             if schema:
+                logger.info("Schema provided")
+
+                # This comes from schema passed to load_dataframe
                 job_config.schema = schema
             elif self.schema:
+                logger.info("No schema provided, using self's schema")
+
+                # This self.schema is from creation of operations object (example_sample_shema.yaml)
                 job_config.schema = self.schema
 
             # Prepare DataFrame with filtering and system values
             initial_count = len(df)
-            
+            logger.info(f"Initial record count: {initial_count}")
+
+            #might want to rename this config and the schema so they arent confused. 
             if config:
                 prepared_df = self.prepare_samples_with_config(df, config)
             else:
                 prepared_df = self.prepare_samples_dataframe(df)
 
             filtered_count = initial_count - len(prepared_df)
+            logger.info(f"Filtered {filtered_count} total records")
 
             # Skip if all records were filtered
             if len(prepared_df) == 0:
+                logger.info("No records to load after filtering, all were skipped")
                 return {
                     "success": True,
                     "loaded": 0,
@@ -380,7 +402,7 @@ class BigQuerySampleOperations:
 
             # Wait for job to complete
             load_job.result()
-
+            logger.info(f"Loading Dataframe Sucessful")
             return {
                 "success": True,
                 "loaded": len(prepared_df),
@@ -388,8 +410,9 @@ class BigQuerySampleOperations:
                 "errors": None,
                 "job_id": load_job.job_id,
             }
-
+            
         except Exception as exc:
+            logger.exception(f"Error loading DataFrame {str(exc)}")
             return {"success": False, "errors": str(exc), "loaded": 0}
 
     def append_dataframe(
@@ -414,8 +437,9 @@ class BigQuerySampleOperations:
         SELECT id, {sample_identifier_field_name}
         FROM `{self.table_name}`
         """
-
+        
         query_job = self.bq_client.query(query)
+        logger.info(f"Querying BigQuery for entity identifier mapping")
         results = list(query_job.result())
 
         # Create mapping from BigQuery UUID to entity identifier
@@ -558,6 +582,7 @@ class BigQuerySampleOperations:
             return pd.DataFrame(samples_list_dict)
         
         except Exception as exc:
+            logger.exception(f"Error getting samples by timeframe: {str(exc)}")
             raise RuntimeError(f"Error getting samples by timeframe: {str(exc)}")
 
     def get_samples_created_today(self) -> pd.DataFrame:
@@ -603,12 +628,15 @@ class BigQuerySampleOperations:
         # but with some modifications to work with the BigQuery client and schema attributes
         try:
             if not updates:
+                logger.info("No updates provided")
                 return {"updated_count": 0, "updated_ids": [], "failed_updates": []}
 
             # Process updates
             updates_to_process = []
             for update in updates:
+                print("UPDATES")
                 if "id" not in update:
+                    print("ID not in UPDATE")
                     continue
 
                 sample_id = update["id"]
@@ -620,6 +648,7 @@ class BigQuerySampleOperations:
                     updates_to_process.append((sample_id, update_data))
 
             if not updates_to_process:
+                logger.info("No updates provided")
                 return {"updated_count": 0, "updated_ids": [], "failed_updates": []}
 
             # Gather fields to update
@@ -631,6 +660,7 @@ class BigQuerySampleOperations:
             schema_fields = self._get_schema_fields()
             invalid_fields = all_fields - set(schema_fields)
             if invalid_fields:
+                logger.exception(f"Fields not in schema: {invalid_fields}")
                 raise ValueError(f"Fields not in schema: {invalid_fields}")
 
             # Build CASE statements for each field
@@ -677,6 +707,9 @@ class BigQuerySampleOperations:
             exectue_job_config = bigquery.QueryJobConfig()
             exectue_job_config.query_parameters = params
 
+            logger.info(f"Executing bulk update query with params: \n{params}")
+            logger.info(f"Query: {update_query}")
+
             execute_query_job = self.bq_client.query(
                 update_query, job_config=exectue_job_config
             )
@@ -709,6 +742,10 @@ class BigQuerySampleOperations:
                 if update[0] in failed_ids
             ]
 
+            if len(failed_updates) > 0:
+                logger.error(f"Failed to update {len(failed_updates)} records")
+                logger.error(failed_updates)
+                
             return {
                 "updated_count": len(updated_ids),
                 "updated_ids": updated_ids,
@@ -725,6 +762,10 @@ class BigQuerySampleOperations:
                 }
                 for update in updates
             ]
+
+            if len(failed_updates) > 0:
+                logger.error(f"Failed to update {len(failed_updates)} records")
+                logger.error(failed_updates)
 
             return {
                 "updated_count": 0,
@@ -756,6 +797,7 @@ class BigQuerySampleOperations:
             Either pandas DataFrame or list of dictionaries with query results
         """
         # Needed to add more generic query function to allow for more flexible querying
+        logger.info(f"Querying samples with conditions: {conditions}, parameters: {parameters}")
         try:
             # Set default values
             if conditions is None:
@@ -813,17 +855,22 @@ class BigQuerySampleOperations:
             # Configure and execute query
             job_config = bigquery.QueryJobConfig()
             job_config.query_parameters = query_params
-            
+
+            logger.info(f"Executing query with parameters: {query_params}")
+
             query_job = self.bq_client.query(query, job_config=job_config)
             results = query_job.result()
             
             # Convert to desired output format
             if return_as_df:
+                logger.info("Returning results as DataFrame")
                 return pd.DataFrame([dict(row) for row in results])
             else:
+                logger.info("Returning results in array format")
                 return [dict(row) for row in results]
         
         except Exception as exc:
+            logger.exception(f"Error executing query: {str(exc)}")
             raise RuntimeError(f"Error executing query: {str(exc)}")
 
     def get_unique_submission_ids(
@@ -847,6 +894,7 @@ class BigQuerySampleOperations:
             # Get config identifier field
             config_identifier_field = self.get_config_identifier_field()
             if not config_identifier_field:
+                logger.error("No config_identifier field defined in sample schema")
                 raise ValueError("No config_identifier field defined in sample schema")
             
             # Build query conditions

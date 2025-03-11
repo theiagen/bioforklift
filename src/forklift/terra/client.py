@@ -1,6 +1,7 @@
 import requests
 from typing import Optional, Dict
 from datetime import datetime, timedelta, timezone
+from forklift.forklift_logging import setup_logger
 from google.auth.transport import requests as google_requests
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
@@ -16,6 +17,7 @@ from .exceptions import (
     TerraServerError,
 )
 
+logger = setup_logger("terra_client.py")
 
 class TerraClient:
     """Base client for Terra Firecloud API interactions"""
@@ -61,8 +63,10 @@ class TerraClient:
         """Get default Google Cloud credentials"""
         try:
             credentials, _ = default()
+            logger.info("Google Cloud Credentials Retrieved")
             return credentials
         except DefaultCredentialsError as error:
+            logger.exception("Failed to get Google Cloud credentials")
             raise TerraAuthenticationError(
                 "Failed to get Google Cloud credentials. "
                 "Make sure you're authenticated with gcloud or provide credentials explicitly. "
@@ -99,18 +103,22 @@ class TerraClient:
             and self._token_expiry
             and self._token_expiry > now + timedelta(minutes=3)
         ):
+            logger.info(f"Using cached token, expires at {self._token_expiry}")
             return self._token
         try:
             self._credentials.refresh(google_requests.Request())
             self._token = self._credentials.id_token
             # Get exp from token and convert to datetime
             self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc)
+            logger.info(f"ID Token refreshed, expires at {self._token_expiry}")
             return self._token
         except RefreshError as refresh_error:
+            logger.exception("Failed to refresh authentication token")
             raise TerraAuthenticationError(
                 "Failed to refresh authentication token"
             ) from refresh_error
         except Exception as error:
+            logger.exception("Failed to get authentication token")
             raise TerraAuthenticationError(
                 f"Failed to get authentication token: {str(error)}"
             ) from error
@@ -131,6 +139,7 @@ class TerraClient:
             self.destination_workspace if use_destination else self.source_workspace
         )
         project = self.destination_project if use_destination else self.source_project
+        logger.info(f"Building Firecloud URL for {project}/{workspace}/{endpoint}")
         # Now we can use project and workdpace within function scope
         return f"{self.api_url}/workspaces/{project}/{workspace}/{endpoint}"
 
@@ -138,8 +147,8 @@ class TerraClient:
         """Handle error responses from Terra API"""
         try:
             terra_error_data = response.json()
-            print(terra_error_data)
         except ValueError:
+            logger.exception("Failed to parse Terra Firecloud API error response, likely not JSON: \n{response.text}\n")  
             terra_error_data = {"message": response.text}
 
         error_class = self.ERROR_MAPPING.get(response.status_code, TerraAPIError)
@@ -147,7 +156,7 @@ class TerraClient:
         message = terra_error_data.get("message", str(terra_error_data))
         if error_class == TerraServerError:
             message = f"Terra Firecloud API server error: {message}"
-
+        logger.error(f"Terra Firecloud API error: {message}")
         raise error_class(
             message=message, status_code=response.status_code, response=terra_error_data
         )
@@ -175,7 +184,7 @@ class TerraClient:
             use_destination: Whether to use destination workspace (True) or source workspace (False)
         """
         url = self._build_firecloud_url(endpoint, use_destination)
-
+        logger.info("FireCloud URL Built")
         try:
             response = requests.request(
                 method=method,
@@ -189,7 +198,10 @@ class TerraClient:
             )
 
             if not response.ok:
+                logger.error(f"Request to {method} {response.url} failed with status code {response.status_code}")
                 self._handle_response_error(response)
+
+            logger.info(f"{method} request to {response.url} successful")
 
             return response
 
@@ -239,7 +251,7 @@ class TerraClient:
             params=params,
             use_destination=use_destination,
         )
-
+    
     def patch(
         self, endpoint: str, data: Dict, use_destination: bool = False
     ) -> requests.Response:

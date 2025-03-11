@@ -4,7 +4,9 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 from .utils import stream_terra_table
 from .client import TerraClient
+from forklift.forklift_logging import setup_logger
 
+logger = setup_logger("terra_entities.py")
 
 class TerraEntities:
     """Class meant to handle common data operations in Terra"""
@@ -46,7 +48,7 @@ class TerraEntities:
             stream=True,
             use_destination=use_destination,
         )
-
+        logger.info(f"Downloaded {entity_type} table from Terra with response; {response}")
         return stream_terra_table(
             response, destination=destination, chunk_size=chunk_size
         )
@@ -74,6 +76,7 @@ class TerraEntities:
         """
         # Make sure DataFrame is not empty
         if len(data) == 0:
+            logger.error("DataFrame has no rows")
             raise ValueError("DataFrame has no rows")
 
         # Create working copy
@@ -93,6 +96,8 @@ class TerraEntities:
         upload_data.to_csv(tsv_buffer, sep="\t", index=False)
         tsv_content = tsv_buffer.getvalue()
 
+        logger.info(f"Entities formatted for upload to {target}")
+
         endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
 
         files = {"entities": ("entities.tsv", tsv_content, "text/tab-separated-values")}
@@ -102,7 +107,7 @@ class TerraEntities:
         self.client.post(
             endpoint, files=files, params=params, use_destination=use_destination
         )
-
+        logger.info("Successfully uploaded entities to Terra")
         return upload_data
 
     def create_entity_set(
@@ -127,9 +132,11 @@ class TerraEntities:
         if isinstance(entities, pd.DataFrame):
             entities = entities.iloc[:, 0].tolist()
         elif not isinstance(entities, list):
+            logger.error("Entities must be a DataFrame or list")
             raise ValueError("Entities must be a DataFrame or list")
 
         if not entities:
+            logger.error("No entities to add to set")
             raise ValueError("No entities to add to set")
 
         # Create set membership TSV
@@ -147,6 +154,9 @@ class TerraEntities:
         files = {"entities": ("set.tsv", tsv_data, "text/tab-separated-values")}
 
         endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
+
+        logger.info("POST new entity set to Terra")
+
         return self.client.post(
             endpoint,
             files=files,
@@ -178,6 +188,9 @@ class TerraEntities:
             }
             for name, value in attributes.items()
         ]
+        
+        for update in updates:
+            logger.info(f"PATCH request sent to update {update['attributeName']} to {update['addUpdateAttribute']}")
 
         return self.client.patch(
             f"entities/{entity_type}/{entity_id}",
