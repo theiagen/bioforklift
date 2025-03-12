@@ -267,6 +267,7 @@ class BigQueryConfigOperations:
         """
         # Validate update data
         if not update_data:
+            logger.warning("No fields to update")
             return self.get_config(config_id)
 
         # Ensure fields exist in schema
@@ -386,6 +387,7 @@ class BigQueryConfigOperations:
             load_df = pd.DataFrame(configs_to_load)
 
             # Load to BigQuery
+            logger.info(f"Loading {len(load_df)} configurations to BigQuery")
             load_job = self.bq_client.load_table_from_dataframe(
                 dataframe=load_df,
                 destination=self.table_name,
@@ -445,11 +447,12 @@ class BigQueryConfigOperations:
 
         job_config = bigquery.QueryJobConfig()
         job_config.query_parameters = params
-
+        
         query_job = self.bq_client.query(update_query, job_config=job_config)
         query_job.result()
 
         # Get count of deactivated rowswhere num_dml_affected_rows is how bigquery returns the number of rows affected by the query
         rows = query_job.num_dml_affected_rows
+        logger.info(f"Deactivated {rows} configurations")
 
         return {"success": True, "deactivated_count": rows}
