@@ -8,7 +8,9 @@ from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
 from .utils import load_schema_from_yaml, parse_field_type
+from forklift.forklift_logging import setup_logger
 
+logger = setup_logger(__name__)
 
 class BigQueryConfigOperations:
     """Operations for BigQuery tables containing configuration data"""
@@ -169,11 +171,11 @@ class BigQueryConfigOperations:
 
         # Convert to loggign if there are errors
         if errors:
-            print(
+            logger.error(
                 f"Warning: {len(errors)} out of {len(json_files)} configurations failed to load"
             )
             for error in errors:
-                print(f"  - {error['file']}: {error['error']}")
+                logger.error(f"  - {error['file']}: {error['error']}")
 
         return created_configs
 
@@ -198,10 +200,12 @@ class BigQueryConfigOperations:
             bigquery.ScalarQueryParameter("id", "STRING", config_id)
         ]
 
+        logger.info(f"Getting config with ID: {config_id}")
         query_job = self.bq_client.query(query, job_config=job_config)
         results = list(query_job.result())
 
         if not results:
+            logger.warning(f"Config with ID {config_id} not found")
             return None
 
         return dict(results[0])
@@ -241,7 +245,7 @@ class BigQueryConfigOperations:
         {where_clause}
         ORDER BY created_at DESC
         """
-
+        logger.info(f"Getting configs that are active: {active_only}")
         job_config = bigquery.QueryJobConfig()
         job_config.query_parameters = params
 

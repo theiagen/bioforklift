@@ -29,7 +29,7 @@ class TerraSubmissions:
         """
 
         logger.info(f"Submitting workflow with config:")
-        for key, value in config.dict().items():
+        for key, value in config.model_dump().items():
             logger.info(f"{key}: {value}")
 
         return self.client.post(

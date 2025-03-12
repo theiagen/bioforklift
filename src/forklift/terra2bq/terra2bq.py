@@ -1,4 +1,3 @@
-import logging
 import json
 from datetime import datetime
 from pathlib import Path
@@ -331,12 +330,12 @@ class Terra2BQ:
         # Set up Terra client for this configuration if not already done
         if not self.terra:
             self.setup_terra_client(config)
-        print(f"Destination datatable: {self.destination_datatable}")
+        logger.debug(f"Destination datatable: {self.destination_datatable}")
         # Use the target entity from user provided value or configuration
         target_entity = self.destination_datatable
         if not target_entity:
             target_entity = self._get_target_entity_from_config(config)
-        print(f"Uploading {len(upload_df)} samples to Terra entity: {target_entity}")
+        logger.debug(f"Uploading {len(upload_df)} samples to Terra entity: {target_entity}")
         
         try:
             uploaded_df = self.terra.entities.upload_entities(
@@ -609,8 +608,7 @@ class Terra2BQ:
             if not self.samples_ops:
                 raise ValueError("Sample operations not initialized. Make sure samples_schema_yaml is provided")
             
-            # 1. Get samples from BigQuery that need to be uploaded
-            print(f"Retrieving samples that need to be uploaded to Terra")
+            logger.info(f"Processing configuration samples {config.get('id')}")
             samples_df = self.samples_ops.get_samples_by_timeframe(
                 timeframe=self.lookup_timeframe,
                 days_back=self.lookup_days_back,
@@ -618,10 +616,10 @@ class Terra2BQ:
                 uploaded_filter="not_uploaded",
                 config_id=config.get("id")
             )
-            print (f"Samples_df: {len(samples_df)}")
+            logger.info(f"Samples being uploaded to {self.destination_datatable}: {len(samples_df)}")
             
             if samples_df.empty:
-                logger.info("No samples to upload")
+                logger.info(f"No samples to upload today for configuration {config.get('id')}")
                 return {
                     "status": "no_new_samples",
                     "config_id": config.get("id")
@@ -629,17 +627,16 @@ class Terra2BQ:
             
             # Prepare upload DataFrame by removing system columns
             upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
-            print(f"Prepared {len(upload_df)} samples for upload to Terra")
+            logger.info(f"Prepared {len(upload_df)} samples for upload to Terra")
             
             # 2. Upload data to Terra and create entity set
             upload_result = self.upload_to_terra(config, samples_df, upload_df)
-            print(f"Upload result: {upload_result}")
+            logger.debug(f"Upload result: {upload_result}")
             if upload_result.get("status") != "success":
                 return upload_result
             
-            print(f"Upload successful, created entity set: {upload_result.get('set_name')}")
+            logger.info(f"Upload successful, created entity set: {upload_result.get('set_name')}")
             set_name = upload_result.get("set_name")
-            print(f"Upload successful, created entity set: {set_name}")
             if not set_name:
                 return {
                     "status": "error",
@@ -661,7 +658,7 @@ class Terra2BQ:
             
             # 4. Submit workflow
             submission_result = self.submit_workflow(config, set_name, submission_samples)
-            print(f"Submission result: {submission_result}")
+            logger.debug(f"Submission result: {submission_result}")
             
             # Combine results
             combined_result = {
@@ -696,15 +693,15 @@ class Terra2BQ:
         try:
             # 1. Download data from Terra and load into BigQuery
             download_result = self.download_from_terra_to_bigquery(config)
-            print(f"Download result: {download_result}")
+            logger.debug(f"Download result: {download_result}")
             
             if download_result.get("status") != "success":
                 return download_result
             
             # 2. Upload to Terra and submit workflow
-            print(f"Processing configuration {config.get('id')}")
+            logger.info(f"Processing configuration {config.get('id')}")
             process_result = self.process_upload_and_submit(config)
-            logger.info(f"Process result: {process_result}")
+            logger.debug(f"Process result: {process_result}")
             
             # Combine results from both steps
             combined_result = {
@@ -1005,7 +1002,7 @@ class Terra2BQ:
                     
                     for entity_id, attributes in updated_entities.items():
                         try:
-                            print(f"Updating entity {entity_id} with {attributes} in {destination_entity_type}")
+                            logger.debug(f"Updating entity {entity_id} with {attributes} in {destination_entity_type}")
                             
                             if update_destination:  # Actually perform the update
                                 res = self.terra.entities.update_entity_attributes(

@@ -284,7 +284,7 @@ class BigQuerySampleOperations:
                 config_sourced_field_df[field_name] = config[config_field]
             else:
                 # Log warning if configuration field not found
-                print(f"Warning: Configuration field '{config_field}' not found in configuration")
+                logger.warning(f"Warning: Configuration field '{config_field}' not found in configuration")
         
         return config_sourced_field_df
     
@@ -551,7 +551,7 @@ class BigQuerySampleOperations:
                         bigquery.ScalarQueryParameter("config_id", "STRING", config_id)
                     )
                 else:
-                    print("Config identifier source field not found in sample schema, ignoring config_id filter")
+                    logger.info("Config identifier source field not found in sample schema, ignoring config_id filter")
             
             # Add filter by set name (upload_source) if provided
             if set_name:
@@ -634,9 +634,8 @@ class BigQuerySampleOperations:
             # Process updates
             updates_to_process = []
             for update in updates:
-                print("UPDATES")
                 if "id" not in update:
-                    print("ID not in UPDATE")
+                    logger.error("Update missing 'id' field, skipping")
                     continue
 
                 sample_id = update["id"]
@@ -707,8 +706,7 @@ class BigQuerySampleOperations:
             exectue_job_config = bigquery.QueryJobConfig()
             exectue_job_config.query_parameters = params
 
-            logger.info(f"Executing bulk update query with params: \n{params}")
-            logger.info(f"Query: {update_query}")
+            logger.debug(f"Executing bulk update query with params: \n{params}")
 
             execute_query_job = self.bq_client.query(
                 update_query, job_config=exectue_job_config
@@ -797,7 +795,7 @@ class BigQuerySampleOperations:
             Either pandas DataFrame or list of dictionaries with query results
         """
         # Needed to add more generic query function to allow for more flexible querying
-        logger.info(f"Querying samples with conditions: {conditions}, parameters: {parameters}")
+        logger.debug(f"Querying samples with conditions: {conditions}, parameters: {parameters}")
         try:
             # Set default values
             if conditions is None:
@@ -856,7 +854,7 @@ class BigQuerySampleOperations:
             job_config = bigquery.QueryJobConfig()
             job_config.query_parameters = query_params
 
-            logger.info(f"Executing query with parameters: {query_params}")
+            logger.debug(f"Executing query with parameters: {query_params}")
 
             query_job = self.bq_client.query(query, job_config=job_config)
             results = query_job.result()

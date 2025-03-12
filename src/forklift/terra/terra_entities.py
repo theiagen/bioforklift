@@ -107,7 +107,7 @@ class TerraEntities:
         self.client.post(
             endpoint, files=files, params=params, use_destination=use_destination
         )
-        logger.info("Successfully uploaded entities to Terra")
+        logger.info(f"Successfully uploaded {len(upload_data)} entities to Terra")
         return upload_data
 
     def create_entity_set(
@@ -155,7 +155,7 @@ class TerraEntities:
 
         endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
 
-        logger.info("POST new entity set to Terra")
+        logger.info(f"Posting new entity set {set_name} to Terra for {self.client.destination_workspace}")
 
         return self.client.post(
             endpoint,
