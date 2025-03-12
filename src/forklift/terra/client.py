@@ -63,7 +63,7 @@ class TerraClient:
         """Get default Google Cloud credentials"""
         try:
             credentials, _ = default()
-            logger.info("Google Cloud Credentials Retrieved")
+            logger.debug("Google Cloud Credentials Retrieved")
             return credentials
         except DefaultCredentialsError as error:
             logger.exception("Failed to get Google Cloud credentials")
@@ -110,7 +110,7 @@ class TerraClient:
             self._token = self._credentials.id_token
             # Get exp from token and convert to datetime
             self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc)
-            logger.info(f"ID Token refreshed, expires at {self._token_expiry}")
+            logger.debug(f"ID Token refreshed, expires at {self._token_expiry}")
             return self._token
         except RefreshError as refresh_error:
             logger.exception("Failed to refresh authentication token")
@@ -139,8 +139,8 @@ class TerraClient:
             self.destination_workspace if use_destination else self.source_workspace
         )
         project = self.destination_project if use_destination else self.source_project
-        logger.info(f"Building Firecloud URL for {project}/{workspace}/{endpoint}")
-        # Now we can use project and workdpace within function scope
+        logger.debug(f"Building Firecloud URL for {project}/{workspace}/{endpoint}")
+        # Now we can use project and workspace within function scope
         return f"{self.api_url}/workspaces/{project}/{workspace}/{endpoint}"
 
     def _handle_response_error(self, response: requests.Response) -> None:
@@ -184,7 +184,7 @@ class TerraClient:
             use_destination: Whether to use destination workspace (True) or source workspace (False)
         """
         url = self._build_firecloud_url(endpoint, use_destination)
-        logger.info("FireCloud URL Built")
+        logger.debug("FireCloud URL Built")
         try:
             response = requests.request(
                 method=method,
@@ -201,7 +201,7 @@ class TerraClient:
                 logger.error(f"Request to {method} {response.url} failed with status code {response.status_code}")
                 self._handle_response_error(response)
 
-            logger.info(f"{method} request to {response.url} successful")
+            logger.debug(f"{method} request to {response.url} successful")
 
             return response
 

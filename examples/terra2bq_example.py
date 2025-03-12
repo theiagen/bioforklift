@@ -54,7 +54,7 @@ if checkout_workflow_status_update:
         update_bigquery=False
     )
 
-    print(f"Dry run complete - would update {dry_run_results['destination_updated_count']} records")
+    print(f"Dry run complete - would update {dry_run_results['updated_count']} records")
     if dry_run_results.get('workflow_states'):
         print("Workflow states that would be updated:")
         for state, count in dry_run_results['workflow_states'].items():
@@ -71,7 +71,7 @@ if checkout_workflow_status_update:
     # Summarize results
     print(f"\nWorkflow Status Update Summary:")
     print(f"- Status: {update_results['status']}")
-    print(f"- Records updated in destination: {update_results['destination_updated_count']}")
+    print(f"- Records updated in destination: {update_results['updated_count']}")
     print(f"- Configurations processed: {update_results['processed_configs']}")
     print(f"- Submissions processed: {update_results['processed_submissions']}")
 
@@ -110,7 +110,7 @@ if check_status_summary:
 
      
 # Set to true to test out sync, added dry run to see what would be updated without actually updating -- Andrew
-checkout_sync = False
+checkout_sync = True
 if checkout_sync:
     # Run sync metadata from Terra back to BigQuery
     print("\n=== Syncing Metadata from Terra ===")
