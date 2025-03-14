@@ -70,3 +70,6 @@ coverage.xml
 *.swo
 *.bak
 *.orig
+
+# Ignore county export files
+examples/counties/*

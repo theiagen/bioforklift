@@ -402,7 +402,7 @@ class BigQuerySampleOperations:
 
             # Wait for job to complete
             load_job.result()
-            logger.info(f"Loading Dataframe Sucessful")
+            logger.info(f"Loading dataframe to BigQuery complete; job_id: {load_job.job_id}, loaded: {len(prepared_df)}")
             return {
                 "success": True,
                 "loaded": len(prepared_df),

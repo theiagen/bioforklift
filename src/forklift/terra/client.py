@@ -194,7 +194,6 @@ class TerraClient:
                 json=data,
                 files=files,
                 stream=stream,
-                timeout=10,  # This is a good default timeout from previous experience
             )
 
             if not response.ok:
@@ -217,6 +216,14 @@ class TerraClient:
             raise TerraAPIError(
                 f"Request to Terra Firecloud API failed: {str(request_exception_error)}"
             ) from request_exception_error
+            
+    def reset_auth_cache(self) -> None:
+        """
+        Reset authentication cache to force a new token on next request.
+        """
+        self._token = None
+        self._token_expiry = None
+        logger.debug("Reset authentication token cache")
 
     def get(
         self,

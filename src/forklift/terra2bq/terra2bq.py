@@ -272,7 +272,7 @@ class Terra2BQ:
             logger.info("Applying metadata cleanup function to Terra data")
             try:
                 original_count = len(terra_df)
-                terra_df = self.metadata_cleanup_fn(terra_df)
+                terra_df = self.metadata_cleanup_fn(terra_df, config)
                 logger.info(f"Metadata cleanup: {original_count} rows before, {len(terra_df)} rows after")
                 
                 if terra_df.empty:
@@ -337,10 +337,14 @@ class Terra2BQ:
             target_entity = self._get_target_entity_from_config(config)
         logger.debug(f"Uploading {len(upload_df)} samples to Terra entity: {target_entity}")
         
+        # Get identifier field for the samples to know which field to transorm to target entity
+        sample_identifier_field = self.samples_ops.get_sample_identifier_field()
+        logger.debug(f"Sample identifier field: {sample_identifier_field}")
         try:
             uploaded_df = self.terra.entities.upload_entities(
                 data=upload_df, 
                 target=target_entity,
+                entity_identifier_column=str(sample_identifier_field),
                 use_destination=True
             )
         except Exception as exc:
@@ -482,6 +486,7 @@ class Terra2BQ:
         # Get workflow configuration details from config
         terra_method_config = config.get("terra_method_config", {})
         
+        prefix_field = self.config_ops.get_prefix_fields()
         
         # Make backwards compatible
         if 'userCommentTemplate' in terra_method_config:
@@ -489,7 +494,7 @@ class Terra2BQ:
             terra_method_config['userComment'] = terra_method_config['userCommentTemplate'].format(date=current_datetime)
             del terra_method_config['userCommentTemplate']
         
-        # If it's a string (JSON), parse it
+        # If it's a string (JSON), parse it - this how it comes from BigQuery
         if isinstance(terra_method_config, str):
             try:
                 terra_method_config = json.loads(terra_method_config)
@@ -520,10 +525,7 @@ class Terra2BQ:
             "useReferenceDisks": terra_method_config.get("useReferenceDisks", True),
             "memoryRetryMultiplier": terra_method_config.get("memoryRetryMultiplier", 1.0),
             "workflowFailureMode": terra_method_config.get("workflowFailureMode", "NoNewCalls"),
-            "userComment": terra_method_config.get(
-                "userComment", 
-                f"Automated submission from {config.get('name', 'Terra2BQ')}"
-            ),
+            "userComment": f"Automated submission for {config.get(str(prefix_field), 'Terra2BQ')}, at {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
         }
         
         # Create WorkflowConfig object
@@ -616,7 +618,7 @@ class Terra2BQ:
                 uploaded_filter="not_uploaded",
                 config_id=config.get("id")
             )
-            logger.info(f"Samples being uploaded to {self.destination_datatable}: {len(samples_df)}")
+            logger.info(f"Samples being uploaded to {str(self.terra.destination_workspace)}: {len(samples_df)}")
             
             if samples_df.empty:
                 logger.info(f"No samples to upload today for configuration {config.get('id')}")
@@ -740,7 +742,12 @@ class Terra2BQ:
         results = []
         for config in configs:
             try:
-                logger.info(f"Processing configuration: {config.get('name')} (ID: {config.get('id')})")
+                prefix_field = self.config_ops.get_prefix_fields()
+                logger.info(f"Processing configuration: {config.get(str(prefix_field))} (ID: {config.get('id')})")
+                
+                # Reset Terra client for each configuration
+                self.terra = None
+                
                 result = self.process_configuration(config)
                 results.append(result)
                 
@@ -871,8 +878,9 @@ class Terra2BQ:
                 if config_samples.empty:
                     logger.info(f"No samples found for configuration {config_id}")
                     continue
-                    
-                logger.info(f"Processing {len(config_samples)} samples for configuration {config.get('name')} ({config_id})")
+                
+                prefix_field = self.config_ops.get_prefix_fields()
+                logger.info(f"Processing {len(config_samples)} samples for configuration {config.get(str(prefix_field))} ({config_id})")
                 
                 # Get the sample identifier field
                 sample_identifier_field = self.samples_ops.get_sample_identifier_field()
@@ -1314,58 +1322,3 @@ class Terra2BQ:
             "workflow_states": status_summary,
             "failed_updates": failed_updates
         }
-        
-    def get_workflow_summary_all_configs(self) -> Dict[str, Any]:
-        """
-        Get workflow state summaries for all active configurations.
-        
-        Returns:
-            Dictionary with workflow state summaries for each configuration
-        """
-        # Will properly want to create a Terra2BQAlerter class to handle this
-        self.initialize_operations()
-        
-        if not self.samples_ops:
-            raise ValueError("Sample operations not initialized")
-        
-        # Get active configurations
-        configs = self.get_active_configs()
-        if not configs:
-            logger.info("No active configurations found")
-            return {"status": "no_configs", "summaries": {}}
-        
-        # Process each configuration
-        result = {
-            "status": "success",
-            "summaries": {},
-            "overall": {}
-        }
-        
-        for config in configs:
-            config_id = config.get('id')
-            config_name = config.get('name', 'Unknown')
-            
-            try:
-                # Get workflow state summary for this config
-                summary = self.samples_ops.get_workflow_state_summary(config_id)
-                
-                # Add to result
-                result["summaries"][config_name] = summary
-                
-                # Add to overall counts
-                for state, count in summary.items():
-                    if state not in result["overall"]:
-                        result["overall"][state] = 0
-                    result["overall"][state] += count
-                    
-                logger.info(f"Generated workflow state summary for {config_name}: {summary}")
-                
-            except Exception as exc:
-                logger.error(f"Error generating workflow state summary for {config_name}: {str(exc)}")
-                result["summaries"][config_name] = {"error": str(exc)}
-        
-        # Add the metadata to result
-        result["configs_processed"] = len(result["summaries"])
-        result["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        return result

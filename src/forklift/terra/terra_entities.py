@@ -20,7 +20,7 @@ class TerraEntities:
         destination: Optional[Path] = None,
         attributes: Optional[List[str]] = None,
         model: str = "flexible",
-        chunk_size: int = 8192,
+        chunk_size: int = 65553,
         use_destination: bool = False,
     ) -> pd.DataFrame:
         """
@@ -57,16 +57,20 @@ class TerraEntities:
         self,
         data: pd.DataFrame,
         target: str,
+        entity_identifier_column: str = None,
         model: str = "flexible",
         delete_empty: bool = False,
         use_destination: bool = True,
     ) -> pd.DataFrame:
         """
-        Upload entities to Terra
+        Upload entities to Terra, will use first column as entity identifier if not specified
+        Otherwise will use specified column as entity identifier and preserve column order
+        For Terra Upload
 
         Args:
             data: DataFrame containing entities to upload
             target: Target entity type name
+            sample_identifier_column: Column to use as the entity identifier that target will map to (if None, uses first column)
             model: Data model type ('flexible' or 'strict')
             delete_empty: Whether to delete empty values
             use_destination: Whether to use destination workspace (True) or source workspace (False)
@@ -83,12 +87,27 @@ class TerraEntities:
         upload_data = data.copy()
 
         # Get the first column name and format target column name for Terra
-        first_col = upload_data.columns[0]
         base_target = target[:-3] if target.endswith("_id") else target
         target_col = f"entity:{base_target}_id"
 
+        # Determine which column to use as the identifier
+        if entity_identifier_column is not None:
+            # If specified column exists, use it as the identifier
+            if entity_identifier_column in upload_data.columns:
+                # Create a new column order with the identifier column first for Terra
+                new_columns = [entity_identifier_column] + [col for col in upload_data.columns if col != entity_identifier_column]
+                # Reorder the columns
+                upload_data = upload_data[new_columns]
+                # Rename the first column (now the identifier column) for upload
+                column_mapping = {entity_identifier_column: target_col}
+                logger.info(f"Using specified identifier column '{entity_identifier_column}' for upload")
+            else:
+                logger.warning(f"Specified identifier column '{entity_identifier_column}' not found. Using first column.")
+                column_mapping = {upload_data.columns[0]: target_col}
+        else:
+            # Use the first column as before if no identifier column is specified
+            column_mapping = {upload_data.columns[0]: target_col}
         # Rename first column for upload
-        column_mapping = {first_col: target_col}
         upload_data = upload_data.rename(columns=column_mapping)
 
         # Convert DataFrame to TSV content for upload to terra

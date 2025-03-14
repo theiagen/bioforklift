@@ -151,8 +151,9 @@ class BigQueryConfigOperations:
 
         # Find all matching JSON files
         json_files = list(directory.glob(pattern))
-
+        logger.info(f"Found {len(json_files)} JSON files in {directory}")
         if not json_files:
+            logger.warning("No JSON files found")
             return []
 
         created_configs = []
