@@ -10,6 +10,7 @@ fields:
     type: string
     required: true
     description: Configuration name
+    display_for_alerts: true
     
   state:
     type: string

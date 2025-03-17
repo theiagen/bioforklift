@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 from forklift.terra2bq import Terra2BQ
 from forklift.bigquery import BigQuery
+from forklift.alerting import SlackAlert, SlackNotifier, TerraSummary
 
 bq = BigQuery(project="general-theiagen", dataset="automation_test")
 
@@ -29,7 +31,7 @@ terra2bq = Terra2BQ(
     )
 
 # Set to true to test out processing of a single configuration
-test_sample_automation = True
+test_sample_automation = False
 if test_sample_automation:
     results = terra2bq.process_all_configs()
         
@@ -91,23 +93,6 @@ if checkout_workflow_status_update:
             print(f"  ... and {len(update_results['failed_updates']) - 5} more failures")
 
     print("\n=== Complete ===")
-    
-check_status_summary = False
-if check_status_summary:
-    # Run sync metadata from Terra back to BigQuery
-    summary_results = terra2bq.get_workflow_summary_all_configs()
-
-    print(f"Generated at: {summary_results['generated_at']}")
-    print(f"Configurations processed: {summary_results['configs_processed']}")
-
-    # Print overall summary
-    print("\nOverall workflow state distribution:")
-    overall = summary_results["overall"]
-    total = sum(overall.values())
-    for state, count in sorted(overall.items()):
-        percentage = (count / total) * 100 if total > 0 else 0
-        print(f"  - {state}: {count} ({percentage:.1f}%)")
-
      
 # Set to true to test out sync, added dry run to see what would be updated without actually updating -- Andrew
 checkout_sync = False
@@ -129,3 +114,33 @@ if checkout_sync:
     print(f"- Status: {sync_results['status']}")
     print(f"- Records synced: {sync_results['destination_updated_count']}")
     print(f"- Configs processed: {sync_results['processed_configs']}")
+
+alerting = False
+if alerting:
+    # Set up alerting
+    # Initialize Slack notifier and alert system
+    slack_notifier = SlackNotifier(token=os.environ["SLACK_TOKEN"], channel_id=os.environ["SLACK_CHANNEL"])
+    alert = SlackAlert(notifier=slack_notifier)
+    
+    print("Sending a test alert...")
+    response = alert.send_message(f"Hello, this is a test message from forklift")
+    print(f"Message sent: {response.get('ok', False)}")
+    
+    print("Generating and sending hourly summary...")
+    response = alert.send_hourly_summary(terra2bq, hours_back=1)
+    if response.get('status') == 'skipped':
+        print(f"Hourly summary skipped: {response.get('reason')}")
+    else:
+        print(f"Hourly summary sent: {response.get('ok', False)}")
+    
+    # Generate and send a daily summary
+    print("Generating and sending daily summary...")
+    response = alert.send_daily_summary(terra2bq)
+    print(f"Daily summary sent: {response.get('ok', False)}")
+    
+    # Generate and send a workflow summary for the last 7 days
+    print("Generating and sending workflow summary...")
+    response = alert.send_workflow_summary(terra2bq, days_back=7)
+    print(f"Workflow summary sent: {response.get('ok', False)}")
+    
+    print("Done!")

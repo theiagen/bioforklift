@@ -91,8 +91,23 @@ class BigQueryConfigOperations:
             None,
         )
         
+    def get_alerts_display_field(self) -> str:
+        """
+        Get the field name that is marked with display_for_alerts=True
         
-
+        Returns:
+            String with the name of the field to be used as display for alerts
+        """
+        return next(
+            (
+                field_name
+                for field_name, attrs in self.field_attributes.items()
+                if attrs.get("display_for_alerts")
+            ),
+            None,
+        )
+        
+        
     def create_config(
         self, config_data: Union[Dict[str, Any], str, Path]
     ) -> Dict[str, Any]:

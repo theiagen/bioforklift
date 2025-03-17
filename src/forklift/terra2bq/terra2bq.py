@@ -488,9 +488,9 @@ class Terra2BQ:
         
         prefix_field = self.config_ops.get_prefix_fields()
         
+        current_datetime = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
         # Make backwards compatible
         if 'userCommentTemplate' in terra_method_config:
-            current_datetime = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
             terra_method_config['userComment'] = terra_method_config['userCommentTemplate'].format(date=current_datetime)
             del terra_method_config['userCommentTemplate']
         
@@ -525,7 +525,7 @@ class Terra2BQ:
             "useReferenceDisks": terra_method_config.get("useReferenceDisks", True),
             "memoryRetryMultiplier": terra_method_config.get("memoryRetryMultiplier", 1.0),
             "workflowFailureMode": terra_method_config.get("workflowFailureMode", "NoNewCalls"),
-            "userComment": f"Automated submission for {config.get(str(prefix_field), 'Terra2BQ')}, at {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+            "userComment": f"Automated submission for {config.get(str(prefix_field), 'Terra2BQ')}, at {current_datetime}"
         }
         
         # Create WorkflowConfig object
