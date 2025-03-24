@@ -135,7 +135,6 @@ fields:
       type: datetime
       required: true
       description: Record creation timestamp
-      created_datetime: true  # Probably will depracate this
       system_value: true
 
   updated_at:
