@@ -41,7 +41,7 @@ def stream_terra_table(
             sep="\t", 
             dtype=str,
             low_memory=low_memory,
-            engine='c',  # C engine is faster than Python engine
+            engine='c',
         )
     else:
         # Stream to memory more efficiently using a BytesIO buffer
