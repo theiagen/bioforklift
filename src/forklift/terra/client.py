@@ -103,7 +103,7 @@ class TerraClient:
             and self._token_expiry
             and self._token_expiry > now + timedelta(minutes=3)
         ):
-            logger.info(f"Using cached token, expires at {self._token_expiry}")
+            logger.debug(f"Using cached token, expires at {self._token_expiry}")
             return self._token
         try:
             self._credentials.refresh(google_requests.Request())
