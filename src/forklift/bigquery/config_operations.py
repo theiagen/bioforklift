@@ -53,7 +53,7 @@ class BigQueryConfigOperations:
 
         # Set created_at datetime if not provided
         for field_name, attrs in self.field_attributes.items():
-            if attrs.get("created_datetime") and field_name not in config:
+            if field_name == "created_at" and field_name not in config:
                 config[field_name] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Serialize JSON fields based on schema types

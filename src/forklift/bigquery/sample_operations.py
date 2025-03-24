@@ -45,13 +45,16 @@ class BigQuerySampleOperations:
         # Need to cast the pandas equivalent to a BigQuery datetime - weirdly called Timestamp
         current_datetime = pd.Timestamp.now(tz="UTC")
         system_tracking_values = {}
-        logger.info(f"Timestamp for system values: {current_datetime}")
+        logger.debug(f"Timestamp for system values: {current_datetime}")
+    
         for field_name, attrs in self.field_attributes.items():
+            # Check for primary key fields
             if attrs.get("primary_key"):
                 system_tracking_values[field_name] = [
                     str(uuid.uuid4()) for _ in range(row_count)
                 ]
-            elif attrs.get("created_datetime"):
+            # Direct check for created_at field
+            elif field_name == "created_at":
                 system_tracking_values[field_name] = [current_datetime] * row_count
 
         return system_tracking_values
@@ -74,7 +77,7 @@ class BigQuerySampleOperations:
 
             filtered_count = len(df) - len(new_samples_df)
             if filtered_count > 0:
-                logger.info(f"Filtered out {filtered_count} existing samples")
+                logger.debug(f"Filtered out {filtered_count} existing samples")
 
             return new_samples_df
 
@@ -94,7 +97,7 @@ class BigQuerySampleOperations:
         # Add any missing columns with None/null values
         for field in schema_fields:
             if field not in df.columns:
-                logger.info(f"Adding missing schema field: {field}")
+                logger.debug(f"Adding missing schema field: {field}")
                 df[field] = None
 
         return df
@@ -118,7 +121,7 @@ class BigQuerySampleOperations:
         schema_fields = self._get_schema_fields()
         extra_columns = set(df.columns) - set(schema_fields)
         if extra_columns:
-            logger.info(f"Filtering out extra columns: {extra_columns}")
+            logger.debug(f"Filtering out extra columns: {extra_columns}")
             filtered_out_excess_columns_df = df.drop(columns=extra_columns)
         return filtered_out_excess_columns_df
     
@@ -992,6 +995,7 @@ class BigQuerySampleOperations:
     ) -> pd.DataFrame:
         """
         Get samples with incomplete workflow states.
+        Final States: 'Succeeded', 'Failed', 'Aborted'
         
         Args:
             config_id: Configuration ID to filter by
@@ -1017,7 +1021,7 @@ class BigQuerySampleOperations:
                 f"created_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL {days_back} DAY)"
             ]
             
-            # Execute query
+            # Query the samples where the workflow state is not in a final state
             return self.query_samples(
                 conditions=conditions,
                 parameters={"config_id": config_id},
