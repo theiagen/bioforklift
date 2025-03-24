@@ -6,13 +6,45 @@ from .utils import stream_terra_table
 from .client import TerraClient
 from forklift.forklift_logging import setup_logger
 
-logger = setup_logger("terra_entities.py")
+logger = setup_logger(__name__)
 
 class TerraEntities:
-    """Class meant to handle common data operations in Terra"""
 
     def __init__(self, client: TerraClient):
         self.client = client
+        
+    def list_entity_types(
+        self,
+        include_attributes: bool = False,
+        use_destination: bool = False,
+    ) -> List[str] | Dict[str, Any]:
+        """
+        Retrieve a list of entity types from the workspace
+        
+        Args:
+            include_attributes: If True, returns a dictionary with entity types and their attributes
+            use_destination: Whether to use destination workspace (True) or source workspace (False)
+        
+        Returns:
+            If include_attributes is False, returns a list of entity type names
+            If include_attributes is True, returns a dictionary with entity types and their attributes
+        """
+        response = self.client.get("entities", use_destination=use_destination)
+        
+        logger.info(f"Retrieved entity types from Terra workspace")
+        
+        if response.status_code != 200:
+            logger.error(f"Failed to retrieve entity types: {response.text}")
+            raise ValueError(f"Failed to retrieve entity types: {response.text}")
+        
+        entity_data = response.json()
+        
+        if not include_attributes:
+            # Return just the entity type names
+            return list(entity_data.keys())
+        else:
+            # Return the full entity data structure dictionary
+            return entity_data
 
     def download_table(
         self,
