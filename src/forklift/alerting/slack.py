@@ -57,8 +57,8 @@ class SlackNotifier:
                 logger.error(f"Slack API error: {result.get('error')}")
                 raise Exception(f"Slack API error: {result.get('error')}")
             
-        except Exception as e:
-            logger.error(f"Failed to send Slack notification: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Failed to send Slack notification: {str(exc)}")
             raise
     
     def send_formatted_message(self, title: str, message: str, 
@@ -131,8 +131,8 @@ class SlackNotifier:
                 logger.error(f"Slack API error: {result.get('error')}")
                 raise Exception(f"Slack API error: {result.get('error')}")
             
-        except Exception as e:
-            logger.error(f"Failed to send formatted Slack notification: {str(e)}")
+        except Exception as exc:
+            logger.error(f"Failed to send formatted Slack notification: {str(exc)}")
             raise
 
 class TerraSummary:
@@ -344,13 +344,13 @@ class TerraSummary:
                     "config_name": config.get('name', 'Unknown'),
                     "states": state_summary
                 })
-            except Exception as e:
-                logger.error(f"Error generating workflow summary for config {config.get('id')}: {str(e)}")
+            except Exception as exc:
+                logger.error(f"Error generating workflow summary for config {config.get('id')}: {str(exc)}")
         
         workflow_summary["total_states"] = total_states
         return workflow_summary
     
-    def format_hourly_summary_for_slack(self, summary: Dict[str, Any]) -> Dict[str, Any]:
+    def format_hourly_summary_for_slack(self, summary: Dict[str, Any], project_title: str = None) -> Dict[str, Any]:
         """
         Format hourly summary for Slack message
         
@@ -373,7 +373,10 @@ class TerraSummary:
             time_range = "last hour"
             date = datetime.now().strftime('%Y-%m-%d')
         
-        title = f"Terra2BQ Hourly Summary ({date} {time_range})"
+        if project_title:
+            title = f"{project_title} Hourly Summary ({date} {time_range})"
+        else:
+            title = f"Terra2BQ Hourly Summary ({date} {time_range})"
         
         message = f"*Summary of Terra operations for the past hour*\n"
         message += f"• Total samples: {summary['total_samples']}\n"
@@ -416,7 +419,7 @@ class TerraSummary:
             "attachments": attachments
         }
     
-    def format_daily_summary_for_slack(self, summary: Dict[str, Any]) -> Dict[str, Any]:
+    def format_daily_summary_for_slack(self, summary: Dict[str, Any], project_title: str = None) -> Dict[str, Any]:
         """
         Format daily summary for Slack message
         
@@ -426,7 +429,11 @@ class TerraSummary:
         Returns:
             Dictionary with formatted title, message and attachments
         """
-        title = f"Terra2BQ Daily Summary for {summary['date']}"
+        
+        if project_title:
+            title = f"{project_title} Daily Summary for {summary['date']}"
+        else:
+            title = f"Terra2BQ Daily Summary for {summary['date']}"
         
         message = f"*Summary of today's Terra operations*\n"
         message += f"• Total samples: {summary['total_samples']}\n"
@@ -453,7 +460,7 @@ class TerraSummary:
             "attachments": attachments
         }
     
-    def format_workflow_summary_for_slack(self, summary: Dict[str, Any]) -> Dict[str, Any]:
+    def format_workflow_summary_for_slack(self, summary: Dict[str, Any], project_title: str = None) -> Dict[str, Any]:
         """
         Format workflow summary for Slack message
         
@@ -463,7 +470,11 @@ class TerraSummary:
         Returns:
             Dictionary with formatted title, message and attachments
         """
-        title = f"Terra2BQ Workflow Summary (Last {summary['days_back']} Days)"
+        
+        if project_title:
+            title = f"{project_title} Workflow Summary (Last {summary['days_back']} Days)"
+        else:
+            title = f"Terra2BQ Workflow Summary (Last {summary['days_back']} Days)"
         
         message = "*Workflow State Summary*\n"
         
@@ -518,9 +529,9 @@ class SlackAlert:
         """
         try:
             return self.notifier.send_message(message)
-        except Exception as e:
-            logger.error(f"Error sending message to Slack: {str(e)}")
-            return {"error": str(e)}
+        except Exception as exc:
+            logger.error(f"Error sending message to Slack: {str(exc)}")
+            return {"error": str(exc)}
     
     def send_formatted_message(self, title: str, message: str, 
                                attachments: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -537,16 +548,17 @@ class SlackAlert:
         """
         try:
             return self.notifier.send_formatted_message(title, message, attachments)
-        except Exception as e:
-            logger.error(f"Error sending formatted message to Slack: {str(e)}")
-            return {"error": str(e)}
+        except Exception as exc:
+            logger.error(f"Error sending formatted message to Slack: {str(exc)}")
+            return {"error": str(exc)}
         
-    def send_hourly_summary(self, terra2bq_instance, hours_back: int = 1) -> Dict[str, Any]:
+    def send_hourly_summary(self, terra2bq_instance, project_title: str = None, hours_back: int = 1) -> Dict[str, Any]:
         """
         Generate and send an hourly summary for a Terra2BQ instance
         
         Args:
             terra2bq_instance: Terra2BQ instance to generate summary for
+            project_title: Title of the project for display
             hours_back: Number of hours to look back
             
         Returns:
@@ -559,7 +571,7 @@ class SlackAlert:
             logger.info(f"No samples found in the last {hours_back} hour(s). Skipping Slack notification.")
             return {"status": "skipped", "reason": "no_samples"}
         
-        formatted = TerraSummary(terra2bq_instance).format_hourly_summary_for_slack(summary)
+        formatted = TerraSummary(terra2bq_instance).format_hourly_summary_for_slack(summary, project_title)
         
         return self.send_formatted_message(
             formatted['title'], 
@@ -567,7 +579,7 @@ class SlackAlert:
             formatted['attachments']
         )
     
-    def send_daily_summary(self, terra2bq_instance) -> Dict[str, Any]:
+    def send_daily_summary(self, terra2bq_instance, project_title: str = None) -> Dict[str, Any]:
         """
         Generate and send a daily summary for a Terra2BQ instance
         
@@ -578,7 +590,7 @@ class SlackAlert:
             Response dictionary from Slack
         """
         summary = TerraSummary(terra2bq_instance).generate_daily_summary()
-        formatted = TerraSummary(terra2bq_instance).format_daily_summary_for_slack(summary)
+        formatted = TerraSummary(terra2bq_instance).format_daily_summary_for_slack(summary, project_title)
         
         return self.send_formatted_message(
             formatted['title'], 
@@ -586,7 +598,7 @@ class SlackAlert:
             formatted['attachments']
         )
     
-    def send_workflow_summary(self, terra2bq_instance, days_back: int = 7) -> Dict[str, Any]:
+    def send_workflow_summary(self, terra2bq_instance, project_title: str = None, days_back: int = 7) -> Dict[str, Any]:
         """
         Generate and send a workflow summary for a Terra2BQ instance
         
@@ -598,7 +610,7 @@ class SlackAlert:
             Response dictionary from Slack
         """
         summary = TerraSummary(terra2bq_instance).generate_workflow_summary(days_back)
-        formatted = TerraSummary(terra2bq_instance).format_workflow_summary_for_slack(summary)
+        formatted = TerraSummary(terra2bq_instance).format_workflow_summary_for_slack(summary, project_title)
         
         return self.send_formatted_message(
             formatted['title'], 
