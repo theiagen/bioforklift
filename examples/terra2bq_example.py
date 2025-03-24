@@ -34,7 +34,6 @@ terra2bq = Terra2BQ(
 test_sample_automation = False
 if test_sample_automation:
     results = terra2bq.process_all_configs()
-        
     # Summarize results
     success_count = sum(1 for r in results if r.get("status") == "success")
     print(f"Completed processing {len(results)} configurations ({success_count} successful)")
@@ -44,7 +43,7 @@ if test_sample_automation:
     success_count = sum(1 for r in results if r.get("status") == "success")
     print(f"Completed processing {len(results)} configurations ({success_count} successful)")
     
-checkout_workflow_status_update = False
+checkout_workflow_status_update = True
 if checkout_workflow_status_update:
     print("\n=== Terra2BQ Workflow Status Synchronization ===")
 
@@ -107,7 +106,7 @@ if checkout_sync:
 
     # # Then perform the actual update
     print("\nPerforming actual sync...")
-    sync_results = terra2bq.sync_metadata_from_workflows(days_back=30, update_bigquery=True, update_destination=True)
+    sync_results = terra2bq.sync_metadata(days_back=30, update_bigquery=True, update_destination=True)
 
     # Summarize sync results
     print(f"\nSync Summary:")

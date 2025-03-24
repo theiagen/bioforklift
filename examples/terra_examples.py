@@ -7,7 +7,9 @@ terra = Terra(
     destination_project="theiagen-training-workspaces",
 )
 
-# # Data operations
+terra_entities = terra.entities.list_entity_types(include_attributes=False)
+print(f"Found {len(terra_entities)} in the workspace")
+# Data operations
 df = terra.entities.download_table("data")
 updated_df = terra.entities.upload_entities(data=df, target="target")
 result = terra.entities.create_entity_set("test_example_set", "target", updated_df)
