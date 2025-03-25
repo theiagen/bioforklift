@@ -10,10 +10,6 @@ from forklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
-# This class is a bit of a beast and could use some refactoring, but I needed to get all of the functionality
-# ported over from the original google-workflows codebase. I will be refactoring this in the future to make it
-# more modular and easier to use for different use cases. But for now, it works for the current use cases.
-
 class BigQuerySampleOperations:
     """Base operations for BigQuery tables with support for custom field attributes containing sample data"""
 
