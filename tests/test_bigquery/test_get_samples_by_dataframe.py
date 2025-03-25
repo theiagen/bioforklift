@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 import pytest
 from datetime import datetime, timedelta, timezone
 import pandas as pd
