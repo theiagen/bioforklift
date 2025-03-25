@@ -5,6 +5,15 @@ from unittest.mock import patch, MagicMock, ANY
 from google.cloud import bigquery
 from forklift.bigquery import BigQuerySampleOperations
 
+@pytest.fixture(autouse=True)
+def mock_google_auth():
+    """Mock Google Cloud authentication to avoid credential errors"""
+    with patch('google.auth.default') as mock_auth:
+        # Return a mock credentials object and project ID
+        mock_credentials = MagicMock()
+        mock_auth.return_value = (mock_credentials, "test-project")
+        yield mock_auth
+
 @pytest.fixture
 def mock_bigquery_client():
     """Fixture to create a mock BigQuery client"""

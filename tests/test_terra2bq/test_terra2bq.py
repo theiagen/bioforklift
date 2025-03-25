@@ -10,6 +10,15 @@ from forklift.terra2bq import Terra2BQ
 # We'll use a lot of MagicMock objects to simulate the behavior of the real classes
 # But will also test some error cases in another test file
 
+@pytest.fixture(autouse=True)
+def mock_google_auth():
+    """Mock Google Cloud authentication to avoid credential errors"""
+    with patch('google.auth.default') as mock_auth:
+        # Return a mock credentials object and project ID
+        mock_credentials = MagicMock()
+        mock_auth.return_value = (mock_credentials, "test-project")
+        yield mock_auth
+
 @pytest.fixture
 def mock_bigquery():
     """Create a mock BigQuery object with necessary methods"""
