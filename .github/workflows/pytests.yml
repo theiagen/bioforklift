@@ -2,9 +2,19 @@ name: Forklift Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
+    paths:
+      - 'src/forklift/**'
+      - 'tests/**'
+      - 'poetry.lock'
+      - 'pyproject.toml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+    paths:
+      - 'src/forklift/**'
+      - 'tests/**'
+      - 'poetry.lock'
+      - 'pyproject.toml'
 
 jobs:
   test:
@@ -12,38 +22,38 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-
+    
     - name: Install Poetry
       uses: snok/install-poetry@v1
       with:
         version: 1.8.3
         virtualenvs-create: true
         virtualenvs-in-project: true
-
+    
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+    
     - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
       run: |
         poetry install --no-interaction
         poetry add --group dev pytest-cov
-
+    
     - name: Run tests with coverage
       run: |
         poetry run pytest tests/ --cov=src/forklift --cov-report "xml:coverage.xml" --cov-report=term-missing:skip-covered --junitxml=junit.xml
-
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v3
+    
+    - name: Coverage comment
+      uses: MishaKav/pytest-coverage-comment@main
       with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
-
-    - name: Archive test results
-      uses: actions/upload-artifact@v3
-      with:
-        name: test-results
-        path: |
-          junit.xml
-          coverage.xml
+        pytest-xml-coverage-path: ./coverage.xml
+        junitxml-path: ./junit.xml
