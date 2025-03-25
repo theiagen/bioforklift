@@ -1,4 +1,7 @@
 # forklift
+
+[![Tests](https://github.com/theiagen/forklift/actions/workflows/pytests.yml/badge.svg)](https://github.com/theiagen/forklift/actions/actions/workflows/pytests.yml)
+
 Automation Data Movement and Integration Library for Sample Datastores
 
 🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️

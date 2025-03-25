@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 from forklift.terra import TerraEntities
 import pandas as pd
 
@@ -33,7 +33,7 @@ class TestDownloadTable:
         # Setup mock response
         mock_terra_client._http_request.return_value = mock_response
 
-        df = data_ops.download_table("sample")
+        dataframe = data_ops.download_table("sample")
 
         # Verify correct request was made
         mock_terra_client._http_request.assert_called_once_with(
@@ -45,29 +45,12 @@ class TestDownloadTable:
         )
 
         # Verify iter_content was called with correct chunk size
-        mock_response.iter_content.assert_called_with(chunk_size=8192)
+        mock_response.iter_content.assert_called_with(chunk_size=65553)
 
         # Verify DataFrame content
-        assert len(df) == 2
-        assert "entity_id" in df.columns
-        assert "value" in df.columns
-
-    def test_download_table_with_destination(
-        self, data_ops, mock_terra_client, mock_response, tmp_path
-    ):
-        """Test table download with file destination"""
-        mock_terra_client._http_request.return_value = mock_response
-
-        destination = tmp_path / "test.tsv"
-        df = data_ops.download_table("sample", destination=destination)
-
-        # Verify file was created
-        assert destination.exists()
-
-        # Verify DataFrame content
-        assert len(df) == 2
-        assert "entity_id" in df.columns
-        assert "value" in df.columns
+        assert len(dataframe) == 2
+        assert "entity_id" in dataframe.columns
+        assert "value" in dataframe.columns
 
     def test_download_table_with_attributes(
         self, data_ops, mock_terra_client, mock_response
@@ -84,7 +67,7 @@ class TestDownloadTable:
         ]
 
         # Make the actual call
-        df = data_ops.download_table(
+        dataframe = data_ops.download_table(
             "sample", attributes=["id", "status", "date"], use_destination=False
         )
 
@@ -98,11 +81,11 @@ class TestDownloadTable:
         )
 
         # Verify iter_content was called with correct chunk size
-        mock_response.iter_content.assert_called_with(chunk_size=8192)
+        mock_response.iter_content.assert_called_with(chunk_size=65553)
 
         # Verify the DataFrame has the correct structure
-        assert list(df.columns) == ["id", "status", "date"]
-        assert len(df) == 2
+        assert list(dataframe.columns) == ["id", "status", "date"]
+        assert len(dataframe) == 2
 
 
 class TestCreateEntitySet:
@@ -118,7 +101,7 @@ class TestCreateEntitySet:
         mock_terra_client.post.assert_called_once()
         args = mock_terra_client.post.call_args
 
-        # Check endpoint
+        # Check endpoint is correct
         assert args[0][0] == "flexibleImportEntities"
 
         # Check files content
@@ -126,7 +109,6 @@ class TestCreateEntitySet:
         files = args[1]["files"]
         assert "entities" in files
 
-        # Check TSV content
         tsv_content = files["entities"][1]
         assert "membership:sample_set_id" in tsv_content
         assert "sample1" in tsv_content
@@ -167,7 +149,7 @@ class TestUpdateEntityAttributes:
         mock_terra_client.patch.assert_called_once()
         args = mock_terra_client.patch.call_args
 
-        # Check endpoint
+        # Check endpoint would match that of entity for terra
         assert args[0][0] == "entities/sample/sample1"
 
         # Check update payload

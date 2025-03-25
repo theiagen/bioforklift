@@ -64,7 +64,7 @@ class TestBigQueryClient:
 
     def test_init_with_credentials(self):
         """Test initialization with credentials"""
-        mock_credentials = {"type": "service_account", "project_id": "test-project"}
+        mock_credentials = json.dumps({"type": "service_account", "project_id": "test-project"})
 
         with patch(
             "google.cloud.bigquery.Client.from_service_account_info"
@@ -78,7 +78,7 @@ class TestBigQueryClient:
                 credentials=mock_credentials,
             )
 
-            mock_from_service_account.assert_called_once_with(mock_credentials)
+            mock_from_service_account.assert_called_once_with(json.loads(mock_credentials))
             assert client.client == mock_client
 
     def test_getattr_passthrough(self, bigquery_client, mock_bigquery_client):
