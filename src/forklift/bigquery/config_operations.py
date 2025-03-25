@@ -363,7 +363,7 @@ class BigQueryConfigOperations:
 
     def load_configs_dataframe(
         self,
-        df: pd.DataFrame,
+        dataframe: pd.DataFrame,
         schema: Optional[List[SchemaField]] = None,
         write_disposition: str = "WRITE_APPEND",
     ) -> Dict[str, Any]:
@@ -371,7 +371,7 @@ class BigQueryConfigOperations:
         Load DataFrame of configurations into BigQuery table
 
         Args:
-            df: pandas DataFrame containing configurations
+            dataframe: pandas DataFrame containing configurations
             schema: Optional schema for the table
             write_disposition: Write disposition for the load job
 
@@ -380,12 +380,12 @@ class BigQueryConfigOperations:
         """
         try:
             # Skip if DataFrame is empty
-            if len(df) == 0:
+            if len(dataframe) == 0:
                 return {"success": True, "loaded": 0, "errors": None}
 
             # Process each row
             configs_to_load = []
-            for _, row in df.iterrows():
+            for _, row in dataframe.iterrows():
                 config_data = row.to_dict()
                 prepared_config = self._prepare_config_for_insert(config_data)
                 configs_to_load.append(prepared_config)

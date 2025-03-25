@@ -59,7 +59,7 @@ class BigQuerySampleOperations:
 
         return system_tracking_values
     
-    def _filter_existing_samples(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _filter_existing_samples(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Remove rows with existing sample identifiers"""
         try:
             # Need to find the sample identifier field from attributes
@@ -73,9 +73,9 @@ class BigQuerySampleOperations:
             existing_ids = set(self.get_existing_identifiers())
 
             # Filter out existing samples
-            new_samples_df = df[~df[sample_identifier_field].isin(existing_ids)]
+            new_samples_df = dataframe[~dataframe[sample_identifier_field].isin(existing_ids)]
 
-            filtered_count = len(df) - len(new_samples_df)
+            filtered_count = len(dataframe) - len(new_samples_df)
             if filtered_count > 0:
                 logger.debug(f"Filtered out {filtered_count} existing samples")
 
@@ -89,18 +89,18 @@ class BigQuerySampleOperations:
         """Get list of field names defined in the schema"""
         return [field.name for field in self.schema]
     
-    def _add_missing_schema_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _add_missing_schema_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Add any missing schema columns to DataFrame with null values"""
 
         schema_fields = self._get_schema_fields()
 
         # Add any missing columns with None/null values
         for field in schema_fields:
-            if field not in df.columns:
+            if field not in dataframe.columns:
                 logger.debug(f"Adding missing schema field: {field}")
-                df[field] = None
+                dataframe[field] = None
 
-        return df
+        return dataframe
     
     def _get_config_source_fields(self) -> Dict[str, str]:
         """
@@ -116,19 +116,19 @@ class BigQuerySampleOperations:
             if attrs.get('inherit_from_config')
         }
         
-    def _filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _filter_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Keep only columns that are defined in the schema"""
         schema_fields = self._get_schema_fields()
-        extra_columns = set(df.columns) - set(schema_fields)
+        extra_columns = set(dataframe.columns) - set(schema_fields)
         if extra_columns:
             logger.debug(f"Filtering out extra columns: {extra_columns}")
-            filtered_out_excess_columns_df = df.drop(columns=extra_columns)
+            filtered_out_excess_columns_df = dataframe.drop(columns=extra_columns)
         return filtered_out_excess_columns_df
     
-    def _map_field_names(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _map_field_names(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Map source field names to BigQuery field names using column_mappings attributes"""
 
-        mapped_columns_df = df.copy()
+        mapped_columns_df = dataframe.copy()
         
         for field_name, attrs in self.field_attributes.items():
             if "column_mappings" in attrs:
@@ -138,8 +138,8 @@ class BigQuerySampleOperations:
 
                 # Try each possible source field
                 for source_field in source_fields:
-                    if source_field in df.columns:
-                        mapped_columns_df = df.rename(
+                    if source_field in dataframe.columns:
+                        mapped_columns_df = dataframe.rename(
                             columns={source_field: field_name}
                         )
                         break
@@ -147,13 +147,13 @@ class BigQuerySampleOperations:
         # Always return the DataFrame, whether mappings were applied or not
         return self._add_missing_schema_columns(mapped_columns_df)
     
-    def _validate_sequence_files(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _validate_sequence_files(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
         Validate that each sample has at least one sequence file field with a value.
         Removes rows that don't have any sequence files.
         
         Args:
-            df: DataFrame containing the data to validate
+            dataframe: DataFrame containing the data to validate
             
         Returns:
             DataFrame with only valid samples that have at least one sequence file
@@ -165,15 +165,15 @@ class BigQuerySampleOperations:
             if not sequence_file_fields:
                 logger.info("No sequence file fields defined in schema, returning original DataFrame")
                 # If no sequence file fields defined in schema, return original DataFrame
-                return df
+                return dataframe
             
             # Check if at least one sequence file field has a value for each row, fill with boolean
-            has_sequence_file = df[sequence_file_fields].notna().any(axis=1)
+            has_sequence_file = dataframe[sequence_file_fields].notna().any(axis=1)
             
             # Filter DataFrame to keep only rows with at least one sequence file
-            valid_samples_df = df[has_sequence_file]
+            valid_samples_df = dataframe[has_sequence_file]
             
-            filtered_count = len(df) - len(valid_samples_df)
+            filtered_count = len(dataframe) - len(valid_samples_df)
             if filtered_count > 0:
                 logger.info(f"_validate_sequence_files: Filtered out {filtered_count} samples without sequence files")\
                 
@@ -182,12 +182,12 @@ class BigQuerySampleOperations:
         except Exception as exc:
             raise RuntimeError(f"Error validating sequence files: {str(exc)}")
 
-    def prepare_samples_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+    def prepare_samples_dataframe(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         logger.info("Preparing samples; filtering duplicates and adding time tracking")
         """Prepare DataFrame by filtering duplicates and adding system-generated values"""
-        df = df.copy()
+        dataframe = dataframe.copy()
         # First we need to map field names from source to BigQuery
-        mapped_df = self._map_field_names(df)
+        mapped_df = self._map_field_names(dataframe)
         # Filter to only include schema-defined columns since this is what will be loaded
         bigquery_mapped_df = self._filter_columns(mapped_df)
         # Filter out rows with existing sample identifiers as to not port duplicates
@@ -259,27 +259,27 @@ class BigQuerySampleOperations:
 
         return sync_fields
     
-    def apply_configuration_sourced_fields(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+    def apply_configuration_sourced_fields(self, dataframe: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """
         Apply configuration values to fields in a DataFrame of samples.
         
         Args:
-            df: DataFrame containing sample records
+            dataframe: DataFrame containing sample records
             config: Dictionary containing configuration values
             
         Returns:
             DataFrame with configuration values applied to inheritance fields
         """
-        if df.empty or not config:
-            return df
+        if dataframe.empty or not config:
+            return dataframe
         
         # Get fields that inherit from configuration
         config_inheritance_fields = self._get_config_source_fields()
         
         if not config_inheritance_fields:
-            return df
+            return dataframe
         
-        config_sourced_field_df = df.copy()
+        config_sourced_field_df = dataframe.copy()
         
         for field_name, config_field in config_inheritance_fields.items():
             if config_field in config:
@@ -291,12 +291,12 @@ class BigQuerySampleOperations:
         
         return config_sourced_field_df
     
-    def prepare_samples_with_config(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+    def prepare_samples_with_config(self, dataframe: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """
         Full preparation of samples with configuration applied.
         
         Args:
-            df: DataFrame containing sample data
+            dataframe: DataFrame containing sample data
             config: Dictionary containing configuration values
             
         Returns:
@@ -304,7 +304,7 @@ class BigQuerySampleOperations:
         """
         
         # Apply standard preparation
-        prepared_df = self.prepare_samples_dataframe(df)
+        prepared_df = self.prepare_samples_dataframe(dataframe)
         
         if prepared_df.empty:
             return prepared_df
@@ -339,7 +339,7 @@ class BigQuerySampleOperations:
 
     def load_dataframe(
         self,
-        df: pd.DataFrame,
+        dataframe: pd.DataFrame,
         schema: Optional[List[SchemaField]] = None,
         write_disposition: str = "WRITE_APPEND",
         config: Optional[Dict[str, Any]] = None,
@@ -348,13 +348,13 @@ class BigQuerySampleOperations:
         Load DataFrame into BigQuery table using load jobs
 
         Args:
-            df: pandas DataFrame containing the data
+            dataframe: pandas DataFrame containing the data
             schema: Optional schema for the table
             write_disposition: Write append only supported in this operation
         """
         try:
             # Skip if DataFrame is empty
-            if len(df) == 0:
+            if len(dataframe) == 0:
                 logger.info("No data to load, dataframe is empty")
                 return {"success": True, "loaded": 0, "filtered": 0, "errors": None}
 
@@ -374,14 +374,14 @@ class BigQuerySampleOperations:
                 job_config.schema = self.schema
 
             # Prepare DataFrame with filtering and system values
-            initial_count = len(df)
+            initial_count = len(dataframe)
             logger.info(f"Initial record count: {initial_count}")
 
             #might want to rename this config and the schema so they arent confused. 
             if config:
-                prepared_df = self.prepare_samples_with_config(df, config)
+                prepared_df = self.prepare_samples_with_config(dataframe, config)
             else:
-                prepared_df = self.prepare_samples_dataframe(df)
+                prepared_df = self.prepare_samples_dataframe(dataframe)
 
             filtered_count = initial_count - len(prepared_df)
             logger.info(f"Filtered {filtered_count} total records")
@@ -419,10 +419,10 @@ class BigQuerySampleOperations:
             return {"success": False, "errors": str(exc), "loaded": 0}
 
     def append_dataframe(
-        self, df: pd.DataFrame, schema: Optional[List[SchemaField]] = None
+        self, dataframe: pd.DataFrame, schema: Optional[List[SchemaField]] = None
     ) -> Dict[str, Any]:
         """Append DataFrame to existing table"""
-        return self.load_dataframe(df, schema=schema, write_disposition="WRITE_APPEND")
+        return self.load_dataframe(dataframe, schema=schema, write_disposition="WRITE_APPEND")
 
     def get_entity_id_mapping(self) -> Dict[str, str]:
         """

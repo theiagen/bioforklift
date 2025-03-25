@@ -51,14 +51,14 @@ def create_schema_field(name: str, field_def: Dict[str, Any]) -> Dict[str, Any]:
                 fields: list (optional, for RECORD type)
             }
     """
-    logger.info(f"Creating schema field: {name} - {field_def}")
+    logger.debug(f"Creating schema field: {name} - {field_def}")
     field_type = parse_field_type(field_def["type"])
     mode = parse_mode(field_def.get("required", False))
     description = field_def.get("description", "")
 
     # Handle nested records
     if field_type == "RECORD":
-        logger.info(f"Creating nested record: {name}")
+        logger.debug(f"Creating nested record: {name}")
         sub_fields = []
         for sub_name, sub_def in field_def.get("fields", {}).items():
             sub_fields.append(create_schema_field(sub_name, sub_def))
@@ -73,7 +73,7 @@ def create_schema_field(name: str, field_def: Dict[str, Any]) -> Dict[str, Any]:
     # Handle arrays - repeated mode for simple types, record mode for nested records
     # https://cloud.google.com/bigquery/docs/nested-repeated
     elif field_type == "ARRAY":
-        logger.info(f"Creating array field: {name}")
+        logger.debug(f"Creating array field: {name}")
         if "items" not in field_def:
             logger.error(f"Array field '{name}' must specify 'items' type")
             raise ValueError(f"Array field '{name}' must specify 'items' type")
@@ -160,7 +160,7 @@ def load_schema_from_yaml(yaml_path: str) -> Dict[str, Any]:
 
 def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFrame:
     """
-    Drop columns marked as system_value from a pandas df
+    Drop columns marked as system_value from a pandas dataframe
 
     Args:
         dataframe: pandas DataFrame containing the data
@@ -170,7 +170,7 @@ def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFr
             - Field attributes dictionary
 
     Returns:
-        df with system_value columns removed
+        dataframe with system_value columns removed
     """
     # Extract field attributes based on input type
     logger.info("Dropping columns marked as system_value from DataFrame")
@@ -200,10 +200,10 @@ def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFr
         if "system_value" in attrs and attrs["system_value"] is True
     ]
 
-    # Remove system_value columns that are present in the df
+    # Remove system_value columns that are present in the dataframe
     columns_to_drop = [col for col in system_columns if col in data.columns]
     if columns_to_drop:
         return data.drop(columns=columns_to_drop)
 
-    # Return original df if no columns to drop
+    # Return original dataframe if no columns to drop
     return data

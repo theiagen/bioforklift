@@ -818,7 +818,7 @@ class Terra2BQ:
         
         # Load data into BigQuery
         logger.info(f"Loading {len(terra_df)} rows into BigQuery")
-        bq_load_result = self.samples_ops.load_dataframe(df=terra_df, config=config)
+        bq_load_result = self.samples_ops.load_dataframe(dataframe=terra_df, config=config)
         
         if not bq_load_result.get("success"):
             logger.error(f"Failed to load data into BigQuery: {bq_load_result.get('errors')}")
