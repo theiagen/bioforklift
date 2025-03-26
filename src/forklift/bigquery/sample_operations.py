@@ -418,6 +418,7 @@ class BigQuerySampleOperations:
         self, dataframe: pd.DataFrame, schema: Optional[List[SchemaField]] = None
     ) -> Dict[str, Any]:
         """Append DataFrame to existing table"""
+        # Helper function to append data to an existing table
         return self.load_dataframe(dataframe, schema=schema, write_disposition="WRITE_APPEND")
 
     def get_entity_id_mapping(self) -> Dict[str, str]:

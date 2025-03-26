@@ -1,0 +1,69 @@
+site_name: Forklift
+site_url: https://theiagen.github.io/forklift/
+repo_url: https://github.com/theiagen/forklift/
+repo_name: theiagen/forklift
+site_description: A Python package for moving data between Google Cloud Platform services.
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - tables
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+  - tags
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/theiagen/forklift/
+
+nav:
+  - Home: index.md
+  - Getting Started: getting_started.md
+  - Core Concepts: core_concepts.md
+  - System Values: system_values.md
+  - Interfaces:
+    - Terra:
+      - Concepts and Usage: interfaces/terra/terra.md
+      - Classes and Methods: interfaces/terra/terra_classes.md
+    - BigQuery:
+      - Concepts and Usage: interfaces/bigquery/bigquery.md
+      - Classes and Methods: interfaces/bigquery/bigquery_classes.md
+    - Terra2BQ:
+      - Concepts and Usage: interfaces/terra2bq.md
