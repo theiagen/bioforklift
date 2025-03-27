@@ -42,9 +42,9 @@ Configurations are stored in BigQuery and drive the automated processing pipelin
 ??? example "Configuration Example"
     ```json
     {
-      "name": "County COVID Processing",
-      "state": "CA",
-      "prefix": "CA_COVID",
+      "name": "County",
+      "state": "California",
+      "prefix": "county_sample",
       "entity_type": "sample",
       "terra_source_project": "county-uploads",
       "terra_source_workspace": "raw-covid-data",
@@ -110,6 +110,8 @@ terra2bq = Terra2BQ(
 
 ### With Custom Metadata Cleanup
 
+If needed you can pass a custom metadata cleaning function that takes a Pandas DataFrame and optionally a config (as a Dict), and returned a cleaned DataFrame before uploading the data to BigQuery. This cleaned metadata is then what would get reflected in the data uploaded to the target workspace. 
+
 ```python
 from metadata_cleanser import cleanse_metadata
 
@@ -121,11 +123,13 @@ terra2bq = Terra2BQ(
 
 ### With Explicit Terra Credentials
 
+When working with a service account you can pass a google credentials json for auth.
+
 ```python
 terra2bq = Terra2BQ(
     # Base parameters...
     google_credentials_json=Path("path/to/service-account-key.json"),
-    # These are override options if using configurations from bigquery
+    # These are override options if using configurations from BigQuery
     source_workspace="optional-default-source",
     source_project="optional-default-project",
     destination_workspace="optional-default-destination",
@@ -137,6 +141,8 @@ terra2bq = Terra2BQ(
 
 ### Configuration Management
 
+Get active configurations from you configurations BigQuery data table.
+
 ```python
 # Get active configurations
 configs = terra2bq.get_active_configs()
@@ -147,6 +153,8 @@ sample_configs = terra2bq.get_active_configs(entity_type="sample")
 ```
 
 ### Data Download from Terra to BigQuery
+
+Download data for one configuration and upload the resulting data to BigQuery
 
 ```python
 # Process a single configuration
@@ -160,6 +168,8 @@ else:
 ```
 
 ### Sample Upload to Terra
+
+Get samples from BigQuery that have been uploaded `today` (day of running operation), and upload to Terra destination table.
 
 ```python
 # Get samples from BigQuery that need to be uploaded
@@ -178,6 +188,8 @@ if result["status"] == "success":
 ```
 
 ### Workflow Submission
+
+Grab samples for submission, optionally by a specific set name, and pass them those to be submitted to Terra via configuration info and the terra_method_config on the configuration body. 
 
 ```python
 # Get samples for submission (already uploaded but not submitted)
@@ -200,6 +212,8 @@ if result["status"] == "success":
 
 ### End-to-End Processing
 
+This process combines uploading and submitting data to Terra destination workspace in one operation as driven by a provided configuration.
+
 ```python
 # Process a configuration end-to-end
 result = terra2bq.process_upload_and_submit(config)
@@ -209,10 +223,13 @@ if result["status"] == "success":
     print(f"Created entity set: {result['set_name']}")
     print(f"Submitted workflow: {result['submission_id']}")
 else:
+    # If we got a failure or error occured
     print(f"Processing failed: {result.get('message')}")
 ```
 
 ### Batch Processing
+
+Here we can can grab all active confiurations, grab new data from source Terra workspaces and datatables, upload to BigQuery then upload new samples to destination Terra Workspace and submit them to the designated analysis method in Terra. 
 
 ```python
 # Process all active configurations
@@ -236,10 +253,12 @@ Terra2BQ provides methods to update workflow status information from Terra to Bi
 
 ### Update Workflow Status
 
+We also provide methods to update the workflow status of the Terra workflows for samples submitted across all active configurations going x days back. This allows for tracking the workflow status over time.
+
 ```python
 # Update workflow status for all configurations
 result = terra2bq.update_workflow_status(
-    days_back=30,        # Look back 30 days
+    days_back=1,        # Look back 30 days
     batch_size=100,      # Update 100 samples at a time
     update_bigquery=True # Actually update (False for dry run)
 )
@@ -270,6 +289,8 @@ print(f"Would update {dry_run['updated_count']} records")
 Terra2BQ can synchronize metadata between Terra and BigQuery:
 
 ### Sync Metadata
+
+Here we have another important feature to go look at samples created withing a certain timeframe, look if there is any new metadata in the source workspace that is not in BigQuery, update the data in BigQuery and then in the destination Terra table. This is done for any fields marked as `sync_field: true` in the sample YAML. 
 
 ```python
 # Sync metadata for all configurations
@@ -317,14 +338,17 @@ These fields are used for querying and reporting, and are automatically updated 
 
 ### Daily Processing Script
 
+Here is an example of a script that would be that handles daily processing of new samples. The Terra2BQ client is set up and initalized, then we can process all configs in 5 batches with a cooldown of 1 second in between batches. 
+
+Then we update all workflow states in the last 7 days.
+
+Then we check to sync all metadata for data that has been uploaded in the last 30 days. 
+
 ```python
 from pathlib import Path
 from forklift.terra2bq import Terra2BQ
-from forklift.bigquery import BigQuery
 from metadata_cleanser import cleanse_metadata
 
-# Initialize BigQuery and Terra2BQ
-bq = BigQuery(project="your-project", dataset="your-dataset")
 terra2bq = Terra2BQ(
     bigquery_project="your-project",
     bigquery_dataset="your-dataset",
@@ -339,7 +363,7 @@ terra2bq = Terra2BQ(
 # Process all configs
 results = terra2bq.process_all_configs(
     batch_size=5,
-    cooldown_seconds=10
+    cooldown_seconds=1
 )
 
 # Summarize results
@@ -351,11 +375,13 @@ update_results = terra2bq.update_workflow_status(days_back=7)
 print(f"Updated {update_results['updated_count']} workflow states")
 
 # Sync metadata
-sync_results = terra2bq.sync_metadata(days_back=7)
+sync_results = terra2bq.sync_metadata(days_back=30)
 print(f"Synced metadata for {sync_results['processed_configs']} configurations")
 ```
 
 ### Processing a Single Configuration
+
+Here we have an example of how we can go ahead and just process one configuration at a time.
 
 ```python
 # Get a specific configuration

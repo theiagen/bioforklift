@@ -67,3 +67,4 @@ nav:
       - Classes and Methods: interfaces/bigquery/bigquery_classes.md
     - Terra2BQ:
       - Concepts and Usage: interfaces/terra2bq.md
+      - Classes and Methods: interfaces/terra2bq_classes.md
