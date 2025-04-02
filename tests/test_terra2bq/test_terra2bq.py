@@ -75,13 +75,21 @@ def sample_config():
 # 3 fake samples so remember to check for 3 in assertions
 @pytest.fixture
 def sample_df():
-    """Return a sample DataFrame with test data"""
+    """Return a sample DataFrame with test data including sequence file columns"""
     return pd.DataFrame({
         "id": ["sample1", "sample2", "sample3"],
         "entity_name": ["entity1", "entity2", "entity3"],
         "config_id": ["test-config-id", "test-config-id", "test-config-id"],
-        "uploaded_at": [None, None, None],
-        "upload_source": [None, None, None]
+        "read1": [
+            "gs://source-bucket/path/to/file1.fastq.gz",
+            "gs://source-bucket/path/to/file2.fastq.gz",
+            "gs://source-bucket/path/to/file3.fastq.gz"
+        ],
+        "read2": [
+            "gs://source-bucket/path/to/file1_r2.fastq.gz",
+            "gs://source-bucket/path/to/file2_r2.fastq.gz",
+            "gs://source-bucket/path/to/file3_r2.fastq.gz"
+        ]
     })
 
 # Test initialization
@@ -330,6 +338,42 @@ def test_upload_to_terra_success(t2bq, sample_config, sample_df):
     assert "set_name" in create_kwargs
     assert create_kwargs["set_name"] == set_name
     
+@patch("forklift.file_transfers.gcs_transfer.GCSTransferClient")
+def test_download_with_file_transfer(mock_gcs_transfer_client, t2bq, sample_config, sample_df):
+    """Test download_from_terra_to_bigquery with file transfer"""
+    # Mock terra.entities.download_table to return our sample dataframe
+    t2bq.terra.entities.download_table.return_value = sample_df
+    
+    # Mock the transfer_sequence_files method
+    t2bq.transfer_sequence_files = MagicMock(return_value=sample_df)
+    
+    # Mock samples_ops.load_dataframe to return success
+    t2bq.samples_ops.load_dataframe.return_value = {
+        "success": True,
+        "loaded": 3,
+        "filtered": 0
+    }
+    
+    # Call the method with a destination bucket
+    result = t2bq.download_from_terra_to_bigquery(
+        config=sample_config,
+        destination_bucket="gs://dest-bucket/path",
+        preserve_path_structure=True
+    )
+    
+    # Assertions for the result
+    assert result["status"] == "success"
+    assert result["config_id"] == sample_config["id"]
+    assert result["loaded_count"] == 3
+    assert result["filtered_count"] == 0
+    
+    # Verify transfer_sequence_files was called with the right parameters
+    t2bq.transfer_sequence_files.assert_called_once_with(
+        dataframe=sample_df,
+        destination_bucket="gs://dest-bucket/path",
+        preserve_path_structure=True
+    )
+    
 def test_get_samples_for_submission_with_set_name(t2bq, sample_config):
     """Test getting samples for submission filtering by set name"""
     # Mock the get_samples_by_timeframe to return test data
@@ -458,7 +502,7 @@ def test_process_configuration_success(t2bq, sample_config):
     })
     
     # Now we can process the config
-    result = t2bq.process_configuration(sample_config)
+    result = t2bq.process_configuration(sample_config, None, preserve_path_structure=True)
     
     # Check results
     assert result["status"] == "success"
@@ -470,7 +514,11 @@ def test_process_configuration_success(t2bq, sample_config):
     assert result["submission_id"] == "test-submission"
     
     # Check that both methods were called with the right arguments
-    t2bq.download_from_terra_to_bigquery.assert_called_once_with(sample_config)
+    t2bq.download_from_terra_to_bigquery.assert_called_once_with(
+    sample_config, 
+    None, 
+    True
+    )
     t2bq.process_upload_and_submit.assert_called_once_with(sample_config)
 
 # # Test process_all_configs

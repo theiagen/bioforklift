@@ -31,9 +31,9 @@ terra2bq = Terra2BQ(
     )
 
 # Set to true to test out processing of a single configuration
-test_sample_automation = False
+test_sample_automation = True
 if test_sample_automation:
-    results = terra2bq.process_all_configs()
+    results = terra2bq.process_all_configs(destination_bucket="theiagen-public-files/terra/test", preserve_path_structure=True)
     # Summarize results
     success_count = sum(1 for r in results if r.get("status") == "success")
     print(f"Completed processing {len(results)} configurations ({success_count} successful)")
@@ -43,7 +43,7 @@ if test_sample_automation:
     success_count = sum(1 for r in results if r.get("status") == "success")
     print(f"Completed processing {len(results)} configurations ({success_count} successful)")
     
-checkout_workflow_status_update = True
+checkout_workflow_status_update = False
 if checkout_workflow_status_update:
     print("\n=== Terra2BQ Workflow Status Synchronization ===")
 

@@ -167,6 +167,18 @@ else:
     print(f"Download failed: {result.get('message')}")
 ```
 
+We can also transfer files between buckets before we upload them to BigQuery, this will take all sequencing_files present and move them between buckets. This takes a `destination_bucket` argument and a `preserve_path_structure` argument (defualt is `False`). The `destination_bucket` can have an appended folder structure if desired. The `preserve_path_structure` will automatically try and preserve the path from the source `gs uri`, otherwise it will put it directly in the bucket, or last depth of folder provded.
+
+```python
+
+# Download data and transfer sequence files
+result = terra2bq.download_from_terra_to_bigquery(
+    config=config,
+    destination_bucket="gs://my-destination-bucket/folder".
+    preserve_path_structure = False # Just move file to destination provided above (my-destination-bucket/folder/file.fastq)
+)
+```
+
 ### Sample Upload to Terra
 
 Get samples from BigQuery that have been uploaded `today` (day of running operation), and upload to Terra destination table.
@@ -232,7 +244,7 @@ else:
 Here we can can grab all active confiurations, grab new data from source Terra workspaces and datatables, upload to BigQuery then upload new samples to destination Terra Workspace and submit them to the designated analysis method in Terra. 
 
 ```python
-# Process all active configurations
+# Process all active configurations with defualts
 results = terra2bq.process_all_configs()
 
 # Summarize results
@@ -244,6 +256,19 @@ results = terra2bq.process_all_configs(
     entity_type="sample",  # Optional filter
     batch_size=5,          # Process 5 configs per batch
     cooldown_seconds=1    # Wait 1 second between batches (added this for limit rate safety)
+)
+```
+
+If you process needs to transfer files between source and destination buckets, you can provide the top level `processs_all_configs()` with `destination_bucket` and `preserve_path_structure` args:
+
+```python
+
+results = terra2bq.process_all_configs(
+    entity_type="sample",
+    batch_size=5,             
+    cooldown_seconds=1,         
+    destination_bucket="gs://destination-bucket/folder",
+    preserve_path_structure=True # Keep original folder structure in destination
 )
 ```
 

@@ -1,5 +1,6 @@
 import copy
 import json
+import sys
 from time import sleep
 from datetime import datetime, time
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Optional, Dict, Any, List
 import pandas as pd
 import pytz
 from forklift.bigquery import BigQuery
+from forklift.file_transfers import GCSTransferClient
 from forklift.terra import Terra
 from forklift.bigquery.utils import drop_system_value_columns
 from forklift.terra.models import WorkflowConfig
@@ -760,16 +762,58 @@ class Terra2BQ:
         
         return configs
     
+    def transfer_sequence_files(
+        self,
+        dataframe: pd.DataFrame, 
+        destination_bucket: str,
+        preserve_path_structure: bool = False
+    ) -> pd.DataFrame:
+        """
+        Transfer sequence files (fastq, fasta) to a destination bucket and update paths in the dataframe.
+        
+        Args:
+            dataframe: DataFrame containing sample data with GCS file paths
+            destination_bucket: Destination GCS bucket name
+            
+        Returns:
+            DataFrame with updated file paths
+        """
+        # Get sequence file fields from sample operations
+        sequence_file_fields = self.samples_ops.get_sequence_file_fields()
+        
+        if not sequence_file_fields:
+            logger.info("No sequence file fields defined in schema, skipping transfer")
+            return dataframe
+        
+        # Create and use transfer client
+        transfer_client = GCSTransferClient(
+            destination_bucket=destination_bucket,
+            credentials=self.google_credentials_json
+        )
+        
+        logger.info(f"Transferring sequence files to destination bucket: {destination_bucket}")
+        
+        updated_df = transfer_client.transfer_sequence_files(
+            dataframe=dataframe,
+            sequence_file_columns=sequence_file_fields,
+            preserve_path_structure=preserve_path_structure
+        )
+        
+        return updated_df
+    
     def download_from_terra_to_bigquery(
         self, 
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        destination_bucket: Optional[str] = None,
+        preserve_path_structure: bool = False
     ) -> Dict[str, Any]:
         """
         Pull data from source Terra table and load it into BigQuery.
         
         Args:
             config: Configuration dictionary
-            
+            destination_bucket: Optional GCS bucket for transferring sequence files
+            preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
         Returns:
             Dictionary with load results and status
         """
@@ -815,6 +859,22 @@ class Terra2BQ:
                     "message": f"Metadata cleanup error: {str(exc)}",
                     "config_id": config.get('id')
                 }
+                
+        # If a destination bucket is provided, transfer sequence files, and update paths
+        if destination_bucket:
+            try:
+                terra_df = self.transfer_sequence_files(
+                    dataframe=terra_df,
+                    destination_bucket=destination_bucket,
+                    preserve_path_structure=preserve_path_structure
+                )
+            except Exception as exc:
+                # I think this is one case where we don't want a flexible error handling
+                # Because if the file transfer fails, we can't proceed with the pipeline
+                logger.critical(f"Error transferring sequence files, this will break the pipeline")
+                logger.critical(f"Exiting program due to file transer error: {str(exc)}")
+                sys.exit(1)
+                
         
         # Load data into BigQuery
         logger.info(f"Loading {len(terra_df)} rows into BigQuery")
@@ -1203,7 +1263,8 @@ class Terra2BQ:
                 "config_id": config.get("id")
             }
 
-    def process_configuration(self, config):
+    def process_configuration(self, config: Dict[str, Any], destination_bucket: Optional[str] = None, 
+                              preserve_path_structure: bool = False) -> Dict[str, Any]:
         """Process a single configuration with isolation guarantees."""
         # Create a copy of the configuration to avoid any side effects
         config_copy = copy.deepcopy(config)
@@ -1215,7 +1276,7 @@ class Terra2BQ:
             self.setup_terra_client(config_copy)
             
             # Process in stages with clean state transitions
-            download_result = self.download_from_terra_to_bigquery(config_copy)
+            download_result = self.download_from_terra_to_bigquery(config_copy, destination_bucket, preserve_path_structure)
             if download_result.get("status") != "success":
                 return download_result
                 
@@ -1244,7 +1305,9 @@ class Terra2BQ:
         self, 
         entity_type: Optional[str] = None,
         batch_size: int = 1,
-        cooldown_seconds: int = 1
+        cooldown_seconds: int = 1,
+        destination_bucket: Optional[str] = None,
+        preserve_path_structure: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Process all active configurations with progress tracking and batch processing.
@@ -1253,6 +1316,8 @@ class Terra2BQ:
             entity_type: Optional entity type filter
             batch_size: Number of configurations to process in a batch before cooldown
             cooldown_seconds: Seconds to wait between batches (to avoid rate limiting in case we need to scale up)
+            destination_bucket: Optional GCS bucket for transferring sequence files
+            preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
             
         Returns:
             List of results for each configuration processed
@@ -1293,7 +1358,7 @@ class Terra2BQ:
                 # Reset Terra client for each configuration
                 self.terra = None
                 
-                result = self.process_configuration(config)
+                result = self.process_configuration(config, destination_bucket, preserve_path_structure)
                 results.append(result)
                 
                 # We want loggable status messages
