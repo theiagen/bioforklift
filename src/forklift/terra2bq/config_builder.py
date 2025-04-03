@@ -2,7 +2,6 @@ import json
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
-import pandas as pd
 from forklift.terra import Terra
 from forklift.bigquery import BigQuery
 from forklift.forklift_logging import setup_logger
