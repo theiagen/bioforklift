@@ -87,11 +87,12 @@ setup_terra_client(config: Dict[str, Any]) -> None
 Get active configurations from BigQuery.
 
 ```python
-get_active_configs(entity_type: Optional[str] = None) -> List[Dict[str, Any]]
+get_active_configs(entity_type: Optional[str] = None, skip_transferred: bool = False) -> List[Dict[str, Any]]
 ```
 
 #### Parameters:
 - **entity_type** (Optional[str]): Optional entity type filter
+- **skip_transferred** Specific option for transient configs, where if set to true will skip configurations that already had their data transferred and will mark current config as transferred after data is submitted
 
 #### Returns:
 - List of active configuration dictionaries
@@ -237,7 +238,8 @@ Process a single configuration with isolation guarantees.
 process_configuration(
     config: Dict[str, Any],
     destination_bucket: Optional[str] = None,
-    preserve_path_structure: bool = True
+    preserve_path_structure: bool = True,
+    skip_transferred: bool = False,
     ) -> Dict[str, Any]
 ```
 
@@ -245,6 +247,7 @@ process_configuration(
 - **config** (Dict[str, Any]): Configuration dictionary
 - **destination_bucket** Optional GCS bucket path where sequence files should be transferred (e.g., "gs://bucket-name/optional/folder/path" or "bucket-name/optional/folder/path")
 - **preserve_path_structure** If True (default), preserve the original file path structure; if False, place files directly in the destination bucket/folder
+- **skip_transferred** Specific option for transient configs, where if set to true will skip configurations that already had their data transferred and will mark current config as transferred after data is submitted
 
 #### Returns:
 - Dictionary with processing results (combined results from download and process operations)
@@ -259,7 +262,8 @@ process_all_configs(
     batch_size: int = 1,
     cooldown_seconds: int = 1,
     destination_bucket: Optional[str] = None,
-    preserve_path_structure: bool = True
+    preserve_path_structure: bool = True,
+    skip_transferred: bool = False,
 ) -> List[Dict[str, Any]]
 ```
 
@@ -269,6 +273,7 @@ process_all_configs(
 - **cooldown_seconds** (int, optional): Seconds to wait between batches, defaults to 1
 - **destination_bucket** (Optional[str]): Optional GCS bucket path where sequence files should be       transferred (e.g., "gs://bucket-name/optional/folder/path" or "bucket-name/optional/folder/path")
 - **preserve_path_structure** If True (default), preserve the original file path structure; if False, place files directly in the destination bucket/folder
+- **skip_transferred** Specific option for transient configs, where if set to true will skip configurations that already had their data transferred and will mark current config as transferred after data is submitted
 
 #### Returns:
 - List of results for each configuration processed

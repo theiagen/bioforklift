@@ -527,7 +527,8 @@ Get configurations with optional filters.
 ```python
 get_configs(
     active_only: bool = False, 
-    entity_type: Optional[str] = None
+    entity_type: Optional[str] = None,
+    skip_transferred: bool = False,
 ) -> List[Dict[str, Any]]
 ```
 

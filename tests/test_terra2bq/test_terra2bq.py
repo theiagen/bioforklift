@@ -264,7 +264,7 @@ def test_get_active_configs(t2bq):
     configs = t2bq.get_active_configs()
     
     assert configs == [{"id": "config1"}, {"id": "config2"}]
-    t2bq.config_ops.get_configs.assert_called_once_with(active_only=True, entity_type=None)
+    t2bq.config_ops.get_configs.assert_called_once_with(active_only=True, entity_type=None,  skip_transferred=False)
 
 def test_get_active_configs_with_entity_type(t2bq):
     """Test getting active configurations filtered by entity type"""
@@ -273,7 +273,7 @@ def test_get_active_configs_with_entity_type(t2bq):
     configs = t2bq.get_active_configs(entity_type="test_entity")
     
     assert configs == [{"id": "config1"}]
-    t2bq.config_ops.get_configs.assert_called_once_with(active_only=True, entity_type="test_entity")
+    t2bq.config_ops.get_configs.assert_called_once_with(active_only=True, entity_type="test_entity",  skip_transferred=False)
 
 def test_get_active_configs_no_config_ops():
     """Test error when config_ops not initialized"""
@@ -521,7 +521,6 @@ def test_process_configuration_success(t2bq, sample_config):
     )
     t2bq.process_upload_and_submit.assert_called_once_with(sample_config)
 
-# # Test process_all_configs
 def test_process_all_configs(t2bq):
     """Test processing all configurations"""
     # Mock get_active_configs to return test configs
@@ -539,18 +538,16 @@ def test_process_all_configs(t2bq):
     
     # Mock get_prefix_fields
     t2bq.config_ops.get_prefix_fields.return_value = "prefix_field"
-    
-    # Call the method
+
     with patch("forklift.terra2bq.terra2bq.sleep") as mock_sleep:
         results = t2bq.process_all_configs(entity_type="test_entity", batch_size=1, cooldown_seconds=0)
     
-    # Check results
     assert len(results) == 2
     assert results[0]["status"] == "success"
     assert results[1]["status"] == "no_new_samples"
     
     # Check method calls
-    t2bq.get_active_configs.assert_called_once_with(entity_type="test_entity")
+    t2bq.get_active_configs.assert_called_once_with(entity_type="test_entity", skip_transferred=False)
     assert t2bq.process_configuration.call_count == 2
     
     # Check sleep was called between batches (since batch_size=1)

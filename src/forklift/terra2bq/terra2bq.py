@@ -231,7 +231,7 @@ class Terra2BQ:
             terra_row = terra_rows.iloc[0]
             
             # Check each sync field
-            sample_update = {"id": bq_id}
+            sample_update = {'id': bq_id}
             entity_updates = {}
             needs_update = False
             
@@ -742,7 +742,7 @@ class Terra2BQ:
             f"destination: {destination_project}/{destination_workspace}"
         )
 
-    def get_active_configs(self, entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_active_configs(self, entity_type: Optional[str] = None, skip_transferred: bool = False) -> List[Dict[str, Any]]:
         """
         Get active configurations from BigQuery.
         
@@ -756,7 +756,7 @@ class Terra2BQ:
         if not self.config_ops:
             raise ValueError("Config operations not initialized. Make sure configs_schema_yaml is provided.")
         
-        configs = self.config_ops.get_configs(active_only=True, entity_type=entity_type)
+        configs = self.config_ops.get_configs(active_only=True, entity_type=entity_type, skip_transferred=skip_transferred)
         logger.info(f"Found {len(configs)} active configurations" + 
                    (f" for entity type '{entity_type}'" if entity_type else ""))
         
@@ -885,12 +885,12 @@ class Terra2BQ:
             return {
                 "status": "error", 
                 "message": f"Failed to load data: {bq_load_result.get('errors')}",
-                "config_id": config.get("id")
+                "config_id": config.get('id')
             }
         
         return {
             "status": "success",
-            "config_id": config.get("id"),
+            "config_id": config.get('id'),
             "loaded_count": bq_load_result.get("loaded", 0),
             "filtered_count": bq_load_result.get("filtered", 0)
         }
@@ -941,7 +941,7 @@ class Terra2BQ:
             return {
                 "status": "error", 
                 "message": f"Failed to upload to Terra: {str(exc)}",
-                "config_id": config.get("id")
+                "config_id": config.get('id')
             }
         
         # Create a Set name and create Set in Terra
@@ -973,15 +973,15 @@ class Terra2BQ:
             return {
                 "status": "error", 
                 "message": f"Failed to create entity set: {str(exc)}",
-                "config_id": config.get("id")
+                "config_id": config.get('id')
             }
         
         # Get IDs from the samples DataFrame
-        id_values = samples_df["id"].tolist()
+        id_values = samples_df['id'].tolist()
         
         # Create updates for bulk update
         updates = [
-            {"id": sample_id, "uploaded_at": current_time_str, "upload_source": set_name}
+            {'id': sample_id, "uploaded_at": current_time_str, "upload_source": set_name}
             for sample_id in id_values
         ]
         
@@ -996,7 +996,7 @@ class Terra2BQ:
         
         return {
             "status": "success",
-            "config_id": config.get("id"),
+            "config_id": config.get('id'),
             "set_name": set_name,
             "uploaded_count": update_result.get("updated_count", 0)
         }
@@ -1024,7 +1024,7 @@ class Terra2BQ:
         
         # If a specific config_id is not provided, try to get it from the config
         if not config_id and config:
-            config_id = config.get("id")
+            config_id = config.get('id')
         
         logger.info(f"Retrieving samples for submission" + 
                     (f" from set: {set_name}" if set_name else f" from today"))
@@ -1091,7 +1091,7 @@ class Terra2BQ:
                 return {
                     "status": "error", 
                     "message": "Invalid terra_method_config JSON",
-                    "config_id": config.get("id"),
+                    "config_id": config.get('id'),
                     "set_name": set_name
                 }
         
@@ -1135,7 +1135,7 @@ class Terra2BQ:
             return {
                 "status": "error", 
                 "message": f"Failed to submit workflow: {str(exc)}",
-                "config_id": config.get("id"),
+                "config_id": config.get('id'),
                 "set_name": set_name
             }
         
@@ -1143,7 +1143,7 @@ class Terra2BQ:
         current_time = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
         
         # Create updates for each entity
-        id_values = samples_df["id"].tolist()
+        id_values = samples_df['id'].tolist()
         
         workflow_updates = [
             {
@@ -1170,7 +1170,7 @@ class Terra2BQ:
         # Return success results
         return {
             "status": "success",
-            "config_id": config.get("id"),
+            "config_id": config.get('id'),
             "set_name": set_name,
             "submission_id": submission_id,
             "workflow_count": len(samples_df)
@@ -1204,7 +1204,7 @@ class Terra2BQ:
                 days_back=self.lookup_days_back,
                 hours_back=self.lookup_hours_back,
                 uploaded_filter="not_uploaded",
-                config_id=config.get("id")
+                config_id=config.get('id')
             )
             logger.info(f"Samples being uploaded to {str(self.terra.destination_workspace)}: {len(samples_df)}")
             
@@ -1212,7 +1212,7 @@ class Terra2BQ:
                 logger.info(f"No samples to upload today for configuration {config.get('id')}")
                 return {
                     "status": "no_new_samples",
-                    "config_id": config.get("id")
+                    "config_id": config.get('id')
                 }
             
             upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
@@ -1229,7 +1229,7 @@ class Terra2BQ:
                 return {
                     "status": "error",
                     "message": "Upload successful but set_name not returned",
-                    "config_id": config.get("id")
+                    "config_id": config.get('id')
                 }
             
             # 3. Get latest sample data after upload
@@ -1239,7 +1239,7 @@ class Terra2BQ:
                 return {
                     "status": "error",
                     "message": "No samples found for submission after upload",
-                    "config_id": config.get("id"),
+                    "config_id": config.get('id'),
                     "set_name": set_name,
                     "uploaded_count": upload_result.get("uploaded_count", 0)
                 }
@@ -1260,12 +1260,15 @@ class Terra2BQ:
             return {
                 "status": "error",
                 "message": str(exc),
-                "config_id": config.get("id")
+                "config_id": config.get('id')
             }
 
     def process_configuration(self, config: Dict[str, Any], destination_bucket: Optional[str] = None, 
-                              preserve_path_structure: bool = False) -> Dict[str, Any]:
-        """Process a single configuration with isolation guarantees."""
+                              preserve_path_structure: bool = False, skip_transferred: bool = False) -> Dict[str, Any]:
+        """
+        Process a single configuration to download data from Terra, Upload to BigQuery,
+        Upload new samples to destination, and submit a workflow.
+        """
         # Create a copy of the configuration to avoid any side effects
         config_copy = copy.deepcopy(config)
         
@@ -1283,6 +1286,12 @@ class Terra2BQ:
             # Continue with upload and submission
             process_result = self.process_upload_and_submit(config_copy)
             
+            # If we are running this process where configs are transient 
+            # We want to mark the configs as transferred
+            if skip_transferred:
+                logger.info(f"Marking configuration {config_copy.get('id')} as transferred")
+                self.config_ops.mark_configs_as_transferred(config_copy.get('id'))
+            
             # Combine results from both stages
             return {
                 **process_result,
@@ -1295,7 +1304,7 @@ class Terra2BQ:
             return {
                 "status": "error",
                 "message": str(exc),
-                "config_id": config_copy.get("id")
+                "config_id": config_copy.get('id')
             }
         finally:
             # Clean up Terra client
@@ -1307,7 +1316,8 @@ class Terra2BQ:
         batch_size: int = 1,
         cooldown_seconds: int = 1,
         destination_bucket: Optional[str] = None,
-        preserve_path_structure: bool = False
+        preserve_path_structure: bool = False,
+        skip_transferred: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Process all active configurations with progress tracking and batch processing.
@@ -1318,11 +1328,13 @@ class Terra2BQ:
             cooldown_seconds: Seconds to wait between batches (to avoid rate limiting in case we need to scale up)
             destination_bucket: Optional GCS bucket for transferring sequence files
             preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
+            skip_transferred: Whether to skip configurations that have already been transferred (for transient configs)
             
         Returns:
             List of results for each configuration processed
         """
-        configs = self.get_active_configs(entity_type=entity_type)
+        
+        configs = self.get_active_configs(entity_type=entity_type, skip_transferred=skip_transferred)
         
         if not configs:
             logger.info(f"No active configurations found" + 
@@ -1387,7 +1399,7 @@ class Terra2BQ:
                 results.append({
                     "status": "error",
                     "message": str(exc),
-                    "config_id": config.get("id")
+                    "config_id": config.get('id')
                 })
             
             # Add little cooldown between batches, but not after the last one

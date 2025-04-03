@@ -227,7 +227,10 @@ class BigQueryConfigOperations:
         return dict(results[0])
 
     def get_configs(
-        self, active_only: bool = False, entity_type: Optional[str] = None
+        self, 
+        active_only: bool = False, 
+        entity_type: Optional[str] = None,
+        skip_transferred: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Get configurations with optional filters
@@ -253,6 +256,12 @@ class BigQueryConfigOperations:
                 bigquery.ScalarQueryParameter("entity_type", "STRING", entity_type)
             )
 
+        # Check if we need to skip transferred configs
+        # This is for conditions where configs are one and done and to never consider them again
+        if skip_transferred:
+            conditions.append("(transferred IS NULL OR transferred = @transferred)")
+            params.append(bigquery.ScalarQueryParameter("transferred", "BOOL", False))
+        
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         query = f"""
@@ -335,6 +344,54 @@ class BigQueryConfigOperations:
 
         # Return updated config
         return self.get_config(config_id)
+    
+    def mark_configs_as_transferred(
+        self, config_ids: Union[str, List[str]]
+    ) -> Dict[str, Any]:
+        """
+        Mark configurations as transferred by setting transferred = True for transiant configs
+        This is used to mark configs that are one and done and should not be considered again
+
+        Args:
+            config_ids: Either a single configuration ID or a list of configuration IDs to mark as transferred
+
+        Returns:
+            {success: True, updated_count: int} if successful
+        """
+        
+        if isinstance(config_ids, str):
+            config_ids = [config_ids]
+        
+        if not config_ids:
+            logger.warning("No configuration IDs provided to mark as transferred")
+            return {"success": True, "updated_count": 0}
+
+        params = []
+        for i, config_id in enumerate(config_ids):
+            params.append(bigquery.ScalarQueryParameter(f"id_{i}", "STRING", config_id))
+        
+        id_params = [f"@id_{i}" for i in range(len(config_ids))]
+        id_list = ", ".join(id_params)
+        
+        update_query = f"""
+        UPDATE `{self.table_name}`
+        SET 
+            transferred = TRUE,
+            updated_at = CURRENT_DATETIME()
+        WHERE id IN ({id_list})
+        """
+
+        job_config = bigquery.QueryJobConfig()
+        job_config.query_parameters = params
+        
+        query_job = self.bq_client.query(update_query, job_config=job_config)
+        query_job.result()
+
+        # Get count of updated rows
+        rows = query_job.num_dml_affected_rows
+        logger.info(f"Marked {rows} configurations as transferred")
+
+        return {"success": True, "updated_count": rows}
 
     def delete_config(self, config_id: str) -> bool:
         """
