@@ -59,7 +59,7 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        poetry run pytest tests/ --cov=src/bioforklift --cov-report "xml:coverage.xml" --cov-report=term-missing:skip-covered --junitxml=junit.xml
+        poetry run python -m pytest tests/ --cov=src/bioforklift --cov-report "xml:coverage.xml" --cov-report=term-missing:skip-covered --junitxml=junit.xml
     
     - name: Coverage comment
       uses: MishaKav/pytest-coverage-comment@main
