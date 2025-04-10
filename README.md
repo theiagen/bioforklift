@@ -2,13 +2,14 @@
 
 [![Tests](https://github.com/theiagen/bioforklift/actions/workflows/pytests.yml/badge.svg)](https://github.com/theiagen/bioforklift/actions/actions/workflows/pytests.yml)
 
-Automation Data Movement and Integration Library for Sample Datastores
-
-🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️🏗️
-
-🚧 Under Construction 🚧
 
 ### Getting Setup
+
+#### Installing bioforklift
+
+To install bioforklift, run `pip install bioforklift` 
+
+#### Using the latest unpublished version
 
 This project uses `poetry` for project management 
 
@@ -25,21 +26,9 @@ The dependencies will be installed based on the locked versions in the `poetry.l
 
 Finally, re authorize your gcloud authentication. This obtains your credentials via a web flow and stores them in 'the well-known location for Application Default Credentials'. Now any code/SDK you run will be able to find the credentials automatically. This is a good stand-in when you want to locally test code which would normally run on a server and use a server-side credentials file. `gcloud auth application-default login`
 
-### Note
-This is a first time dump of everything I've been putting together for an automation library for our data movement needs
 
 ### Overview
 <img src="assets/diagrams/Forklift_Base_Architecture.png" alt="bioforklift Base Architecture" width="800" style="max-width: 100%;" />
 
-# TODO:
-- Add target workspace entry for Terra class
-- Add test suite for bigquery layer
-- Add Terra2Bq integration layer
-- Add module level logging and better error handling
-- Define key yaml tags with team
-- Test scope of bigquery range
-- Test, Test, Test
-
-Biggest lift to do is scope out what we actually want to include for the bigquery samples class and how we want to name key identifiers in the yamls, develops some internal schema for that, and then after that we should be flying. 
 
 🥶
