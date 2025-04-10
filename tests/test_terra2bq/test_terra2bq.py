@@ -8,7 +8,7 @@ from bioforklift.terra2bq import Terra2BQ
 
 # This is really just testing happy paths so can be a bit simpler
 # We'll use a lot of MagicMock objects to simulate the behavior of the real classes
-# But will also test some error cases in another test file
+# But will also test some error cases in another test file here
 
 @pytest.fixture(autouse=True)
 def mock_google_auth():
