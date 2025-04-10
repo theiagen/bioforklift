@@ -1,7 +1,7 @@
-site_name: Forklift
-site_url: https://theiagen.github.io/forklift/
-repo_url: https://github.com/theiagen/forklift/
-repo_name: theiagen/forklift
+site_name: bioforklift
+site_url: https://theiagen.github.io/bioforklift/
+repo_url: https://github.com/theiagen/bioforklift/
+repo_name: theiagen/bioforklift
 site_description: A Python package for moving data between Google Cloud Platform services.
 
 theme:
@@ -51,7 +51,7 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/theiagen/forklift/
+      link: https://github.com/theiagen/bioforklift/
 
 nav:
   - Home: index.md

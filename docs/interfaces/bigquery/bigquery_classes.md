@@ -1,6 +1,6 @@
 # BigQuery Classes and Methods
 
-## Module: `forklift.bigquery`
+## Module: `bioforklift.bigquery`
 
 ### Classes
 

@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from unittest.mock import patch, MagicMock, ANY
 from google.cloud import bigquery
-from forklift.bigquery import BigQuerySampleOperations
+from bioforklift.bigquery import BigQuerySampleOperations
 
 @pytest.fixture(autouse=True)
 def mock_google_auth():

@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import pandas as pd
 import pytz
-from forklift.bigquery import BigQuery
-from forklift.file_transfers import GCSTransferClient
-from forklift.terra import Terra
-from forklift.bigquery.utils import drop_system_value_columns
-from forklift.terra.models import WorkflowConfig
-from forklift.forklift_logging import setup_logger
+from bioforklift.bigquery import BigQuery
+from bioforklift.file_transfers import GCSTransferClient
+from bioforklift.terra import Terra
+from bioforklift.bigquery.utils import drop_system_value_columns
+from bioforklift.terra.models import WorkflowConfig
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

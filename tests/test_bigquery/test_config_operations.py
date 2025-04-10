@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch, MagicMock, ANY, mock_open
 from google.cloud import bigquery
-from forklift.bigquery import BigQueryConfigOperations
+from bioforklift.bigquery import BigQueryConfigOperations
 
 
 @pytest.fixture(autouse=True)

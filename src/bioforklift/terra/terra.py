@@ -3,7 +3,7 @@ from google.oauth2.credentials import Credentials
 from .client import TerraClient
 from .terra_entities import TerraEntities
 from .terra_submissions import TerraSubmissions
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

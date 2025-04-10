@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
-from forklift.terra2bq import Terra2BQ
-from forklift.bigquery import BigQuery
-from forklift.alerting import SlackAlert, SlackNotifier, TerraSummary
+from bioforklift.terra2bq import Terra2BQ
+from bioforklift.bigquery import BigQuery
+from bioforklift.alerting import SlackAlert, SlackNotifier, TerraSummary
 
 bq = BigQuery(project="general-theiagen", dataset="automation_test")
 
@@ -123,7 +123,7 @@ if alerting:
     alert = SlackAlert(notifier=slack_notifier)
     
     print("Sending a test alert...")
-    response = alert.send_message(f"Hello, this is a test message from forklift")
+    response = alert.send_message(f"Hello, this is a test message from bioforklift")
     print(f"Message sent: {response.get('ok', False)}")
     
     print("Generating and sending hourly summary...")

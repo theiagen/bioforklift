@@ -1,6 +1,6 @@
 # Terra Classes and Methods
 
-## Module: `forklift.terra`
+## Module: `bioforklift.terra`
 
 ### Classes
 

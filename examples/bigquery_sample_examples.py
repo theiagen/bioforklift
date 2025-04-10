@@ -1,8 +1,8 @@
 from datetime import datetime
-from forklift.bigquery import BigQuery
-from forklift.terra import Terra
-from forklift.bigquery.utils import drop_system_value_columns
-from forklift.terra.models import WorkflowConfig
+from bioforklift.bigquery import BigQuery
+from bioforklift.terra import Terra
+from bioforklift.bigquery.utils import drop_system_value_columns
+from bioforklift.terra.models import WorkflowConfig
 
 # This example should start mimicing the workflow of the integration layer
 # We'll start by downloading data from Terra, loading it into BigQuery, and then uploading it back to Terra

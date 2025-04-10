@@ -1,10 +1,10 @@
 # System Values and Tracking Fields
 
-Forklift maintains several system-managed fields that track the status and history of each sample throughout its lifecycle. Understanding these fields is essential for monitoring your workflows and troubleshooting issues.
+bioforklift maintains several system-managed fields that track the status and history of each sample throughout its lifecycle. Understanding these fields is essential for monitoring your workflows and troubleshooting issues.
 
 ## Core System Fields
 
-These fields are automatically managed by Forklift and should be marked with `system_value: true` in your schema definitions:
+These fields are automatically managed by bioforklift and should be marked with `system_value: true` in your schema definitions:
 
 | Field Name | Type | Description |
 |------------|------|-------------|

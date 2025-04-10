@@ -1,10 +1,10 @@
-# Getting Started with Forklift
+# Getting Started with bioforklift
 
-This guide will help you install and set up Forklift, and demonstrate basic usage.
+This guide will help you install and set up bioforklift, and demonstrate basic usage.
 
 ## Prerequisites
 
-Before using Forklift, ensure you have:
+Before using bioforklift, ensure you have:
 
 1. Python 3.9 or higher
 2. Access to Google Cloud Platform (GCP) and BigQuery
@@ -13,17 +13,17 @@ Before using Forklift, ensure you have:
 
 ## Installation
 
-You can install Forklift using pip:
+You can install bioforklift using pip:
 (To come, still haven't published the package)
 ```bash
-pip install forklift
+pip install bioforklift
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/theiagen/forklift.git
-cd forklift
+git clone https://github.com/theiagen/bioforklift.git
+cd bioforklift
 pip install -e .
 ```
 
@@ -31,7 +31,7 @@ pip install -e .
 
 ### Google Cloud Authentication
 
-Forklift requires authentication to access Google Cloud and Terra. There are two main methods for authentication:
+bioforklift requires authentication to access Google Cloud and Terra. There are two main methods for authentication:
 
 1. **Using Application Default Credentials**:
 
@@ -54,7 +54,7 @@ Authentication for Terra is handled through the same Google credentials used for
 
 ### 1. Set up Schema Files
 
-Forklift uses YAML-based schema definitions to configure BigQuery tables. Below are examples of the two main schema types used in the system.
+bioforklift uses YAML-based schema definitions to configure BigQuery tables. Below are examples of the two main schema types used in the system.
 
 This schema defines the structure of sample data, including genomic samples and their metadata.
 
@@ -313,9 +313,9 @@ This schema defines the structure of configuration data that controls how workfl
 ### 2. Initialize Components
 
 ```python
-from forklift.bigquery import BigQuery
-from forklift.terra import Terra
-from forklift.terra2bq import Terra2BQ
+from bioforklift.bigquery import BigQuery
+from bioforklift.terra import Terra
+from bioforklift.terra2bq import Terra2BQ
 
 # Initialize BigQuery
 bq = BigQuery(

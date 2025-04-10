@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 import pandas as pd
 import yaml
 from google.cloud.bigquery import SchemaField
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

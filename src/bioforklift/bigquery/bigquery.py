@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 from .client import BigQueryClient
 from .sample_operations import BigQuerySampleOperations
 from .config_operations import BigQueryConfigOperations
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

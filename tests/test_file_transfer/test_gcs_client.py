@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from unittest.mock import MagicMock, patch
 from google.cloud import storage
-from forklift.file_transfers.gcs_transfer import GCSTransferClient
+from bioforklift.file_transfers.gcs_transfer import GCSTransferClient
 
 class TestGCSTransferClient:
     """Tests for the GCSTransferClient class"""

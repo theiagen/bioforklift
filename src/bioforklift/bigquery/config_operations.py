@@ -8,7 +8,7 @@ from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
 from .utils import load_schema_from_yaml, parse_field_type
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

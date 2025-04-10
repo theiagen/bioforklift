@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "forklift"
+name = "bioforklift"
 version = "0.1.0"
-description = "Package for handling data automations between data sources"
+description = "Package for handling bioinformatics data automations between data sources"
 authors = ["Michal-Babins <michal.babinski@theiagen.com>"]
 license = "GPL-3.0"
 readme = "README.md"
 keywords = ["terra", "bigquery", "bioinformatics", "data-integration"]
-packages = [{include = "forklift", from = "src"}]
+packages = [{include = "bioforklift", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"

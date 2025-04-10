@@ -55,7 +55,7 @@ The constructor will be set up using this a `source_workspace` and `source_proje
 If you expect to upload and submit data to a target workspace, provide `destination_workspace` and `destination_project`.
 
 ```python
-from forklift.terra import Terra
+from bioforklift.terra import Terra
 
 terra = Terra(
     source_workspace="my-source-workspace",
@@ -152,7 +152,7 @@ The `TerraSubmissions` class provides methods for executing and monitoring workf
 Before submitting a workflow, you need to define its configuration, this corresponds to the expected entity types and expressions needed to luanch a terra submission in the target workspace, refer to the schema on the submission request body for more [info](https://api.firecloud.org/#/Submissions/createSubmission):
 
 ```python
-from forklift.terra.models import WorkflowConfig
+from bioforklift.terra.models import WorkflowConfig
 
 workflow_config = WorkflowConfig(
     methodConfigurationNamespace="namespace",
@@ -227,7 +227,7 @@ The Terra subsystem provides specialized exceptions for handling various error s
 ### Basic Setup
 
 ```python
-from forklift.terra import Terra
+from bioforklift.terra import Terra
 
 # Initialize Terra client
 terra = Terra(
@@ -326,7 +326,7 @@ The Terra subsystem consists of the following components:
 
 ## Integration with Other Modules
 
-The Terra subsystem is designed to integrate seamlessly with other components of the Forklift library:
+The Terra subsystem is designed to integrate seamlessly with other components of the bioforklift library:
 
 - **BigQuery Module**: For data storage and retrieval
 - **Terra2BQ Module**: For coordinated operations between Terra and BigQuery

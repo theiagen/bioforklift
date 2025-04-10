@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
-from forklift.bigquery import BigQuerySampleOperations
+from bioforklift.bigquery import BigQuerySampleOperations
 
 @pytest.fixture(autouse=True)
 def mock_google_auth():
@@ -127,7 +127,7 @@ def sample_rows():
 @pytest.fixture
 def bq_operations(mock_bq_client, test_schema, test_field_attributes):
     """Create a BigQuerySampleOperations instance with mock client."""
-    with patch("forklift.bigquery.utils.load_schema_from_yaml") as mock_load_schema:
+    with patch("bioforklift.bigquery.utils.load_schema_from_yaml") as mock_load_schema:
         mock_load_schema.return_value = {
             "schema": test_schema,
             "field_attributes": test_field_attributes,

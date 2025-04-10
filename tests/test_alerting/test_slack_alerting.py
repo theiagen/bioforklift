@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 import json
 import requests
-from forklift.alerting import SlackNotifier, SlackAlert, TerraSummary
+from bioforklift.alerting import SlackNotifier, SlackAlert, TerraSummary
 
 @pytest.fixture(autouse=True)
 def mock_google_auth():

@@ -2,9 +2,9 @@ import json
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
-from forklift.terra import Terra
-from forklift.bigquery import BigQuery
-from forklift.forklift_logging import setup_logger
+from bioforklift.terra import Terra
+from bioforklift.bigquery import BigQuery
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

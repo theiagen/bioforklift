@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, Mock
-from forklift.terra import TerraEntities
+from bioforklift.terra import TerraEntities
 import pandas as pd
 
 

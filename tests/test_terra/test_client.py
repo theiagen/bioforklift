@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock, ANY
 import requests
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
-from forklift.terra import TerraClient
-from forklift.terra.exceptions import (
+from bioforklift.terra import TerraClient
+from bioforklift.terra.exceptions import (
     TerraAPIError,
     TerraAuthenticationError,
     TerraConnectionError,
@@ -18,7 +18,7 @@ from forklift.terra.exceptions import (
 @pytest.fixture
 def terra_client():
     """Create a TerraClient with default test parameters"""
-    with patch('forklift.terra.TerraClient._get_default_credentials') as mock_creds:
+    with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_creds:
         mock_creds.return_value = MagicMock()
         client = TerraClient(
             source_workspace="test-workspace",
@@ -42,7 +42,7 @@ def mock_response():
 class TestTerraClient:
     def test_init_with_defaults(self):
         """Test initialization with default parameters"""
-        with patch('forklift.terra.TerraClient._get_default_credentials') as mock_creds:
+        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_creds:
             mock_creds.return_value = MagicMock()
             client = TerraClient(
                 source_workspace="test-workspace",
@@ -60,7 +60,7 @@ class TestTerraClient:
 
     def test_init_with_all_params(self):
         """Test initialization with all parameters specified"""
-        with patch('forklift.terra.TerraClient._get_credentials_from_json') as mock_creds:
+        with patch('bioforklift.terra.TerraClient._get_credentials_from_json') as mock_creds:
             mock_creds.return_value = MagicMock()
             client = TerraClient(
                 source_workspace="src-workspace",
@@ -91,7 +91,7 @@ class TestTerraClient:
 
     def test_get_token_refresh(self):
         """Test refreshing an expired token"""
-        with patch('forklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
             mock_credentials = MagicMock()
             mock_credentials.id_token = "new-token"
             mock_credentials.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -113,7 +113,7 @@ class TestTerraClient:
 
     def test_get_token_refresh_failure(self):
         """Test failure during token refresh"""
-        with patch('forklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
             mock_credentials = MagicMock()
             mock_credentials.refresh.side_effect = RefreshError("Refresh failed")
             mock_get_creds.return_value = mock_credentials
@@ -153,7 +153,7 @@ class TestTerraClient:
 
     def test_handle_response_error_json(self):
         """Test handling error response with JSON body"""
-        with patch('forklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
             mock_get_creds.return_value = MagicMock()
             client = TerraClient(
                 source_workspace="test-workspace",

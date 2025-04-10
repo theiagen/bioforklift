@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch, MagicMock, mock_open
 from google.cloud import bigquery
 from google.api_core import exceptions
-from forklift.bigquery import BigQueryClient
+from bioforklift.bigquery import BigQueryClient
 
 @pytest.fixture(autouse=True)
 def mock_google_auth():
@@ -133,7 +133,7 @@ class TestBigQueryClient:
         )
 
         with patch(
-            "forklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
+            "bioforklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
         ):
             result = bigquery_client.create_table_from_yaml(
                 table_name="test_table", schema_yaml=schema_path
@@ -207,7 +207,7 @@ class TestBigQueryClient:
         )
 
         with patch(
-            "forklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
+            "bioforklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
         ):
             result = bigquery_client.create_table_from_yaml(
                 table_name="test_table", schema_yaml=schema_path
@@ -265,7 +265,7 @@ class TestBigQueryClient:
         )
 
         with patch(
-            "forklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
+            "bioforklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
         ):
             # Test with exists_ok=False
             with pytest.raises(ValueError) as excinfo:

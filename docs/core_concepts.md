@@ -1,16 +1,16 @@
 # Core Concepts
 
-Here we will cover core concepts that drive the architecture and development of Forklift, a domain specific library for bioinformatic data automations.
+Here we will cover core concepts that drive the architecture and development of bioforklift, a domain specific library for bioinformatic data automations.
 
 ## System Architecture
 
-Forklift consists of three main components:
+bioforklift consists of three main components:
 
 1. **BigQuery Interface**: Interacts with Google BigQuery and controls Sample and Config Operations
 2. **Terra Interface**: Interacts with Terra bioinformatics platform, specifically Entity and Submission methods
 3. **Terra2BQ Integration Layer**: Coordinates operations between BigQuery and Terra for common automation pipelines
 
-![Forklift Architecture Diagram](assets/Forklift_Base_Architecture.png)
+![bioforklift Architecture Diagram](assets/Forklift_Base_Architecture.png)
 
 ## Key Components
 
@@ -76,7 +76,7 @@ Terra Data → BigQuery Updates → Terra Destination Updates
 
 ### Configurations
 
-Configurations in Forklift define how data should be processed. Each configuration includes:
+Configurations in bioforklift define how data should be processed. Each configuration includes:
 
 - Source and destination Terra workspace and project
 - Entity types for Terra tables
@@ -87,7 +87,7 @@ Configurations are stored in BigQuery and drive the automated processing.
 
 ### Sample Data
 
-Sample data represents genomic samples and their metadata. In Forklift:
+Sample data represents genomic samples and their metadata. In bioforklift:
 
 - Samples are downloaded from Terra to BigQuery
 - Sample metadata is tracked and updated
@@ -116,7 +116,7 @@ Entity sets in Terra group samples for workflow processing:
 
 ### Time-based Operations
 
-Forklift operations are often time-based:
+bioforklift operations are often time-based:
 
 - Daily processing of new samples
 - Hourly status updates

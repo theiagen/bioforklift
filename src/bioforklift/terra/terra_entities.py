@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 from .utils import stream_terra_table
 from .client import TerraClient
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

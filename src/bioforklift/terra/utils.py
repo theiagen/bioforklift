@@ -3,7 +3,7 @@ from typing import Optional
 import requests
 import pandas as pd
 import io
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

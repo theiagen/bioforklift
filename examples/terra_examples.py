@@ -1,4 +1,4 @@
-from forklift.terra import Terra, WorkflowConfig
+from bioforklift.terra import Terra, WorkflowConfig
 
 terra = Terra(
     source_workspace="CDPH_Automation_Development",

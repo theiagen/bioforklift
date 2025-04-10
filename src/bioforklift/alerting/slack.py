@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta, timezone
 import requests
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

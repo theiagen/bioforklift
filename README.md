@@ -1,6 +1,6 @@
-# forklift
+# bioforklift
 
-[![Tests](https://github.com/theiagen/forklift/actions/workflows/pytests.yml/badge.svg)](https://github.com/theiagen/forklift/actions/actions/workflows/pytests.yml)
+[![Tests](https://github.com/theiagen/bioforklift/actions/workflows/pytests.yml/badge.svg)](https://github.com/theiagen/bioforklift/actions/actions/workflows/pytests.yml)
 
 Automation Data Movement and Integration Library for Sample Datastores
 
@@ -29,7 +29,7 @@ Finally, re authorize your gcloud authentication. This obtains your credentials 
 This is a first time dump of everything I've been putting together for an automation library for our data movement needs
 
 ### Overview
-<img src="assets/diagrams/Forklift_Base_Architecture.png" alt="Forklift Base Architecture" width="800" style="max-width: 100%;" />
+<img src="assets/diagrams/Forklift_Base_Architecture.png" alt="bioforklift Base Architecture" width="800" style="max-width: 100%;" />
 
 # TODO:
 - Add target workspace entry for Terra class

@@ -1,15 +1,15 @@
-# Forklift
+# bioforklift
 
-**Forklift** is a Python library meant for seamlessly integrating data transfer between Biguery and Terra bioinformatics platform. Our goal is to simplify data automation for large scale sample processing worklfows for pathogen detection. 
+**bioforklift** is a Python library meant for seamlessly integrating data transfer between Biguery and Terra bioinformatics platform. Our goal is to simplify data automation for large scale sample processing worklfows for pathogen detection. 
 
 <div style="text-align: center;">
-  <img src="assets/forklift_py.png" alt="Forklift.py" width="450" height="450" style="border-radius: 15px;">
+  <img src="assets/forklift_py.png" alt="bioforklift.py" width="450" height="450" style="border-radius: 15px;">
 </div>
 
 
 ## Overview
 
-Forklift provides a comprehensive solution for managing the flow of genomic sequening data and metadata between Terra workspaces and BigQuery databases. It offers a set of tools to:
+bioforklift provides a comprehensive solution for managing the flow of genomic sequening data and metadata between Terra workspaces and BigQuery databases. It offers a set of tools to:
 
 - Download data from Terra to BigQuery
 - Upload data from BigQuery to Terra
@@ -38,7 +38,7 @@ The goal is to make sure we can expand and integrate other data stores or alerti
 
 ## Getting Started
 
-See the [Getting Started](getting_started.md) guide to begin using Forklift.
+See the [Getting Started](getting_started.md) guide to begin using bioforklift.
 
 
 ## License

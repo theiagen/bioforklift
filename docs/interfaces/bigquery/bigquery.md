@@ -79,7 +79,7 @@ The `BigQueryClient` class provides the base connection to Google BigQuery.
 The constructor will be set up using a GCP `project` and `dataset` name. If you're using a service account, provide the credentials.
 
 ```python
-from forklift.bigquery import BigQuery
+from bioforklift.bigquery import BigQuery
 
 bq = BigQuery(
     project="your-project-id",
@@ -380,7 +380,7 @@ The BigQuery subsystem consists of the following components:
 ## Complete Workflow Example
 
 ```python
-from forklift.bigquery import BigQuery
+from bioforklift.bigquery import BigQuery
 import pandas as pd
 
 # Initialize BigQuery

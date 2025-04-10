@@ -1,4 +1,4 @@
-from forklift.bigquery import BigQuery
+from bioforklift.bigquery import BigQuery
 
 bq = BigQuery(project="general-theiagen", dataset="automation_test")
 

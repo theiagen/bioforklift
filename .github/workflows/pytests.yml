@@ -1,17 +1,17 @@
-name: Forklift Tests
+name: Bioforklift Tests
 
 on:
   push:
     branches: [ main, master ]
     paths:
-      - 'src/forklift/**'
+      - 'src/bioforklift/**'
       - 'tests/**'
       - 'poetry.lock'
       - 'pyproject.toml'
   pull_request:
     branches: [ main, master ]
     paths:
-      - 'src/forklift/**'
+      - 'src/bioforklift/**'
       - 'tests/**'
       - 'poetry.lock'
       - 'pyproject.toml'
@@ -59,7 +59,7 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        poetry run pytest tests/ --cov=src/forklift --cov-report "xml:coverage.xml" --cov-report=term-missing:skip-covered --junitxml=junit.xml
+        poetry run pytest tests/ --cov=src/bioforklift --cov-report "xml:coverage.xml" --cov-report=term-missing:skip-covered --junitxml=junit.xml
     
     - name: Coverage comment
       uses: MishaKav/pytest-coverage-comment@main

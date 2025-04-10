@@ -2,7 +2,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 from .models import WorkflowConfig, WorkflowMetadata, SubmissionInfo
 from .client import TerraClient
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger("terra_submissions.py")
 

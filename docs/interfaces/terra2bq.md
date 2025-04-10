@@ -93,7 +93,7 @@ Here is how a basic setup for you project might look, where you give it your pro
 
 ```python
 from pathlib import Path
-from forklift.terra2bq import Terra2BQ
+from bioforklift.terra2bq import Terra2BQ
 
 # Initialize Terra2BQ with base parameters...
 terra2bq = Terra2BQ(
@@ -371,7 +371,7 @@ Then we check to sync all metadata for data that has been uploaded in the last 3
 
 ```python
 from pathlib import Path
-from forklift.terra2bq import Terra2BQ
+from bioforklift.terra2bq import Terra2BQ
 from metadata_cleanser import cleanse_metadata
 
 terra2bq = Terra2BQ(

@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any, List
 from google.cloud import bigquery
 from .utils import load_schema_from_yaml
 from google.api_core import exceptions
-from forklift.forklift_logging import setup_logger
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

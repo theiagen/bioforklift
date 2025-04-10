@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch, ANY
 from datetime import datetime
-from forklift.terra2bq import Terra2BQ
+from bioforklift.terra2bq import Terra2BQ
 
 # This is really just testing happy paths so can be a bit simpler
 # We'll use a lot of MagicMock objects to simulate the behavior of the real classes
@@ -139,7 +139,7 @@ def test_init_with_custom_timeframe_validation():
             lookup_timeframe="custom"
         )
 
-@patch("forklift.bigquery.BigQuery")
+@patch("bioforklift.bigquery.BigQuery")
 def test_initialize_operations(mock_bigquery_class, tmp_path):
     """Test initializing operations objects"""
     # Create temporary schema files with proper structure
@@ -172,7 +172,7 @@ def test_initialize_operations(mock_bigquery_class, tmp_path):
     
     # Create instance with schema files
     # NOTE: Disable automatic initialization to avoid errors
-    with patch("forklift.terra2bq.Terra2BQ.initialize_operations"):
+    with patch("bioforklift.terra2bq.Terra2BQ.initialize_operations"):
         t2bq = Terra2BQ(
             bigquery_project="test-project",
             bigquery_dataset="test-dataset",
@@ -200,7 +200,7 @@ def test_initialize_operations(mock_bigquery_class, tmp_path):
         config_schema_yaml=configs_schema
     )
 
-@patch("forklift.terra2bq.terra2bq.Terra")
+@patch("bioforklift.terra2bq.terra2bq.Terra")
 def test_setup_terra_client(mock_terra_class, sample_config, t2bq):
     """Test setting up Terra client"""
     t2bq.setup_terra_client(sample_config)
@@ -214,7 +214,7 @@ def test_setup_terra_client(mock_terra_class, sample_config, t2bq):
         credentials=None
     )
 
-@patch("forklift.terra2bq.terra2bq.Terra")
+@patch("bioforklift.terra2bq.terra2bq.Terra")
 def test_setup_terra_client_with_instance_values(mock_terra_class, sample_config):
     """Test that instance values take precedence over config values"""
     t2bq = Terra2BQ(
@@ -338,7 +338,7 @@ def test_upload_to_terra_success(t2bq, sample_config, sample_df):
     assert "set_name" in create_kwargs
     assert create_kwargs["set_name"] == set_name
     
-@patch("forklift.file_transfers.gcs_transfer.GCSTransferClient")
+@patch("bioforklift.file_transfers.gcs_transfer.GCSTransferClient")
 def test_download_with_file_transfer(mock_gcs_transfer_client, t2bq, sample_config, sample_df):
     """Test download_from_terra_to_bigquery with file transfer"""
     # Mock terra.entities.download_table to return our sample dataframe
@@ -410,7 +410,7 @@ def test_submit_workflow_success(t2bq, sample_config, sample_df):
     }
     t2bq.config_ops.get_prefix_fields.return_value = "prefix_field"
     
-    with patch("forklift.terra2bq.terra2bq.datetime") as mock_datetime:
+    with patch("bioforklift.terra2bq.terra2bq.datetime") as mock_datetime:
         mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
         mock_datetime.strftime.return_value = "2023-01-01 12:00:00"
         
@@ -443,7 +443,7 @@ def test_process_upload_and_submit_success(t2bq, sample_config):
     ]
     
     # Mock drop_system_value_columns function
-    with patch("forklift.terra2bq.terra2bq.drop_system_value_columns") as mock_drop:
+    with patch("bioforklift.terra2bq.terra2bq.drop_system_value_columns") as mock_drop:
         mock_drop.return_value = pd.DataFrame({
             "entity_name": ["entity1", "entity2", "entity3"],
             "attr1": [1, 2, 3]
@@ -539,7 +539,7 @@ def test_process_all_configs(t2bq):
     # Mock get_prefix_fields
     t2bq.config_ops.get_prefix_fields.return_value = "prefix_field"
 
-    with patch("forklift.terra2bq.terra2bq.sleep") as mock_sleep:
+    with patch("bioforklift.terra2bq.terra2bq.sleep") as mock_sleep:
         results = t2bq.process_all_configs(entity_type="test_entity", batch_size=1, cooldown_seconds=0)
     
     assert len(results) == 2
@@ -623,7 +623,7 @@ def test_sync_metadata_success(t2bq):
     t2bq.setup_terra_client = MagicMock()
     t2bq._cleanup_terra_client = MagicMock()
     
-    with patch("forklift.terra2bq.terra2bq.sleep") as mock_sleep:
+    with patch("bioforklift.terra2bq.terra2bq.sleep") as mock_sleep:
         result = t2bq.sync_metadata(days_back=7, update_bigquery=True, update_destination=True, batch_size=1, cooldown_seconds=0)
     
     assert result["status"] == "success"
@@ -710,7 +710,7 @@ def test_update_workflow_status_success(t2bq):
     t2bq.setup_terra_client = MagicMock()
     t2bq._cleanup_terra_client = MagicMock()
     
-    with patch("forklift.terra2bq.terra2bq.sleep") as mock_sleep:
+    with patch("bioforklift.terra2bq.terra2bq.sleep") as mock_sleep:
         result = t2bq.update_workflow_status(
             days_back=7, 
             batch_size=100, 
