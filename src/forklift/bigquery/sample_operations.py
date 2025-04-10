@@ -177,6 +177,94 @@ class BigQuerySampleOperations:
             
         except Exception as exc:
             raise RuntimeError(f"Error validating sequence files: {str(exc)}")
+        
+    def coerce_dataframe_types(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """
+        Coerce DataFrame column types to match schema definition
+        Only converts columns where types don't already align
+        
+        Args:
+            dataframe: pandas DataFrame to coerce
+            
+        Returns:
+            DataFrame with coerced types
+        """
+        logger.info("Coercing DataFrame types to match schema")
+        
+        if dataframe.empty:
+            return dataframe
+        
+        coerced_df = dataframe.copy()
+        
+        # Create mapping from field name to field type
+        field_type_map = {field.name: field.field_type for field in self.schema}
+        
+        # Map pandas dtypes to corresponding BigQuery types for comparison
+        pandas_to_bq_type_map = {
+            'int64': 'INTEGER',
+            'Int64': 'INTEGER',
+            'float64': 'FLOAT',
+            'bool': 'BOOLEAN',
+            'datetime64[ns]': 'DATETIME',
+            'datetime64[ns, UTC]': 'DATETIME',
+            'object': 'STRING',  # Most string columns will be object type
+            'string': 'STRING'   # Some versions of pandas use string dtype
+        }
+        
+        # Iterate through each column and attempt type conversion only if needed
+        for column in coerced_df.columns:
+            if column in field_type_map:
+                bq_type = field_type_map[column]
+                pandas_dtype = str(coerced_df[column].dtype)
+                
+                # Check if conversion is needed
+                needs_conversion = True
+                
+                # Compare current pandas dtype with expected BigQuery type
+                if pandas_dtype in pandas_to_bq_type_map:
+                    pandas_equivalent_bq_type = pandas_to_bq_type_map[pandas_dtype]
+                    
+                    # Skip conversion if types already align
+                    if (pandas_equivalent_bq_type == bq_type or
+                        (pandas_equivalent_bq_type == 'INTEGER' and bq_type == 'INT64') or
+                        (pandas_equivalent_bq_type == 'FLOAT' and bq_type == 'FLOAT64') or
+                        (pandas_equivalent_bq_type == 'BOOLEAN' and bq_type == 'BOOL') or
+                        (pandas_equivalent_bq_type == 'DATETIME' and bq_type == 'TIMESTAMP')):
+                        needs_conversion = False
+                        logger.debug(f"Column {column} already has compatible type {pandas_dtype}, skipping conversion")
+                
+                # Special case for strings as object type in pandas
+                if bq_type == 'STRING' and pandas_dtype == 'object':
+                    # Check if all non-null values are already strings
+                    if all(isinstance(val, str) for val in coerced_df[column].dropna()):
+                        needs_conversion = False
+                        logger.debug(f"Column {column} already contains string values, skipping conversion")
+                
+                # Only attempt conversion if needed
+                if needs_conversion:
+                    try:
+                        if bq_type == 'INTEGER' or bq_type == 'INT64':
+                            # Convert to nullable integer type
+                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
+                            coerced_df[column] = coerced_df[column].astype('Int64')  # pandas nullable integer type
+                        elif bq_type == 'FLOAT' or bq_type == 'FLOAT64':
+                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
+                        elif bq_type == 'BOOLEAN' or bq_type == 'BOOL':
+                            coerced_df[column] = coerced_df[column].map({'true': True, 'false': False})
+                        elif bq_type == 'DATE':
+                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce').dt.date
+                        elif bq_type == 'DATETIME' or bq_type == 'TIMESTAMP':
+                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce')
+                        elif bq_type == 'STRING':
+                            # Convert all values to strings, handling possible numeric values like if sample id is 1234
+                            coerced_df[column] = coerced_df[column].astype(str)
+                        
+                        logger.debug(f"Converted column {column} from {pandas_dtype} to {bq_type}")
+                    except Exception as e:
+                        # Log error but continue with other columns, will fail downstream if necessary
+                        logger.warning(f"Error converting column {column} to {bq_type}: {str(e)}")
+        
+        return coerced_df
 
     def prepare_samples_dataframe(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         logger.info("Preparing samples; filtering duplicates and adding time tracking")
@@ -206,8 +294,11 @@ class BigQuerySampleOperations:
 
         for field_name, values in system_values.items():
             validated_sequence_df[field_name] = values
+            
+        # Coerce DataFrame types to match schema
+        coerced_df = self.coerce_dataframe_types(validated_sequence_df)
 
-        return validated_sequence_df
+        return coerced_df
     
     def get_sample_identifier_field(self) -> Optional[str]:
         """Get the field name marked as sample_identifier"""
@@ -446,6 +537,40 @@ class BigQuerySampleOperations:
         entity_to_id_mapping = {row.entity_identifier: row.id for row in results}
 
         return entity_to_id_mapping
+    
+    def get_recent_sample_ids(self, config_id: str, limit: int = 1000) -> List[str]:
+        """
+        Get the IDs of the most recently loaded samples for a specific configuration.
+        
+        Args:
+            config_id: Configuration ID
+            limit: Maximum number of sample IDs to return
+            
+        Returns:
+            List of sample IDs
+        """
+        # Get the field to use as the config identifier for identifying samples
+        config_identifier_field = self.get_config_identifier_field()
+        
+        query = f"""
+        SELECT id
+        FROM `{self.table_name}`
+        WHERE {config_identifier_field} = @config_id
+        AND uploaded_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT @limit
+        """
+        
+        query_params = [
+            bigquery.ScalarQueryParameter("config_id", "STRING", config_id),
+            bigquery.ScalarQueryParameter("limit", "INTEGER", limit)
+        ]
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+        
+        query_job = self.bq_client.query(query, job_config=job_config)
+        
+        return [row["id"] for row in query_job]
     
     def get_samples_by_timeframe(
         self, 

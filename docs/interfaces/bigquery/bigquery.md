@@ -361,6 +361,8 @@ The BigQuery subsystem maintains several system-managed fields that track the st
     | `terra_submission_id` | External submission ID |
     | `terra_workflow_id` | External workflow ID |
     | `workflow_state` | Current state of the workflow |
+    | `single_datatable` | Optional field if same datatable is used for all operations |
+    | `transferred` | Optional value for where transient configurations are cycled, will be marked as true after data is transferred |
 
 These system fields are automatically managed by the BigQuerySampleOperations class and should be marked with `system_value: true` in your schema definitions.
 
@@ -442,7 +444,7 @@ print(f"Found {len(not_uploaded)} samples ready for upload")
     **Solution**:
     - Check that DataFrame columns match the schema definition
     - Ensure required fields have values
-    - Look for type mismatches
+    - Look for type mismatches (can be common with ids being Int/Str coming from Terra)
 
 ??? question "Missing System Values"
     **Problem**: System tracking fields not being updated

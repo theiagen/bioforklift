@@ -1,6 +1,6 @@
 # Core Concepts
 
-Here we will cover core concepts that drive the architecture and development of Forklift, a domain specific library for data automations
+Here we will cover core concepts that drive the architecture and development of Forklift, a domain specific library for bioinformatic data automations.
 
 ## System Architecture
 
@@ -120,8 +120,7 @@ Forklift operations are often time-based:
 
 - Daily processing of new samples
 - Hourly status updates
-- Lookback periods for synchronization of metadata fields
-- Time-tracking for all operations
+- Lookback periods for synchronization of metadata fields (where `sync_field` is `true`)
 
 ## Configuration Attributes
 

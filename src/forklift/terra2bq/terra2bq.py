@@ -2,7 +2,7 @@ import copy
 import json
 import sys
 from time import sleep
-from datetime import datetime, time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import pandas as pd
@@ -214,6 +214,9 @@ class Terra2BQ:
         updated_entities = {}
         failed_updates = []
         
+        # First let's coerce data types to not have issues with mismatches coming from Terra
+        self.samples_ops.coerce_dataframe_types(terra_df)
+        
         # For each sample in BigQuery, check if it exists in Terra
         # We've seen that the Terra data may have multiple rows for the same entity
         # Or that the entity may not exist in Terra at all because it was filtered out / deleted by user lab
@@ -315,6 +318,58 @@ class Terra2BQ:
                     return col_name
         
         return None
+    
+    def _retroactively_mark_samples_as_uploaded(self, 
+                                                config: Dict[str, Any], 
+                                                bq_load_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Mark newly loaded samples as already uploaded for same-table configuration.
+        
+        Args:
+        config: Configuration dictionary
+        bq_load_result: Result from loading data to BigQuery
+        
+        Returns:
+            {
+                "status": str,
+                "backfilled_count": int
+            }
+        """
+        
+        newly_loaded_ids_without_upload = self.samples_ops.get_recent_sample_ids(
+            config_id=config.get("id"),
+            limit=bq_load_result.get("loaded", 0),
+        )
+        
+        if not newly_loaded_ids_without_upload:
+            logger.info("No samples to backfill upload status")
+            return {
+                "status": "no_samples_to_backfill",
+                "backfilled_count": 0
+            }
+        
+        current_datetime = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
+        
+        current_project_time = datetime.now(pytz.timezone(self.project_timezone)).strftime("%Y%m%d_%H%M%S")
+        
+        prefix_field = self.config_ops.get_prefix_fields()
+        set_name = f"{config.get(prefix_field)}_{current_project_time}"
+        
+        updates = [
+            {'id': sample_id, "uploaded_at": current_datetime, "upload_source": set_name}
+            for sample_id in newly_loaded_ids_without_upload
+        ]
+        
+        logger.info(f"Updating {len(updates)} records in BigQuery with backfilled upload status")
+        update_result = self.samples_ops.bulk_update_samples(updates)
+        
+        logger.info(f"Backfilled upload status for {update_result.get('updated_count', 0)} samples")
+        
+        return {
+            "status": "success",
+            "backfilled_count": update_result.get("updated_count", 0)
+        }
+        
 
     def _update_terra_with_synced_metadata(
         self,
@@ -675,6 +730,106 @@ class Terra2BQ:
                     "error": f"Failed to process incomplete workflows: {str(exc)}"
                 }]
             }
+            
+    def _process_standard_workflow(self, config: Dict[str, Any], skip_transferred: bool = False) -> Dict[str, Any]:
+        """
+        Process standard worklfow with separate source and destination datatables.
+        This includesuploading to destination and submitting the workflows. 
+        
+        Args:
+        config: Configuration dictionary
+        skip_transferred: Whether to mark configs as transferred
+        
+        Returns:
+            Dictionary with upload and submission results
+        """
+        
+        process_result = self.process_upload_and_submit(config)
+    
+        # If using transient configs, mark them as transferred
+        if skip_transferred:
+            logger.info(f"Marking configuration {config.get('id')} as transferred")
+            self.config_ops.mark_configs_as_transferred(config.get('id'))
+        
+        return process_result
+    
+    def _process_single_datatable_workflow(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process workflow submission for single-datatable configurations.
+        This skips the upload step and creates entity sets directly from existing data.
+        
+        Args:
+            config: Configuration dictionary
+            download_result: Result from download_from_terra_to_bigquery
+            
+        Returns:
+            Dictionary with submission results
+        """
+        logger.info("Same datatable configuration - skipping upload and proceeding to workflow submission")
+        
+        # Get samples that were marked as uploaded but not submitted
+        samples_df = self.get_samples_for_submission(config)
+        
+        if samples_df.empty:
+            return {
+                "status": "no_samples_for_submission",
+                "config_id": config.get('id')
+            }
+        
+        try:
+            # Get entity type from config
+            target_entity = self._get_target_entity_from_config(config)
+            
+            # Get sample identifiers
+            sample_identifier_field = self.samples_ops.get_sample_identifier_field()
+            
+            # Group samples by their upload_source value
+            # This handles the case where multiple batches might be processed together
+            upload_sources = samples_df['upload_source'].unique()
+            
+            submission_results = []
+            
+            # Process each group of samples with the same upload_source
+            for upload_source in upload_sources:
+                # Filter samples for this upload_source
+                group_samples = samples_df[samples_df['upload_source'] == upload_source]
+                group_entity_ids = group_samples[sample_identifier_field].tolist()
+                
+                # Use the existing upload_source as the set name
+                set_name = upload_source
+                
+                # Create entity set
+                logger.info(f"Creating entity set {set_name} with {len(group_entity_ids)} samples")
+                self.terra.entities.create_entity_set(
+                    set_name=set_name,
+                    entity_type=target_entity,
+                    entities=group_entity_ids,
+                    use_destination=True
+                )
+                
+                # Submit workflow for this group
+                group_result = self.submit_workflow(config, set_name, group_samples)
+                submission_results.append(group_result)
+            
+            # Combine results from all submissions
+            total_workflow_count = sum(result.get('workflow_count', 0) for result in submission_results if result.get('status') == 'success')
+            
+            return {
+                "status": "success" if any(result.get('status') == 'success' for result in submission_results) else "error",
+                "config_id": config.get('id'),
+                "set_names": [result.get('set_name') for result in submission_results if result.get('status') == 'success'],
+                "submission_ids": [result.get('submission_id') for result in submission_results if result.get('status') == 'success'],
+                "workflow_count": total_workflow_count
+            }
+            
+        except Exception as exc:
+            logger.error(f"Error creating entity set or submitting workflow: {str(exc)}")
+            return {
+                "status": "error",
+                "message": str(exc),
+                "config_id": config.get('id')
+            }
+        
 
     def initialize_operations(self) -> None:
         logger.info("Initializing Terra2BQ operations objects")
@@ -823,6 +978,9 @@ class Terra2BQ:
         # Set up Terra client for this configuration if not already done
         if not self.terra:
             self.setup_terra_client(config)
+            
+        # Check for when the source and destination datatables are the same
+        is_single_datatable = config.get("single_datatable", False)
         
         # Get entity type from config
         entity_type = config.get("entity_type", self.source_datatable)
@@ -887,6 +1045,13 @@ class Terra2BQ:
                 "message": f"Failed to load data: {bq_load_result.get('errors')}",
                 "config_id": config.get('id')
             }
+            
+        # If the source and destination datatables are the same, we need to backfill the upload status
+        if is_single_datatable and bq_load_result.get("loaded", 0) > 0:
+            logger.info(f"Backfilling upload status for {bq_load_result.get('loaded', 0)} samples")
+            backfill_result = self._retroactively_mark_samples_as_uploaded(config, bq_load_result)
+            logger.info(f"Backfilled upload status for {backfill_result.get('backfilled_count', 0)} samples")
+            
         
         return {
             "status": "success",
@@ -1282,22 +1447,36 @@ class Terra2BQ:
             download_result = self.download_from_terra_to_bigquery(config_copy, destination_bucket, preserve_path_structure)
             if download_result.get("status") != "success":
                 return download_result
+            
+            is_single_datatable = config_copy.get("single_datatable", False)
+            
+            if is_single_datatable:
+                logger.info(f"Processing same-datatable configuration {config_copy.get('id')}")
+                submission_result = self._process_single_datatable_workflow(config_copy)
+                    
+            else:
+                # Standard path to upload to destination and submit
+                logger.info(f"Processing standard configuration {config_copy.get('id')}")
+                submission_result = self.process_upload_and_submit(config_copy)
                 
-            # Continue with upload and submission
-            process_result = self.process_upload_and_submit(config_copy)
-            
-            # If we are running this process where configs are transient 
-            # We want to mark the configs as transferred
-            if skip_transferred:
-                logger.info(f"Marking configuration {config_copy.get('id')} as transferred")
-                self.config_ops.mark_configs_as_transferred(config_copy.get('id'))
-            
+                # If we are running this process where configs are transient 
+                # We want to mark the configs as transferred
+                if skip_transferred:
+                    logger.info(f"Marking configuration {config_copy.get('id')} as transferred")
+                    self.config_ops.mark_configs_as_transferred(config_copy.get('id'))
+                    
             # Combine results from both stages
-            return {
-                **process_result,
+            result = {
+                **submission_result,
                 "loaded_count": download_result.get("loaded_count", 0),
                 "filtered_count": download_result.get("filtered_count", 0)
             }
+            
+            # Add backfilled count for single-datatable configurations
+            if is_single_datatable and "backfilled_count" in download_result:
+                result["backfilled_count"] = download_result.get("backfilled_count", 0)
+                
+            return result
             
         except Exception as exc:
             logger.error(f"Error processing configuration {config_copy.get('id')}: {str(exc)}")
@@ -1306,6 +1485,7 @@ class Terra2BQ:
                 "message": str(exc),
                 "config_id": config_copy.get('id')
             }
+            
         finally:
             # Clean up Terra client
             self._cleanup_terra_client()
