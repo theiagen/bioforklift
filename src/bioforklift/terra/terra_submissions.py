@@ -124,6 +124,11 @@ class TerraSubmissions:
         submission_date = datetime.fromisoformat(response["submissionDate"].rstrip("Z"))
 
         for workflow in response.get("workflows", []):
+            
+            if "workflowId" not in workflow:
+                logger.info(f"Skipping workflow with missing workflowId in submission {submission_id}")
+                continue
+            
             if skip_aborted and workflow.get("status") == "Aborted":
                 logger.info(f"Skipping aborted workflow: {workflow['workflowId']}")
                 continue
