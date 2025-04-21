@@ -89,12 +89,10 @@ class TestTerraClient:
         # Ensure refresh wasn't called
         terra_client._credentials.refresh.assert_not_called()
 
-    def test_get_token_refresh(self):
-        """Test refreshing an expired token"""
+    def test_get_token_fetch_id_token_success(self):
+        """Test fetching a new ID token successfully"""
         with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
             mock_credentials = MagicMock()
-            mock_credentials.id_token = "new-token"
-            mock_credentials.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
             mock_get_creds.return_value = mock_credentials
             
             client = TerraClient(
@@ -102,14 +100,43 @@ class TestTerraClient:
                 source_project="test-project",
             )
             
-            # Force expiry
-            client._token = "old-token"
-            client._token_expiry = datetime.now(timezone.utc) - timedelta(minutes=5)
+            # Mock the fetch_id_token function
+            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+                mock_fetch_id_token.return_value = "id-token-123"
+                
+                token = client._get_token()
+                
+                assert token == "id-token-123"
+                mock_fetch_id_token.assert_called_once()
+                mock_credentials.refresh.assert_not_called()
+
+    def test_get_token_fetch_id_token_fallback(self):
+        """Test falling back to regular credentials when ID token fetch fails"""
+        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+            mock_credentials = MagicMock()
+            mock_credentials.token = "access-token-456"
+            mock_credentials.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
             
-            token = client._get_token()
+            # Configure the mock to not have an id_token attribute
+            del mock_credentials.id_token
+            mock_get_creds.return_value = mock_credentials
             
-            assert token == "new-token"
-            mock_credentials.refresh.assert_called_once()
+            client = TerraClient(
+                source_workspace="test-workspace",
+                source_project="test-project",
+            )
+            
+            # Mock the fetch_id_token function to fail
+            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+                mock_fetch_id_token.side_effect = Exception("ID token fetch failed")
+                
+                # Mock hasattr to return False for id_token
+                with patch('builtins.hasattr', side_effect=lambda obj, attr: attr != 'id_token' and hasattr(obj, attr)):
+                    token = client._get_token()
+                    
+                    assert token == "access-token-456"
+                    mock_fetch_id_token.assert_called_once()
+                    mock_credentials.refresh.assert_called_once()
 
     def test_get_token_refresh_failure(self):
         """Test failure during token refresh"""
@@ -123,10 +150,37 @@ class TestTerraClient:
                 source_project="test-project",
             )
             
-            with pytest.raises(TerraAuthenticationError) as exc_info:
-                client._get_token()
+            # Mock the fetch_id_token function to fail
+            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+                mock_fetch_id_token.side_effect = Exception("ID token fetch failed")
+                
+                with pytest.raises(TerraAuthenticationError) as exc_info:
+                    client._get_token()
+                
+                # The error message comes from the refresh failure, not the general failure
+                assert "Failed to refresh authentication token" in str(exc_info.value)
+
+    def test_get_token_with_id_token_attribute(self):
+        """Test when credentials have id_token attribute"""
+        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+            mock_credentials = MagicMock()
+            mock_credentials.id_token = "credential-id-token"
+            mock_credentials.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+            mock_get_creds.return_value = mock_credentials
             
-            assert "Failed to refresh authentication token" in str(exc_info.value)
+            client = TerraClient(
+                source_workspace="test-workspace",
+                source_project="test-project",
+            )
+            
+            # Mock the fetch_id_token function to fail
+            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+                mock_fetch_id_token.side_effect = Exception("ID token fetch failed")
+                
+                token = client._get_token()
+                
+                assert token == "credential-id-token"
+                mock_credentials.refresh.assert_called_once()
 
     def test_headers(self, terra_client):
         """Test header generation"""
@@ -227,5 +281,3 @@ class TestTerraClient:
                 params={"validate": True},
                 use_destination=True,
             )
-            
-# Comment to trigger github actions

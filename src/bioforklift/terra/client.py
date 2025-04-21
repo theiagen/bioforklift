@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 from bioforklift.forklift_logging import setup_logger
 from google.auth.transport import requests as google_requests
 from google.oauth2.credentials import Credentials
-from google.oauth2 import service_account
-from google.auth import default
+from google.oauth2 import service_account, id_token
+from google.auth import default, transport
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from .exceptions import (
     TerraAPIError,
@@ -106,12 +106,27 @@ class TerraClient:
             logger.debug(f"Using cached token, expires at {self._token_expiry}")
             return self._token
         try:
-            self._credentials.refresh(google_requests.Request())
-            self._token = self._credentials.id_token
-            # Get exp from token and convert to datetime
-            self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc)
-            logger.debug(f"ID Token refreshed, expires at {self._token_expiry}")
-            return self._token
+            try:
+                # This works on Google Cloud environments
+                google_auth_request = transport.requests.Request()
+                self._token = id_token.fetch_id_token(google_auth_request, self.token_audience)
+                self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+                logger.debug("Successfully fetched ID token")
+                return self._token
+            except Exception as id_token_error:
+                logger.debug(f"Failed to fetch ID token: {id_token_error}, falling back to regular credentials")
+                
+                # Fall back to regular credential flow
+                self._credentials.refresh(google_requests.Request())
+                
+                if hasattr(self._credentials, 'id_token'):
+                    self._token = self._credentials.id_token
+                else:
+                    self._token = self._credentials.token
+                
+                self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc) if self._credentials.expiry else datetime.now(timezone.utc) + timedelta(minutes=30)
+                logger.debug(f"Using regular credentials, token expires at {self._token_expiry}")
+                return self._token
         except RefreshError as refresh_error:
             logger.exception("Failed to refresh authentication token")
             raise TerraAuthenticationError(
