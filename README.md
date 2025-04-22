@@ -1,6 +1,11 @@
 # bioforklift
 
 [![Tests](https://github.com/theiagen/bioforklift/actions/workflows/pytests.yml/badge.svg)](https://github.com/theiagen/bioforklift/actions/actions/workflows/pytests.yml)
+# Your Package Name
+[![PyPI version](https://badge.fury.io/py/bioforklift.svg)](https://badge.fury.io/py/bioforklift)
+[![Downloads](https://pepy.tech/badge/bioforklift)](https://pepy.tech/project/bioforklift)
+[![Python versions](https://img.shields.io/pypi/pyversions/bioforklift.svg)](https://pypi.org/project/bioforklift/)
+[![License](https://img.shields.io/pypi/l/bioforklift.svg)](https://pypi.org/project/bioforklift/)
 
 
 ### Getting Setup
