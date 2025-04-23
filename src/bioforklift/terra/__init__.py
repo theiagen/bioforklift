@@ -2,6 +2,7 @@ from .terra import Terra
 from .client import TerraClient
 from .terra_entities import TerraEntities
 from .terra_submissions import TerraSubmissions
+from .terra_merge import TerraMerge
 from .exceptions import (
     TerraError,
     TerraAPIError,
@@ -21,6 +22,7 @@ __all__ = [
     "TerraEntities",
     "TerraSubmissions",
     "WorkflowConfig",
+    "TerraMerge",
     "WorkflowMetadata",
     "SubmissionInfo",
     "TerraError",
