@@ -80,7 +80,7 @@ class TerraMerge:
             
         if master_key is None:
             # For master table, we need to ensure the key follows Terra conventions
-            master_key = f"{master_table}_id"
+            master_key =  f"entity:{master_table}_id"
             if not master_df.empty and master_key not in master_df.columns:
                 # If master table exists but doesn't have expected key, try to detect it
                 sys.exit(f"Master table {master_table} does not contain expected key {master_key}")
@@ -117,16 +117,29 @@ class TerraMerge:
             # Always include the primary key
             if primary_key not in fields_to_use:
                 fields_to_use.append(primary_key)
+                
+            # Filter primary and secondary dataframes to only include specified fields
+            primary_fields = [field for field in fields_to_use if field in primary_filtered.columns]
+            secondary_fields = [field for field in fields_to_use if field in secondary_filtered.columns]
+            
+            # Ensure primary key is included in both dataframes for merge
+            if primary_key not in primary_fields:
+                primary_fields.append(primary_key)
+            if primary_key not in secondary_fields:
+                secondary_fields.append(primary_key)
+                
+            primary_filtered = primary_filtered[primary_fields]
+            secondary_filtered = secondary_filtered[secondary_fields]
         else:
             # Use all fields except excluded
             fields_to_use = all_fields
-        
-        # Apply exclusions
-        if fields_to_exclude:
-            fields_to_use = [field for field in fields_to_use if field not in fields_to_exclude]
-            # Ensure primary key is not excluded
-            if primary_key not in fields_to_use:
-                fields_to_use.append(primary_key)
+            if fields_to_exclude:
+                # Apply exclusions , filter dataframes to exclude specified fields
+                primary_fields = [field for field in primary_filtered.columns if field not in fields_to_exclude or f == primary_key]
+                secondary_fields = [field for field in secondary_filtered.columns if field not in fields_to_exclude or f == primary_key]
+                
+                primary_filtered = primary_filtered[primary_fields]
+                secondary_filtered = secondary_filtered[secondary_fields]
         
         # Perform merge - use outer join to ensure all records from both tables are included
         # Only keep records that appear in both tables
