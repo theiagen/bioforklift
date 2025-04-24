@@ -105,28 +105,38 @@ class TerraClient:
         ):
             logger.debug(f"Using cached token, expires at {self._token_expiry}")
             return self._token
+        
         try:
-            try:
-                # This works on Google Cloud environments
-                google_auth_request = transport.requests.Request()
-                self._token = id_token.fetch_id_token(google_auth_request, self.token_audience)
-                self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
-                logger.debug("Successfully fetched ID token")
-                return self._token
-            except Exception as id_token_error:
-                logger.debug(f"Failed to fetch ID token: {id_token_error}, falling back to regular credentials")
-                
-                # Fall back to regular credential flow
-                self._credentials.refresh(google_requests.Request())
-                
-                if hasattr(self._credentials, 'id_token'):
-                    self._token = self._credentials.id_token
-                else:
-                    self._token = self._credentials.token
-                
-                self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc) if self._credentials.expiry else datetime.now(timezone.utc) + timedelta(minutes=30)
-                logger.debug(f"Using regular credentials, token expires at {self._token_expiry}")
-                return self._token
+            # First determine if this is a service account or user
+            is_service_account = False
+            if hasattr(self._credentials, 'service_account_email'):
+                is_service_account = bool(self._credentials.service_account_email)
+                logger.debug(f"Detected service account: {is_service_account}")
+            
+            if is_service_account:
+                try:
+                    # For service accounts, use ID token
+                    google_auth_request = transport.requests.Request()
+                    self._token = id_token.fetch_id_token(google_auth_request, self.token_audience)
+                    self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+                    logger.info("Successfully fetched ID token for service account")
+                    return self._token
+                except Exception as id_token_error:
+                    logger.debug(f"Failed to fetch ID token for service account: {id_token_error}, falling back")
+            
+            # Regular credential flow for users or as fallback
+            self._credentials.refresh(google_requests.Request())
+            
+            # For users, prefer access token over ID token
+            if is_service_account and hasattr(self._credentials, 'id_token'):
+                self._token = self._credentials.id_token
+            else:
+                self._token = self._credentials.token
+            
+            self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc) if self._credentials.expiry else datetime.now(timezone.utc) + timedelta(minutes=30)
+            logger.debug(f"Using {'service account' if is_service_account else 'user'} credentials, token expires at {self._token_expiry}")
+            return self._token
+        
         except RefreshError as refresh_error:
             logger.exception("Failed to refresh authentication token")
             raise TerraAuthenticationError(
