@@ -135,8 +135,8 @@ class TerraMerge:
             fields_to_use = all_fields
             if fields_to_exclude:
                 # Apply exclusions , filter dataframes to exclude specified fields
-                primary_fields = [field for field in primary_filtered.columns if field not in fields_to_exclude or f == primary_key]
-                secondary_fields = [field for field in secondary_filtered.columns if field not in fields_to_exclude or f == primary_key]
+                primary_fields = [field for field in primary_filtered.columns if field not in fields_to_exclude or field == primary_key]
+                secondary_fields = [field for field in secondary_filtered.columns if field not in fields_to_exclude or field == primary_key]
                 
                 primary_filtered = primary_filtered[primary_fields]
                 secondary_filtered = secondary_filtered[secondary_fields]
