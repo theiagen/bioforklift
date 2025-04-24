@@ -123,7 +123,6 @@ class TerraClient:
                     return self._token
                 except Exception as id_token_error:
                     logger.debug(f"Failed to fetch ID token for service account: {id_token_error}, falling back")
-                    # Fall through to regular flow
             
             # Regular credential flow for users or as fallback
             self._credentials.refresh(google_requests.Request())
