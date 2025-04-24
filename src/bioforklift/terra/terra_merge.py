@@ -69,7 +69,7 @@ class TerraMerge:
             logger.info(f"Master table {master_table} not found or empty, will create new")
             master_df = pd.DataFrame()
         
-        # Auto-detect (enforce?) keys if not provided, we can do this automatically from the entity ids
+        # Auto-enforce keys if not provided, we can do this automatically from the entity ids
         if primary_key is None:
             primary_key = f"entity:{primary_table}_id"
             logger.info(f"Using detected primary key: {primary_key}")
