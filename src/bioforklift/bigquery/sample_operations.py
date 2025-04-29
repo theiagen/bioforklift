@@ -390,6 +390,20 @@ class BigQuerySampleOperations:
             DataFrame ready for upload with all validations and transformations applied
         """
         
+        if "entity_type" in config:
+            entity_type = config["entity_type"]
+            sample_identifier_field = self.get_sample_identifier_field()
+            
+            if sample_identifier_field and entity_type:
+                entity_type_column = f"entity:{entity_type}_id"
+                
+                if entity_type_column in dataframe.columns:
+                    logger.info(f"Renaming {entity_type_column} to {sample_identifier_field}")
+                    
+                    dataframe = dataframe.rename(columns={entity_type_column: sample_identifier_field})  
+            else:
+                logger.warning(f"Could not find column '{entity_type_column}' for mapping to '{sample_identifier_field}'")
+                    
         # Apply standard preparation
         prepared_df = self.prepare_samples_dataframe(dataframe)
         

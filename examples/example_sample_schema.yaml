@@ -9,7 +9,6 @@ fields:
   entity_identifier:
     type: string
     required: true
-    column_mappings: ["entity:data_id"]
     description: External entity identifier
     sample_identifier: true
 
