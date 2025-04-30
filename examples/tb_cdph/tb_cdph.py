@@ -72,13 +72,19 @@ if build_config:
 
     wgsdst_pattern = r"^WGSDST_\d{4}-\d{2}-\d{2}_[A-Z]{2}$"
 
+    list_all_datatables = config_builder.list_terra_datatables()
+    print(f"List of all datatables: {list_all_datatables}")
+
     matching_entities = config_builder.get_new_entity_types(table_pattern=wgsdst_pattern)
     print(f"Matching entities: {matching_entities}")
 
-
+    overwrite_dict = {
+        "transferred": True
+    }
     print("\nBuilding configurations for matching WGS datasets...")
     created_configs = config_builder.build_new_configs(
-        table_pattern=wgsdst_pattern
+        table_pattern=wgsdst_pattern,
+        override_values=overwrite_dict,
     )
 
     print(f"Created {len(created_configs)} new configurations for WGS datasets")

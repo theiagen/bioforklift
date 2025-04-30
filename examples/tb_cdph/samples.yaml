@@ -38,6 +38,7 @@ fields:
   uploaded_at:
     type: string
     description: Date of sample upload
+    sync_field: true
 
   # System fields that need to be dropped before submission to terra 
   created_at:
