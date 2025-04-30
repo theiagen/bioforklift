@@ -1550,7 +1550,7 @@ class Terra2BQ:
                 # Reset Terra client for each configuration
                 self.terra = None
                 
-                result = self.process_configuration(config, destination_bucket, preserve_path_structure)
+                result = self.process_configuration(config, destination_bucket, preserve_path_structure, skip_transferred)
                 results.append(result)
                 
                 # We want loggable status messages
