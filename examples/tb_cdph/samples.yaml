@@ -6,13 +6,19 @@ fields:
     primary_key: true  # This field will be auto-populated with UUID
     system_value: true
   
-  entity_identifier:
+  sample_id:
     type: string
     required: true
-    description: External entity identifier
     sample_identifier: true
 
-  config_id:
+  entity_type:
+    type: string
+    required: true
+    description: Original entity from source table
+    inherit_from_config: entity_type
+    system_value: true
+
+  tb_config_id:
     type: string
     description: Configuration ID
     inherit_from_config: id
@@ -29,11 +35,11 @@ fields:
     description: Read 2 sequence
     sequence_file: true
 
-  upload_date:
+  uploaded_at:
     type: string
-    description: Date of sample collection
-    metadata: true
+    description: Date of sample upload
     sync_field: true
+
   # System fields that need to be dropped before submission to terra 
   created_at:
     type: datetime
@@ -70,8 +76,14 @@ fields:
     type: string
     description: Terra workflow submission ID
     system_value: true
+
+  workflow_type:
+    type: string
+    description: Workflow type
+    inherit_from_config: terra_analysis_method
+    system_value: true
     
   workflow_state:
     type: string
-    description: Current state of the workflow
+    description: Current state of the terra workflow
     system_value: true

@@ -1516,7 +1516,10 @@ class Terra2BQ:
         
         configs = self.get_active_configs(entity_type=entity_type, skip_transferred=skip_transferred)
         
-        if not configs:
+        if not configs and skip_transferred:
+            logger.info(f"Configs have already been transferred, skipping processing")
+            return []
+        elif not configs:
             logger.info(f"No active configurations found" + 
                     (f" for entity type {entity_type}" if entity_type else ""))
             return []
@@ -1530,7 +1533,7 @@ class Terra2BQ:
         
         results = []
         for i, config in enumerate(configs):
-            # Track the iterative progress
+            
             current_number = i + 1
             percent_complete = (current_number / total_configs) * 100
             
@@ -1550,7 +1553,7 @@ class Terra2BQ:
                 # Reset Terra client for each configuration
                 self.terra = None
                 
-                result = self.process_configuration(config, destination_bucket, preserve_path_structure)
+                result = self.process_configuration(config, destination_bucket, preserve_path_structure, skip_transferred)
                 results.append(result)
                 
                 # We want loggable status messages

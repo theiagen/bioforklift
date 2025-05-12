@@ -1,0 +1,149 @@
+fields:
+  id:
+    type: string
+    required: true
+    description: Configuration ID
+    primary_key: true
+    system_value: true
+
+  name:
+    type: string
+    required: true
+    description: Configuration name
+    display_for_alerts: true
+    
+  state:
+    type: string
+    required: true
+    description: State for project
+    
+  prefix:
+    type: string
+    required: true
+    use_as_prefix: true
+    description: Configuration prefix
+    
+  entity_type:
+    type: string
+    required: true
+    description: Original entity from source table
+    
+  terra_source_project:
+    type: string
+    required: true
+    description: Terra project identifier
+
+  predecessor_id:
+    type: string
+    description: Predeccessor configuration ID
+    
+  terra_source_workspace:
+    type: string
+    required: true
+    description: Terra workspace identifier
+
+  terra_destination_project:
+    type: string
+    required: true
+    description: Terra project identifier
+
+  terra_destination_workspace:
+    type: string
+    required: true
+    description: Terra workspace identifier
+    
+  active:
+    type: boolean
+    default: true
+    description: Whether the configuration is active
+
+  transferred:
+    type: boolean
+    default: false
+    description: Whether the configuration has been transferred
+    
+  terra_analysis_method:
+    type: string
+    required: true
+    description: Terra analysis method to use (workflow i.e TheiaCoV_Illumina_PE)
+    
+  terra_method_config:
+    type: json
+    description: Terra method configuration details
+    properties:
+      methodConfigurationNamespace:
+        type: string
+        required: true
+        description: Method configuration namespace
+      
+      methodConfigurationName:
+        type: string
+        required: true
+        description: Method configuration name
+      
+      entityType:
+        type: string
+        required: true
+        description: Entity type for the method
+      
+      entityName:
+        type: string
+        required: true
+        description: Template for entity names
+      
+      expression:
+        type: string
+        required: true
+        description: Expression for the method
+      
+      useCallCache:
+        type: boolean
+        required: true
+        description: Whether to use call cache
+      
+      deleteIntermediateOutputFiles:
+        type: boolean
+        required: true
+        description: Whether to delete intermediate output files
+      
+      useReferenceDisks:
+        type: boolean
+        required: true
+        description: Whether to use reference disks
+      
+      memoryRetryMultiplier:
+        type: number
+        required: true
+        description: Memory retry multiplier
+      
+      workflowFailureMode:
+        type: string
+        required: true
+        description: Workflow failure mode
+      
+      userComment:
+        type: string
+        required: true
+        description: Template for user comments
+  
+  config_url:
+    type: string
+    required: true
+    description: URL to the configuration
+  
+  config_version:
+    type: string
+    required: true
+    description: Version of the configuration
+
+  created_at:
+      type: datetime
+      required: true
+      description: Record creation timestamp
+      system_value: true
+
+  updated_at:
+      type: datetime
+      description: Record update timestamp
+      updated_datetime: true 
+      system_value: true

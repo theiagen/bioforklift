@@ -1,0 +1,29 @@
+{
+    "name": "TB",
+    "prefix": "tb_cdph",
+    "state": "California",
+    "entity_type": "WGSDST_2025-04-09_AS",
+    "terra_source_project": "cdph-terrabio-taborda-manual",
+    "terra_source_workspace": "CDPH_Automation_Development",
+    "terra_destination_project": "cdph-terrabio-taborda-manual",
+    "terra_destination_workspace": "CDPH_Automation_Development",
+    "active": true,
+    "transferred": false,
+    "terra_analysis_method": "TheiaProk_Illumina_PE_PHB_Automation",
+    "terra_method_config": {
+      "methodConfigurationNamespace": "cdph-terrabio-taborda-manual",
+      "methodConfigurationName": "TheiaProk_Illumina_PE_PHB_Automation",
+      "entityType": "ca_tb_combined_set",
+      "entityName": "test-specimen-{date}",
+      "expression": "this.ca_tb_combineds",
+      "useCallCache": false,
+      "deleteIntermediateOutputFiles": false,
+      "useReferenceDisks": false,
+      "memoryRetryMultiplier": 1,
+      "workflowFailureMode": "NoNewCalls",
+      "userComment": "Test job automatically launched; test-{date}"
+    },
+    "predecessor_id": null,
+    "config_url": "https://github.com/test.json",
+    "config_version": "v1.0"
+}

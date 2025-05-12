@@ -102,7 +102,7 @@ class TerraEntities:
         Args:
             data: DataFrame containing entities to upload
             target: Target entity type name
-            sample_identifier_column: Column to use as the entity identifier that target will map to (if None, uses first column)
+            entity_identifier_column: Column to use as the entity identifier that target will map to (if None, uses first column)
             model: Data model type ('flexible' or 'strict')
             delete_empty: Whether to delete empty values
             use_destination: Whether to use destination workspace (True) or source workspace (False)
