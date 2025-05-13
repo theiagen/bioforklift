@@ -1613,7 +1613,8 @@ class Terra2BQ:
         config: Dict[str, Any],
         days_back: int,
         update_bigquery: bool = True,
-        update_destination: bool = True
+        update_destination: bool = True,
+        use_destination_entity: bool = False,
     ) -> Dict[str, Any]:
         """
         Sync metadata for a single configuration.
@@ -1634,7 +1635,12 @@ class Terra2BQ:
             }
         """
         config_id = config.get('id')
-        entity_type = config.get('entity_type')
+        
+        if use_destination_entity:
+            # Use the destination entity type from the configuration
+            entity_type = self._get_target_entity_from_config(config)
+        else:
+            entity_type = config.get('entity_type')
         
         if not entity_type:
             logger.warning(f"Configuration {config_id} missing entity_type field, skipping")
@@ -1738,6 +1744,7 @@ class Terra2BQ:
         days_back: int = 30,
         update_bigquery: bool = True,
         update_destination: bool = True,
+        use_destination_entity: bool = False,
         batch_size: int = 1,
         cooldown_seconds: int = 1
     ) -> Dict[str, Any]:
@@ -1817,7 +1824,8 @@ class Terra2BQ:
                     config=config,
                     days_back=days_back,
                     update_bigquery=update_bigquery,
-                    update_destination=update_destination
+                    update_destination=update_destination,
+                    use_destination_entity=use_destination_entity
                 )
                 
                 # Update aggregated metrics for reporting
