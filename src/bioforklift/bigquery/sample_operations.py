@@ -119,7 +119,10 @@ class BigQuerySampleOperations:
         if extra_columns:
             logger.debug(f"Filtering out extra columns: {extra_columns}")
             filtered_out_excess_columns_df = dataframe.drop(columns=extra_columns)
-        return filtered_out_excess_columns_df
+            return filtered_out_excess_columns_df
+        else:
+            logger.debug("No extra columns to filter out")
+            return dataframe
     
     def _map_field_names(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Map source field names to BigQuery field names using column_mappings attributes"""
