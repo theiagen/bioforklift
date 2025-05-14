@@ -14,7 +14,6 @@ Before using bioforklift, ensure you have:
 ## Installation
 
 You can install bioforklift using pip:
-(To come, still haven't published the package)
 ```bash
 pip install bioforklift
 ```

@@ -340,8 +340,6 @@ result = terra2bq.sync_metadata(
     use_destination_entity=True # We want to sync the BigQuery table from the target/destination entity table
 )
 
-print(f"Updated {result['bq_updated_count']} records in BigQuery")
-print(f"Updated {result['destination_updated_count']} entities in Terra")
 ```
 
 ### Dry Run

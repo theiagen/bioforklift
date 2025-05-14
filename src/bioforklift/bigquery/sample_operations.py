@@ -974,10 +974,9 @@ class BigQuerySampleOperations:
             {limit_clause}
             """
             
-            # Set up query parameters
             query_params = []
             for name, value in parameters.items():
-                # Determine parameter type based on Python type
+                # Determine parameter type based on Python type - basic types for now at least
                 param_type = "STRING"
                 if isinstance(value, int):
                     param_type = "INT64"
@@ -992,7 +991,6 @@ class BigQuerySampleOperations:
                     bigquery.ScalarQueryParameter(name, param_type, value)
                 )
             
-            # Configure and execute query
             job_config = bigquery.QueryJobConfig()
             job_config.query_parameters = query_params
 
