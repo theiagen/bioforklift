@@ -1624,6 +1624,7 @@ class Terra2BQ:
             days_back: Number of days to look back for samples
             update_bigquery: Whether to update BigQuery with Terra metadata
             update_destination: Whether to update destination Terra datatable
+            use_destination_entity: Whether to use the destination entity type from the configuration
             
         Returns:
             {
@@ -1755,6 +1756,7 @@ class Terra2BQ:
             days_back: Number of days to look back for samples
             update_bigquery: Whether to update BigQuery with Terra metadata (set to False for dry run)
             update_destination: Whether to update destination Terra datatable (set to False for dry run)
+            use_destination_entity: Whether to use the destination entity type from the configuration
             batch_size: Number of configurations to process in a batch before cooldown
             cooldown_seconds: Seconds to wait between batches
             

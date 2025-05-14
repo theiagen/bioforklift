@@ -602,7 +602,6 @@ def test_sync_metadata_for_config_success(t2bq, sample_config):
     t2bq._update_bigquery_with_terra_metadata.assert_called_once()
     t2bq._update_terra_with_synced_metadata.assert_called_once()  
 
-# # Test sync_metadata
 def test_sync_metadata_success(t2bq):
     """Test successful sync_metadata across all configs"""
     # Mock get_active_configs
@@ -638,6 +637,79 @@ def test_sync_metadata_success(t2bq):
     assert t2bq.setup_terra_client.call_count == 2
     assert t2bq._cleanup_terra_client.call_count == 2
     assert mock_sleep.call_count == 1  # Sleep between batches, a little nap
+    
+def test_sync_metadata_for_config_calls_get_target_entity(t2bq):
+    """Test that sync_metadata_for_config calls _get_target_entity_from_config when use_destination_entity is True"""
+    # Create a test config
+    config = {"id": "test_config", "prefix_field": "test_prefix", "entity_type": "sample"}
+    
+    # Mock _get_target_entity_from_config
+    t2bq._get_target_entity_from_config = MagicMock(return_value="destination_entity_type")
+    
+    # Mock the necessary dependencies to avoid actual execution
+    t2bq.samples_ops = MagicMock()
+    t2bq.samples_ops.get_config_identifier_field.return_value = "config_id"
+    t2bq.samples_ops.get_sync_fields.return_value = ["field1", "field2"]
+    t2bq.samples_ops.get_sample_identifier_field.return_value = "sample_id"
+    
+    # Create a mock dataframe for samples
+    sample_df = pd.DataFrame({
+        "config_id": ["test_config"],
+        "sample_id": ["sample1"],
+        "field1": ["value1"],
+        "field2": ["value2"]
+    })
+    t2bq.samples_ops.get_samples_by_timeframe.return_value = sample_df
+    
+    # Mock _get_terra_data
+    t2bq._get_terra_data = MagicMock(return_value={"status": "success", "data": pd.DataFrame()})
+    
+    # Mock _update_bigquery_with_terra_metadata and _update_terra_with_synced_metadata
+    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value={
+        "updated_count": 1,
+        "updated_entities": ["entity1"],
+        "failed_updates": []
+    })
+    t2bq._update_terra_with_synced_metadata = MagicMock(return_value={
+        "updated_count": 1,
+        "failed_updates": []
+    })
+    
+    # Test with use_destination_entity=True
+    result = t2bq.sync_metadata_for_config(
+        config=config,
+        days_back=7,
+        update_bigquery=True,
+        update_destination=True,
+        use_destination_entity=True
+    )
+    
+    # Verify _get_target_entity_from_config was called twice:
+    # - Once for getting the entity type when use_destination_entity=True
+    # - Once for getting the destination entity type when updating Terra
+    assert t2bq._get_target_entity_from_config.call_count == 2
+    t2bq._get_target_entity_from_config.assert_any_call(config)
+    
+    # Verify the result
+    assert result["status"] == "success"
+    assert result["bq_updated_count"] == 1
+    assert result["destination_updated_count"] == 1
+    
+    # Reset the mock and test with use_destination_entity=False
+    t2bq._get_target_entity_from_config.reset_mock()
+    
+    result = t2bq.sync_metadata_for_config(
+        config=config,
+        days_back=7,
+        update_bigquery=True,
+        update_destination=True,
+        use_destination_entity=False
+    )
+    
+    # Verify _get_target_entity_from_config was called only once
+    # - Only when updating Terra, not for getting the initial entity type
+    assert t2bq._get_target_entity_from_config.call_count == 1
+    t2bq._get_target_entity_from_config.assert_called_once_with(config)
 
 # # Test update_workflow_status_for_config
 def test_update_workflow_status_for_config_success(t2bq, sample_config):
