@@ -12,6 +12,7 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
+
 class BigQueryConfigOperations:
     """Operations for BigQuery tables containing configuration data"""
 
@@ -74,11 +75,11 @@ class BigQueryConfigOperations:
                         config[field_name] = json.dumps(config[field_name])
 
         return config
-    
+
     def get_prefix_fields(self) -> str:
         """
         Get the field name that is marked with use_as_prefix=True
-        
+
         Returns:
             String with the name of the field to be used as prefix
         """
@@ -90,11 +91,11 @@ class BigQueryConfigOperations:
             ),
             None,
         )
-        
+
     def get_alerts_display_field(self) -> str:
         """
         Get the field name that is marked with display_for_alerts=True
-        
+
         Returns:
             String with the name of the field to be used as display for alerts
         """
@@ -106,8 +107,7 @@ class BigQueryConfigOperations:
             ),
             None,
         )
-        
-        
+
     def create_config(
         self, config_data: Union[Dict[str, Any], str, Path]
     ) -> Dict[str, Any]:
@@ -227,8 +227,8 @@ class BigQueryConfigOperations:
         return dict(results[0])
 
     def get_configs(
-        self, 
-        active_only: bool = False, 
+        self,
+        active_only: bool = False,
         entity_type: Optional[str] = None,
         skip_transferred: bool = False,
     ) -> List[Dict[str, Any]]:
@@ -261,7 +261,7 @@ class BigQueryConfigOperations:
         if skip_transferred:
             conditions.append("(transferred IS NULL OR transferred = @transferred)")
             params.append(bigquery.ScalarQueryParameter("transferred", "BOOL", False))
-        
+
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         query = f"""
@@ -344,7 +344,7 @@ class BigQueryConfigOperations:
 
         # Return updated config
         return self.get_config(config_id)
-    
+
     def mark_configs_as_transferred(
         self, config_ids: Union[str, List[str]]
     ) -> Dict[str, Any]:
@@ -358,10 +358,10 @@ class BigQueryConfigOperations:
         Returns:
             {success: True, updated_count: int} if successful
         """
-        
+
         if isinstance(config_ids, str):
             config_ids = [config_ids]
-        
+
         if not config_ids:
             logger.warning("No configuration IDs provided to mark as transferred")
             return {"success": True, "updated_count": 0}
@@ -369,10 +369,10 @@ class BigQueryConfigOperations:
         params = []
         for i, config_id in enumerate(config_ids):
             params.append(bigquery.ScalarQueryParameter(f"id_{i}", "STRING", config_id))
-        
+
         id_params = [f"@id_{i}" for i in range(len(config_ids))]
         id_list = ", ".join(id_params)
-        
+
         update_query = f"""
         UPDATE `{self.table_name}`
         SET 
@@ -383,7 +383,7 @@ class BigQueryConfigOperations:
 
         job_config = bigquery.QueryJobConfig()
         job_config.query_parameters = params
-        
+
         query_job = self.bq_client.query(update_query, job_config=job_config)
         query_job.result()
 
@@ -520,7 +520,7 @@ class BigQueryConfigOperations:
 
         job_config = bigquery.QueryJobConfig()
         job_config.query_parameters = params
-        
+
         query_job = self.bq_client.query(update_query, job_config=job_config)
         query_job.result()
 

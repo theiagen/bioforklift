@@ -8,11 +8,11 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
-class TerraEntities:
 
+class TerraEntities:
     def __init__(self, client: TerraClient):
         self.client = client
-        
+
     def list_entity_types(
         self,
         include_attributes: bool = False,
@@ -20,25 +20,25 @@ class TerraEntities:
     ) -> List[str] | Dict[str, Any]:
         """
         Retrieve a list of entity types from the workspace
-        
+
         Args:
             include_attributes: If True, returns a dictionary with entity types and their attributes
             use_destination: Whether to use destination workspace (True) or source workspace (False)
-        
+
         Returns:
             If include_attributes is False, returns a list of entity type names
             If include_attributes is True, returns a dictionary with entity types and their attributes
         """
         response = self.client.get("entities", use_destination=use_destination)
-        
+
         logger.info(f"Retrieved entity types from Terra workspace")
-        
+
         if response.status_code != 200:
             logger.error(f"Failed to retrieve entity types: {response.text}")
             raise ValueError(f"Failed to retrieve entity types: {response.text}")
-        
+
         entity_data = response.json()
-        
+
         if not include_attributes:
             # Return just the entity type names
             return list(entity_data.keys())
@@ -80,7 +80,9 @@ class TerraEntities:
             stream=True,
             use_destination=use_destination,
         )
-        logger.info(f"Downloaded {entity_type} table from Terra with response; {response}")
+        logger.info(
+            f"Downloaded {entity_type} table from Terra with response; {response}"
+        )
         return stream_terra_table(
             response, destination=destination, chunk_size=chunk_size
         )
@@ -127,14 +129,22 @@ class TerraEntities:
             # If specified column exists, use it as the identifier
             if entity_identifier_column in upload_data.columns:
                 # Create a new column order with the identifier column first for Terra
-                new_columns = [entity_identifier_column] + [col for col in upload_data.columns if col != entity_identifier_column]
+                new_columns = [entity_identifier_column] + [
+                    col
+                    for col in upload_data.columns
+                    if col != entity_identifier_column
+                ]
                 # Reorder the columns
                 upload_data = upload_data[new_columns]
                 # Rename the first column (now the identifier column) for upload
                 column_mapping = {entity_identifier_column: target_col}
-                logger.info(f"Using specified identifier column '{entity_identifier_column}' for upload")
+                logger.info(
+                    f"Using specified identifier column '{entity_identifier_column}' for upload"
+                )
             else:
-                logger.warning(f"Specified identifier column '{entity_identifier_column}' not found. Using first column.")
+                logger.warning(
+                    f"Specified identifier column '{entity_identifier_column}' not found. Using first column."
+                )
                 column_mapping = {upload_data.columns[0]: target_col}
         else:
             # Use the first column as before if no identifier column is specified
@@ -206,7 +216,9 @@ class TerraEntities:
 
         endpoint = "flexibleImportEntities" if model == "flexible" else "importEntities"
 
-        logger.info(f"Posting new entity set {set_name} to Terra for {self.client.destination_workspace}")
+        logger.info(
+            f"Posting new entity set {set_name} to Terra for {self.client.destination_workspace}"
+        )
 
         return self.client.post(
             endpoint,
@@ -239,9 +251,11 @@ class TerraEntities:
             }
             for name, value in attributes.items()
         ]
-        
+
         for update in updates:
-            logger.info(f"PATCH request sent to update {update['attributeName']} to {update['addUpdateAttribute']}")
+            logger.info(
+                f"PATCH request sent to update {update['attributeName']} to {update['addUpdateAttribute']}"
+            )
 
         return self.client.patch(
             f"entities/{entity_type}/{entity_id}",

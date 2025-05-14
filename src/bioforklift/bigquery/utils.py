@@ -188,7 +188,9 @@ def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFr
             # Assume it's already a field_attributes dictionary - maybe from a previous call
             field_attributes = schema_info
     else:
-        logger.error("schema_info must be a YAML file path, schema dictionary, or field attributes dictionary")
+        logger.error(
+            "schema_info must be a YAML file path, schema dictionary, or field attributes dictionary"
+        )
         raise TypeError(
             "schema_info must be a YAML file path, schema dictionary, or field attributes dictionary"
         )

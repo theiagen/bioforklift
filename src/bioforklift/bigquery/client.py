@@ -8,6 +8,7 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
+
 class BigQueryClient:
     """Base client for BigQuery operations"""
 

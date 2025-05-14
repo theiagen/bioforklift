@@ -19,6 +19,7 @@ from .exceptions import (
 
 logger = setup_logger("terra_client.py")
 
+
 class TerraClient:
     """Base client for Terra Firecloud API interactions"""
 
@@ -72,7 +73,7 @@ class TerraClient:
                 "Make sure you're authenticated with gcloud or provide credentials explicitly. "
                 "Run 'gcloud auth application-default login'"
             ) from error
-            
+
     def _get_credentials_from_json(self, json_path: str) -> Credentials:
         """Get Google Cloud credentials from a service account JSON file"""
         try:
@@ -80,13 +81,13 @@ class TerraClient:
             scopes = [
                 "https://www.googleapis.com/auth/userinfo.profile",
                 "https://www.googleapis.com/auth/userinfo.email",
-                "https://www.googleapis.com/auth/cloud-platform"
+                "https://www.googleapis.com/auth/cloud-platform",
             ]
-            
+
             credentials = service_account.Credentials.from_service_account_file(
                 json_path, scopes=scopes
             )
-            
+
             return credentials
         except Exception as error:
             raise TerraAuthenticationError(
@@ -105,38 +106,50 @@ class TerraClient:
         ):
             logger.debug(f"Using cached token, expires at {self._token_expiry}")
             return self._token
-        
+
         try:
             # First determine if this is a service account or user
             is_service_account = False
-            if hasattr(self._credentials, 'service_account_email'):
+            if hasattr(self._credentials, "service_account_email"):
                 is_service_account = bool(self._credentials.service_account_email)
                 logger.debug(f"Detected service account: {is_service_account}")
-            
+
             if is_service_account:
                 try:
                     # For service accounts, use ID token
                     google_auth_request = transport.requests.Request()
-                    self._token = id_token.fetch_id_token(google_auth_request, self.token_audience)
-                    self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+                    self._token = id_token.fetch_id_token(
+                        google_auth_request, self.token_audience
+                    )
+                    self._token_expiry = datetime.now(timezone.utc) + timedelta(
+                        minutes=30
+                    )
                     logger.info("Successfully fetched ID token for service account")
                     return self._token
                 except Exception as id_token_error:
-                    logger.debug(f"Failed to fetch ID token for service account: {id_token_error}, falling back")
-            
+                    logger.debug(
+                        f"Failed to fetch ID token for service account: {id_token_error}, falling back"
+                    )
+
             # Regular credential flow for users or as fallback
             self._credentials.refresh(google_requests.Request())
-            
+
             # For users, prefer access token over ID token
-            if is_service_account and hasattr(self._credentials, 'id_token'):
+            if is_service_account and hasattr(self._credentials, "id_token"):
                 self._token = self._credentials.id_token
             else:
                 self._token = self._credentials.token
-            
-            self._token_expiry = self._credentials.expiry.replace(tzinfo=timezone.utc) if self._credentials.expiry else datetime.now(timezone.utc) + timedelta(minutes=30)
-            logger.debug(f"Using {'service account' if is_service_account else 'user'} credentials, token expires at {self._token_expiry}")
+
+            self._token_expiry = (
+                self._credentials.expiry.replace(tzinfo=timezone.utc)
+                if self._credentials.expiry
+                else datetime.now(timezone.utc) + timedelta(minutes=30)
+            )
+            logger.debug(
+                f"Using {'service account' if is_service_account else 'user'} credentials, token expires at {self._token_expiry}"
+            )
             return self._token
-        
+
         except RefreshError as refresh_error:
             logger.exception("Failed to refresh authentication token")
             raise TerraAuthenticationError(
@@ -173,7 +186,9 @@ class TerraClient:
         try:
             terra_error_data = response.json()
         except ValueError:
-            logger.exception("Failed to parse Terra Firecloud API error response, likely not JSON: \n{response.text}\n")  
+            logger.exception(
+                "Failed to parse Terra Firecloud API error response, likely not JSON: \n{response.text}\n"
+            )
             terra_error_data = {"message": response.text}
 
         error_class = self.ERROR_MAPPING.get(response.status_code, TerraAPIError)
@@ -222,7 +237,9 @@ class TerraClient:
             )
 
             if not response.ok:
-                logger.error(f"Request to {method} {response.url} failed with status code {response.status_code}")
+                logger.error(
+                    f"Request to {method} {response.url} failed with status code {response.status_code}"
+                )
                 self._handle_response_error(response)
 
             logger.debug(f"{method} request to {response.url} successful")
@@ -241,7 +258,7 @@ class TerraClient:
             raise TerraAPIError(
                 f"Request to Terra Firecloud API failed: {str(request_exception_error)}"
             ) from request_exception_error
-            
+
     def reset_auth_cache(self) -> None:
         """
         Reset authentication cache to force a new token on next request.
@@ -283,7 +300,7 @@ class TerraClient:
             params=params,
             use_destination=use_destination,
         )
-    
+
     def patch(
         self, endpoint: str, data: Dict, use_destination: bool = False
     ) -> requests.Response:

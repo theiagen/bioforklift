@@ -3,14 +3,15 @@ import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
+
 def setup_logger(
-        name: str,
-        log_file: str | Path = "bioforklift.log",
-        file_mode: str = "a",
-        level: int = logging.INFO,
-        max_bytes: int = 5_242_880,  # 5MB
-        backup_count: int = 3,
-        log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s"
+    name: str,
+    log_file: str | Path = "bioforklift.log",
+    file_mode: str = "a",
+    level: int = logging.INFO,
+    max_bytes: int = 5_242_880,  # 5MB
+    backup_count: int = 3,
+    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s",
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(level)

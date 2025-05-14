@@ -6,6 +6,7 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
+
 class BigQuery:
     """
     Main interface for BigQuery operations.
