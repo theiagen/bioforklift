@@ -8,6 +8,7 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
+
 class Terra:
     """
     Main interface for Terra operations.
@@ -95,38 +96,50 @@ class Terra:
         self.client.destination_workspace = destination_workspace
         if destination_project:
             self.client.destination_project = destination_project
-            
+
     def verify_connection(self) -> bool:
         """
         Verify that the Terra client connection is working correctly.
         Makes a simple API call to check authentication and permissions.
-        
+
         Returns:
             True if connection is valid, raises an exception otherwise
         """
         try:
             # Use the entities endpoint which is typically lightweight
             endpoint = f"entities"
-            
+
             # First check source workspace connection
             try:
                 self.client.get(endpoint, params={"limit": 1})
-                logger.debug(f"Successfully verified connection to source workspace {self.source_project}/{self.source_workspace}")
+                logger.debug(
+                    f"Successfully verified connection to source workspace {self.source_project}/{self.source_workspace}"
+                )
             except Exception as source_error:
-                raise ConnectionError(f"Cannot connect to source workspace {self.source_project}/{self.source_workspace}: {str(source_error)}")
-            
+                raise ConnectionError(
+                    f"Cannot connect to source workspace {self.source_project}/{self.source_workspace}: {str(source_error)}"
+                )
+
             # Then verify destination if different from source
-            if (self.destination_workspace != self.source_workspace or
-                self.destination_project != self.source_project):
+            if (
+                self.destination_workspace != self.source_workspace
+                or self.destination_project != self.source_project
+            ):
                 try:
                     self.client.get(endpoint, params={"limit": 1}, use_destination=True)
-                    logger.debug(f"Successfully verified connection to destination workspace {self.destination_project}/{self.destination_workspace}")
+                    logger.debug(
+                        f"Successfully verified connection to destination workspace {self.destination_project}/{self.destination_workspace}"
+                    )
                 except Exception as dest_error:
-                    raise ConnectionError(f"Cannot connect to destination workspace {self.destination_project}/{self.destination_workspace}: {str(dest_error)}")
-            
+                    raise ConnectionError(
+                        f"Cannot connect to destination workspace {self.destination_project}/{self.destination_workspace}: {str(dest_error)}"
+                    )
+
             return True
         except Exception as e:
-            raise ConnectionError(f"Terra connection verification failed: {str(e)}") from e
+            raise ConnectionError(
+                f"Terra connection verification failed: {str(e)}"
+            ) from e
 
     def close_connections(self) -> None:
         """

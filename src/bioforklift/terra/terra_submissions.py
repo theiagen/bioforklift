@@ -6,6 +6,7 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger("terra_submissions.py")
 
+
 class TerraSubmissions:
     """Class meant to handle Terra workflow/submissions"""
 
@@ -77,7 +78,9 @@ class TerraSubmissions:
         for submission in response:
             # Skip aborted submissions if requested
             if skip_aborted and submission.get("status") == "Aborted":
-                logger.info(f"Skipping aborted submission: {submission['submissionId']}")
+                logger.info(
+                    f"Skipping aborted submission: {submission['submissionId']}"
+                )
                 continue
 
             if (
@@ -124,11 +127,12 @@ class TerraSubmissions:
         submission_date = datetime.fromisoformat(response["submissionDate"].rstrip("Z"))
 
         for workflow in response.get("workflows", []):
-            
             if "workflowId" not in workflow:
-                logger.info(f"Skipping workflow with missing workflowId in submission {submission_id}")
+                logger.info(
+                    f"Skipping workflow with missing workflowId in submission {submission_id}"
+                )
                 continue
-            
+
             if skip_aborted and workflow.get("status") == "Aborted":
                 logger.info(f"Skipping aborted workflow: {workflow['workflowId']}")
                 continue

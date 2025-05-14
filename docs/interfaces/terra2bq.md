@@ -329,6 +329,21 @@ print(f"Updated {result['bq_updated_count']} records in BigQuery")
 print(f"Updated {result['destination_updated_count']} entities in Terra")
 ```
 
+Or if you want to sync metadata from the target / destination table instead of where the data is being soruced from, you can add the following `use_destination_entity = True` argument so your data get's updated from bigquery.
+
+```python
+
+result = terra2bq.sync_metadata(
+    days_back=30,            # Look back 30 days
+    update_bigquery=True,    # Update BigQuery
+    update_destination=False  # Don't update destination since we just want to sync data in Biguery
+    use_destination_entity=True # We want to sync the BigQuery table from the target/destination entity table
+)
+
+print(f"Updated {result['bq_updated_count']} records in BigQuery")
+print(f"Updated {result['destination_updated_count']} entities in Terra")
+```
+
 ### Dry Run
 
 ```python
