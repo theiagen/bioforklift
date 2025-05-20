@@ -6,16 +6,17 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/bioforklift.svg)](https://pypi.org/project/bioforklift/)
 [![License](https://img.shields.io/pypi/l/bioforklift.svg)](https://pypi.org/project/bioforklift/)
 
+It is highly recommend to serve the documentation locally, as the instructions here are not as thorough as the documentation.
 
 ### Getting Setup
 
 #### Installing bioforklift
 
-To install bioforklift, run `pip install bioforklift` 
+To install bioforklift, run `pip install bioforklift`
 
 #### Using the latest unpublished version
 
-This project uses `poetry` for project management 
+This project uses `poetry` for project management
 
 If you don't have poetry present, please install it with:
 `pip install poetry`
@@ -30,9 +31,7 @@ The dependencies will be installed based on the locked versions in the `poetry.l
 
 Finally, re authorize your gcloud authentication. This obtains your credentials via a web flow and stores them in 'the well-known location for Application Default Credentials'. Now any code/SDK you run will be able to find the credentials automatically. This is a good stand-in when you want to locally test code which would normally run on a server and use a server-side credentials file. `gcloud auth application-default login`
 
-
 ### Overview
 <img src="assets/diagrams/Forklift_Base_Architecture.png" alt="bioforklift Base Architecture" width="800" style="max-width: 100%;" />
-
 
 🥶
