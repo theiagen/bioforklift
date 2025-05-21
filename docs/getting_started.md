@@ -1,70 +1,64 @@
 # Getting Started with bioforklift
 
-This guide will help you install and set up bioforklift, and demonstrate basic usage.
+Please ensure you have installed bioforklift and provided the appropriate authentication credentials for Google Cloud and Terra before proceeding with the setup.
 
-## Prerequisites
+## Setup Schemas and Initialize Components
 
-Before using bioforklift, ensure you have:
+bioforklift uses YAML-based schema definitions to configure BigQuery tables. After the schemas are made, you must initialize the components by creating the BigQuery dataset and tables.
 
-1. Python 3.9 or higher
-2. Access to Google Cloud Platform (GCP) and BigQuery
-3. Access to Terra workspace(s)
-4. Appropriate permissions for both platforms
+!!! tip "Why do we need schemas?"
+    Schema definitions in YAML format define:
 
-## Installation
+    - Field names, types, and attributes
+    - System-generated fields
+    - Field relationships and mappings
+    - Special handling instructions
 
-You can install bioforklift using pip:
-```bash
-pip install bioforklift
-```
+    Schemas are used to create and interact with BigQuery tables.
 
-Or install from source:
+### A Note on System Values
 
-```bash
-git clone https://github.com/theiagen/bioforklift.git
-cd bioforklift
-pip install -e .
-```
+bioforklift maintains several system-managed fields that track the status and history of each sample throughout its lifecycle. Understanding these fields is essential for monitoring your workflows and troubleshooting issues.
 
-## Authentication
+Here are some important notes regarding system values (indicated by the `system_value: true` attribute in the schema):
 
-### Google Cloud Authentication
+- **These fields are excluded when uploading data to Terra**
+- **Never manually modify system values** unless you fully understand the implications
+- **Avoid names that conflict with system fields** when creating custom fields
 
-bioforklift requires authentication to access Google Cloud and Terra. There are two main methods for authentication:
+#### Core System Fields
 
-1. **Using Application Default Credentials**:
+These fields are automatically managed by bioforklift and should be marked with `system_value: true` in your schema definitions:
 
-```bash
-gcloud auth application-default login
-```
+| Field Name | Type | Description |
+|------------|------|-------------|
+| `id` | string | Primary UUID for the record in BigQuery |
+| `created_at` | datetime | When the record was first created and added to BigQuery |
+| `updated_at` | datetime | The last time when any field in the record changed |
+| `uploaded_at` | datetime | When the sample was uploaded to Terra |
+| `submitted_at` | datetime | When the sample was submitted to a workflow |
+| `upload_source` | string | Name of the Terra entity set created during upload |
+| `terra_submission_id` | string | Terra submission ID for tracking workflows |
+| `terra_workflow_id` | string | Terra workflow ID for specific executions |
+| `workflow_state` | string | Current state of the workflow (Submitted, Succeeded, Failed, Aborted) |
 
-2. **Using a Service Account Key**:
+### 1. Sample Schema
 
-```python
-# You can provide a path to your service account JSON key file
-google_credentials_json = "path/to/your/service-account-key.json"
-```
+!!! tip "What is a sample schema for?"
+  
+    Sample data represents genomic samples and their metadata. In bioforklift:
 
-### Terra Authentication
+    - Samples are downloaded from Terra to BigQuery
+    - Sample metadata is tracked and updated
+    - Samples are grouped into sets for processing
+    - Workflow results update sample status
 
-Authentication for Terra is handled through the same Google credentials used for BigQuery.
-
-## Setup and Configuration
-
-bioforklift uses YAML-based schema definitions to configure BigQuery tables. Below are examples of the two main schema types used in the system.
-
-### 1. Create Schema Files
-
-#### Sample Schema
-
-This schema defines the structure of sample data, including genomic samples and their metadata.
-
-???+ info "Schema Attributes (click to collapse)"
+??? info "Available Schema Attributes (click to expand)"
     For each field in the schema, you can define various attributes to control its behavior:
 
     | Field Name | Description |
     |------------|-------------|
-    | `type` | **Required**; specifies the data type of the field (e.g., string, integer, boolean, datetime, etc.)[^1] |
+    | `type` | **Required**; specifies the data type of the field (e.g., string, integer, boolean, datetime, etc.)[^1]; see subsequent toggle for options |
     | `required` | Indicates whether the field is mandatory. If set to `true`, NULL values are not permitted. |
     | `description` | Provides a description of the field |
     | `primary_key` | Identifies the primary key field that will be auto-populated with a UUID |
@@ -73,41 +67,42 @@ This schema defines the structure of sample data, including genomic samples and 
     | `sequence_file` | This is typically used for read data (e.g., `read1` and `read2`)[^4] |
     | `system_value` | Indicates that this field is managed by bioforklift and are not uploaded to Terra. |
     | `inherit_from_config` | Indicates that this field should be inherited from the configuration schema |
-    | `configuration_identifier` | Indicates that this field contains the configuration identifier |
+    | `configuration_identifier` | Indicates that this field contains the configuration identifier for the sample |
     | `metadata` | Indicates the field contains sample metadata |
     | `sync_field` | Indicates that this field should be synchronized between BigQuery and Terra |
+
+    ??? tip "Accepted Data Types for the `type` field (click to expand)"
+        | user-provided value for `type` | The associated BigQuery type |
+        |------------------|--------------------------|
+        | string           | STRING                   |
+        | str              | STRING                   |
+        | integer          | INTEGER                  |
+        | int              | INTEGER                  |
+        | float            | FLOAT                    |
+        | boolean          | BOOLEAN                  |
+        | bool             | BOOLEAN                  |
+        | datetime         | DATETIME                 |
+        | date             | DATE                     |
+        | timestamp        | TIMESTAMP                |
+        | record           | RECORD                   |
+        | array            | ARRAY                    |
+        | object           | JSON                     |
+        | json             | JSON                     |
 
 [^1]:
     [These values correspond to specific datatypes that are accepted by BigQuery](https://cloud.google.com/bigquery/docs/schemas#standard_sql_data_types).
 [^2]:
-    This field is typically the sample name in Terra (e.g., `entity:data_id`). This field can be the name of the specific data table, or a generic name depending on data sources (multi-tables vs singular)
+    This field is typically the sample name in Terra (e.g., `entity:data_id`). This field's name can be name after a single table (like "data_id") (if only one datatable is used) or a generic term (like "sample_identifier") if multiple datatables are used.
 [^3]:
-    This describes how the field will be named when downloaded from Terra; typically used for `entity:data_id` to convert into `data_id` so the `entity:` prefix is not included in BigQuery.
+    This describes how the field is named in Terra; typically used to convert `entity:data_id` to `data_id` so the `entity:` prefix is not included in BigQuery.
 [^4]:
     If this is indicated, any rows that do not have an associated file for this field will be ignored and filtered out of BigQuery.
-
-??? tip "Accepted Data Types for the `type` field (click to expand)"
-    | user-provided value for `type` | The associated BigQuery type |
-    |------------------|--------------------------|
-    | string           | STRING                   |
-    | str              | STRING                   |
-    | integer          | INTEGER                  |
-    | int              | INTEGER                  |
-    | float            | FLOAT                    |
-    | boolean          | BOOLEAN                  |
-    | bool             | BOOLEAN                  |
-    | datetime         | DATETIME                 |
-    | date             | DATE                     |
-    | timestamp        | TIMESTAMP                |
-    | record           | RECORD                   |
-    | array            | ARRAY                    |
-    | object           | JSON                     |
-    | json             | JSON                     |
 
 ??? example "Example Sample Schema (click to expand)"
     ```yaml
     # example_sample_schema.yaml
     fields:
+      # SYSTEM VALUE; DO NOT MODIFY
       id:
         type: string
         required: true
@@ -115,6 +110,7 @@ This schema defines the structure of sample data, including genomic samples and 
         primary_key: true  # This field will be auto-populated with UUID
         system_value: true
 
+      # USER-PROVIDED FIELDS; MODIFY AS NEEDED
       entity_identifier:
         type: string
         required: true
@@ -145,7 +141,7 @@ This schema defines the structure of sample data, including genomic samples and 
         metadata: true
         sync_field: true
       
-      # System fields that will not be included in Terra operations
+      # SYSTEM VALUES; DO NOT MODIFY      
       created_at:
         type: datetime
         required: true
@@ -188,16 +184,25 @@ This schema defines the structure of sample data, including genomic samples and 
         system_value: true
     ```
 
-#### Configuration Schema
+### 2. Configuration Schema
 
-This schema defines the structure of configuration data that controls how workflows are processed.
+!!! tip "What is a configuration schema for?"
 
-???+ info "Schema Attributes (click to collapse)"
+    Configurations in bioforklift define how data should be processed. Each configuration includes:
+
+    - Source and destination Terra workspace and project
+    - Entity types for Terra tables
+    - Workflow method configuration - _created in a separate JSON file_
+    - Status tracking fields
+
+    Configurations are stored in BigQuery and drive the automated processing.
+
+??? info "Available Schema Attributes (click to expand)"
     For each field in the schema, you can define various attributes to control its behavior:
 
     | Field Name | Description |
     |------------|-------------|
-    | `type` | **Required**; specifies the data type of the field (e.g., string, integer, boolean, datetime, etc.)[^1] |
+    | `type` | **Required**; specifies the data type of the field (e.g., string, integer, boolean, datetime, etc.)[^1]; see relevant toggle in the previous section for options. |
     | `required` | Indicates whether the field is mandatory. If set to `true`, NULL values are not permitted. |
     | `description` | Provides a description of the field |
     | `primary_key` | Identifies the primary key field that will be auto-populated with a UUID |
@@ -244,9 +249,12 @@ This schema defines the structure of configuration data that controls how workfl
     }
     ```
 
-??? example "Configuration Schema (click to expand)"
+??? example "Example Configuration Schema (click to expand)"
+    Sage recommends copying the following schema and making any necessary modifications for your puposes to ensure all fields are included.
+
     ```yaml
     fields:
+      # SYSTEM VALUE; DO NOT MODIFY
       id:
         type: string
         required: true
@@ -254,6 +262,7 @@ This schema defines the structure of configuration data that controls how workfl
         primary_key: true
         system_value: true
     
+      # USER-PROVIDED FIELDS; modification allowed but not recommended for basic usage
       name:
         type: string
         required: true
@@ -269,7 +278,7 @@ This schema defines the structure of configuration data that controls how workfl
         type: string
         required: true
         use_as_prefix: true
-        description: Configuration prefix
+        description: Prefix for entity set names
         
       entity_type:
         type: string
@@ -290,11 +299,18 @@ This schema defines the structure of configuration data that controls how workfl
         required: true
         description: Terra workspace identifier
     
+      single_datatable:
+        type: boolean
+        default: false
+        description: Describes if a single datatable is used for this configuration
+
+      # set to be the same as the source project if single_datatable is true
       terra_destination_project:
         type: string
         required: true
         description: Terra project identifier
     
+      # set to be the same as the source workspace if single_datatable is true
       terra_destination_workspace:
         type: string
         required: true
@@ -379,6 +395,7 @@ This schema defines the structure of configuration data that controls how workfl
         required: true
         description: Version of the configuration
     
+      # SYSTEM VALUES; DO NOT MODIFY
       created_at:
           type: datetime
           required: true
@@ -392,38 +409,52 @@ This schema defines the structure of configuration data that controls how workfl
           system_value: true
     ```
 
-### 2. Initialize Components
+### 3. Initialize Components
 
-Before you can use bioforklift in an automated way, you need to initialize the components by creating the BigQuery dataset (must be done in the Google Cloud console) and creating their tables using your previously created schemas.
+Before you can use bioforklift in an automated way, you need to initialize the components by creating the BigQuery dataset (in the Google Cloud console) and creating their tables using your schemas.
 
-You can initialize your tables by running the following Python script:
+After your dataset is created, you can initialize your tables by running the following Python script:
 
 ```python
 from bioforklift.bigquery import BigQuery
 from pathlib import Path
     
 def main():    
+    # Create a BigQuery instance
     bq = BigQuery(project="your-project-id", dataset="your-dataset-name")
     
+    # check if the "configs" (for configurations) and "samples" 
+    #  (for sample data) tables exist; these commands return true 
+    #  if the table exists and false if they do not
     config_table_exists = bq.table_exists("configs")
     sample_table_exists = bq.table_exists("samples")
     
+    # if the configuration table does not exist
     if not config_table_exists:
+        # create the configuration table using the schema
         table_create_res = bq.create_table(table_name="configs",
                                             schema_yaml=Path("path/to/config_schema.yaml"))
         
+        # get the configuration operations for the table in order
+        #  to add your workflow JSON file 
         config_ops = bq.get_config_operations(table_name="configs",
                                               config_schema_yaml=Path("path/to/config/schema.yaml"))
         
+        # add your workflow JSON file to the configuration table
         new_configs = config_ops.create_config(Path("path/to/workflow.json"))
     
+    # if the sample table does not exist
     if not sample_table_exists:
+        # create the sample table using the schema
         table_create_res = bq.create_table(table_name="samples", 
                                             schema_yaml=Path("../data/samples.yaml"))
     
 if __name__ == "__main__":
     main()
 ```
+
+You are now ready to use bioforklift!
+
 <!-- 
 ```python
 from bioforklift.bigquery import BigQuery

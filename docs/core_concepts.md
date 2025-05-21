@@ -1,7 +1,5 @@
 # Core Concepts
 
-Here we will cover core concepts that drive the architecture and development of bioforklift, a domain specific library for bioinformatic data automations.
-
 ## System Architecture
 
 bioforklift consists of three main components:
@@ -46,32 +44,6 @@ The Alerting module:
 - Generates summary reports for operations
 - Monitors workflow status
 
-## Core Workflows
-
-### 1. Data Download Flow
-
-```
-Terra Data Table → Terra Entities → BigQuery Sample Operations → BigQuery Table
-```
-
-### 2. Data Upload and Workflow Submission Flow
-
-```
-BigQuery Table → BigQuery Sample Operations → Terra Entities → Terra Submission → Terra Workflow
-```
-
-### 3. Workflow Status Tracking Flow
-
-```
-Terra Submissions → Terra Workflow Status → BigQuery Sample Updates
-```
-
-### 4. Metadata Synchronization Flow
-
-```
-Terra Data → BigQuery Updates → Terra Destination Updates
-```
-
 ## Key Concepts
 
 ### Configurations
@@ -94,17 +66,6 @@ Sample data represents genomic samples and their metadata. In bioforklift:
 - Samples are grouped into sets for processing
 - Workflow results update sample status
 
-### Schema Definitions
-
-Schema definitions in YAML format define:
-
-- Field names, types, and attributes
-- System-generated fields
-- Field relationships and mappings
-- Special handling instructions
-
-Schemas are used to create and interact with BigQuery tables.
-
 ### Entity Sets
 
 Entity sets in Terra group samples for workflow processing:
@@ -122,17 +83,22 @@ bioforklift operations are often time-based:
 - Hourly status updates
 - Lookback periods for synchronization of metadata fields (where `sync_field` is `true`)
 
-## Configuration Attributes
+## Common Data Flows
 
-Special field attributes in schema definitions control behavior:
+These are high-level data flows that are available in bioforklift:
 
-- `primary_key`: Indicates primary key fields
-- `system_value`: Fields managed by the system
-- `sample_identifier`: Field that identifies sample entities
-- `config_identifier`: Field that links samples to configurations
-- `sequence_file`: Fields containing sequence file paths
-- `sync_field`: Fields to synchronize between Terra and BigQuery
-- `column_mappings`: Map between Terra and BigQuery field names
-- `inherit_from_config`: Fields that inherit values from configuration
+### Adding Data to BigQuery
 
-[forkliftArchitectureDiagram]: ../assets/diagrams/Forklift_Base_Architecture.png
+Terra Data Table → Terra Entities → BigQuery Sample Operations → BigQuery Table
+
+### Data Upload and Workflow Submission
+
+BigQuery Table → BigQuery Sample Operations → Terra Entities → Terra Submission → Terra Workflow
+
+### Updating Workflow Status
+
+Terra Submissions → Terra Workflow Status → BigQuery Sample Updates
+
+### Synchronizing Metadata
+
+Terra Data → BigQuery Updates → Terra Destination Updates

@@ -34,12 +34,57 @@ They key modules for Forkflift include the following:
 - **Terra**: Connect to Terra for bioinformatics workflow execution
 - **Alerting**: Send notifications and reports to Slack
 
-The goal is to make sure we can expand and integrate other data stores or alerting systems as needed to have a complete ecosystem for large scale bioinformatics data flows. 
+The goal is to make sure we can expand and integrate other data stores or alerting systems as needed to have a complete ecosystem for large scale bioinformatics data flows.
 
-## Getting Started
+## Setup Instructions
 
-See the [Getting Started](getting_started.md) guide to begin using bioforklift.
+### Prerequisites
 
+Before using bioforklift, ensure you have:
+
+1. Python 3.9 or higher
+2. Access to Google Cloud Platform (GCP) and BigQuery
+3. Access to Terra workspace(s)
+4. Appropriate permissions for both platforms
+
+### Installation
+
+You can install bioforklift using pip:
+```bash
+pip install bioforklift
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/theiagen/bioforklift.git
+cd bioforklift
+pip install -e .
+```
+
+### Authentication
+
+#### Google Cloud Authentication
+
+bioforklift requires authentication to access Google Cloud and Terra. There are two main methods for authentication:
+
+1. **Using Application Default Credentials**:
+
+    ```bash
+    gcloud auth application-default login
+    ```
+
+2. **Using a Service Account Key**:
+
+    ```python
+    # You can provide a path to your service account JSON key file
+    google_credentials_json = "path/to/your/service-account-key.json"
+    ```
+
+#### Terra Authentication
+
+Authentication for Terra is handled through the same Google credentials used for BigQuery.
 
 ## License
+
 GNU GENERAL PUBLIC LICENSE
