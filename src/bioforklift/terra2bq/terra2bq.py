@@ -197,6 +197,7 @@ class Terra2BQ:
         sync_fields: List[str],
         sample_identifier_field: str,
         update_bigquery: bool = True,
+        update_batch_size: int = 1,
     ) -> Dict[str, Any]:
         """
         Update BigQuery records with metadata from Terra.
@@ -276,7 +277,7 @@ class Terra2BQ:
         if bq_updates and update_bigquery:
             logger.info(f"Updating {len(bq_updates)} samples with metadata from Terra")
             try:
-                update_result = self.samples_ops.bulk_update_samples(bq_updates)
+                update_result = self.samples_ops.bulk_update_samples(bq_updates, batch_size=update_batch_size)
 
                 if update_result.get("failed_updates"):
                     failed_updates.extend(update_result["failed_updates"])
@@ -1790,6 +1791,7 @@ class Terra2BQ:
         update_bigquery: bool = True,
         update_destination: bool = True,
         use_destination_entity: bool = False,
+        update_batch_size: int = 1,
     ) -> Dict[str, Any]:
         """
         Sync metadata for a single configuration.
@@ -1800,6 +1802,7 @@ class Terra2BQ:
             update_bigquery: Whether to update BigQuery with Terra metadata
             update_destination: Whether to update destination Terra datatable
             use_destination_entity: Whether to use the destination entity type from the configuration
+            update_batch_size: Number of samples to update in a batch for BigQuery updates
 
         Returns:
             {
@@ -1905,6 +1908,7 @@ class Terra2BQ:
             sync_fields=sync_fields,
             sample_identifier_field=sample_identifier_field,
             update_bigquery=update_bigquery,
+            update_batch_size=update_batch_size,
         )
 
         # Update destination Terra with updated entities
@@ -1939,6 +1943,7 @@ class Terra2BQ:
         update_destination: bool = True,
         use_destination_entity: bool = False,
         batch_size: int = 1,
+        update_batch_size: int = 1,
         cooldown_seconds: int = 1,
     ) -> Dict[str, Any]:
         """
@@ -1950,6 +1955,7 @@ class Terra2BQ:
             update_destination: Whether to update destination Terra datatable (set to False for dry run)
             use_destination_entity: Whether to use the destination entity type from the configuration
             batch_size: Number of configurations to process in a batch before cooldown
+            update_batch_size: Number of samples to process in a batch for each configuration for bigquery udpates
             cooldown_seconds: Seconds to wait between batches
 
         Returns:
@@ -2020,6 +2026,7 @@ class Terra2BQ:
                     update_bigquery=update_bigquery,
                     update_destination=update_destination,
                     use_destination_entity=use_destination_entity,
+                    update_batch_size=update_batch_size,
                 )
 
                 # Update aggregated metrics for reporting
