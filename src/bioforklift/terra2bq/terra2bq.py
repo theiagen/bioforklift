@@ -266,6 +266,9 @@ class Terra2BQ:
                 bq_value = bq_sample.get(field_to_sync)
                 
                 if overwrite_metadata:
+                    logger.debug(
+                        f"Overwriting {field_to_sync} in BigQuery with value from Terra: {terra_value}"
+                    )
                     # If we are overwriting the values, then we need to check if they are different
                     if pd.isna(bq_value) or bq_value == "" or bq_value != terra_value:
                         update_required = True
@@ -1960,7 +1963,7 @@ class Terra2BQ:
         update_destination: bool = True,
         use_destination_entity: bool = False,
         batch_size: int = 1,
-        update_batch_size: int = 1,
+        update_batch_size: int = 300,
         cooldown_seconds: int = 1,
     ) -> Dict[str, Any]:
         """
