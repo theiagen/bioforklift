@@ -319,6 +319,7 @@ sync_metadata(
     update_bigquery: bool = True,
     update_destination: bool = True,
     batch_size: int = 1,
+    update_batch_size: int = 1,
     cooldown_seconds: int = 1
 ) -> Dict[str, Any]
 ```
@@ -328,6 +329,7 @@ sync_metadata(
 - **update_bigquery** (bool, optional): Whether to update BigQuery with Terra metadata, defaults to True
 - **update_destination** (bool, optional): Whether to update destination Terra datatable, defaults to True
 - **batch_size** (int, optional): Number of configurations to process in a batch before cooldown, defaults to 1
+- **update_batch_size** (int, optional): Number of samples to process in batch for bigquery
 - **cooldown_seconds** (int, optional): Seconds to wait between batches, defaults to 1
 
 #### Returns:

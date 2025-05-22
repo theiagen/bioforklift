@@ -1,0 +1,223 @@
+fields:
+  id:
+    type: string
+    required: true
+    description: Unique identifier for the record
+    primary_key: true  # This field will be auto-populated with UUID
+    system_value: true
+
+  h5n1_id:
+    type: string
+    required: true
+    column_mappings: ["entity:h5n1_specimen_id"]
+    description: External entity identifier
+    sample_identifier: true
+
+  h5n1_config_id:
+    type: string
+    description: Configuration ID
+    inherit_from_config: id
+    configuration_identifier: true
+    system_value: true
+
+  assembly_mean_coverage:
+    type: string
+    description: Mean coverage of the assembly
+    metadata: true
+    sync_field: true
+
+  biosample_accession:
+    type: string
+    description: Biosample accession number
+    metadata: true
+    sync_field: true
+
+  collection_date:
+    type: string
+    description: Date of sample collection
+    metadata: true
+    sync_field: true
+  
+  genbank_accessions:
+    type: string
+    description: GenBank record accessions (comma-separated)
+    metadata: true
+    sync_field: true
+  
+  genbank_last_checked_date:
+    type: string
+    description: Last checked date of GenBank record for updates
+    metadata: true
+    sync_field: true
+
+  genbank_last_update_date:
+    type: string
+    description: Last update date of GenBank records
+    metadata: true
+    sync_field: true
+
+  genbank_uids:
+    type: string
+    description: GenBank record uIDs (comma-separated)
+    metadata: true
+    sync_field: true
+
+  genoflu_all_segments:
+    type: string
+    description: All segments from Genoflu analysis
+    metadata: true
+    sync_field: true  
+
+  genoflu_genotype:
+    type: string
+    description: Genotype assignment from Genoflu analysis
+    metadata: true
+    sync_field: true
+
+  geo_loc_name:
+    type: string
+    description: Geographic location of the sample
+    metadata: true
+    sync_field: true
+
+  host:
+    type: string
+    description: Host species from which the sample was collected
+    metadata: true
+    sync_field: true
+
+  irma_subtype:
+    type: string
+    description: Subtype assignment from IRMA analysis
+    metadata: true
+    sync_field: true
+
+  isolate:
+    type: string
+    description: Isolate name
+    metadata: true
+    sync_field: true
+
+  nextclade_aa_subs_flu_ha:
+    type: string
+    description: Amino acid substitutions in the HA protein from Nextclade analysis
+    metadata: true
+    sync_field: true
+
+  nextclade_aa_subs_flu_na:
+    type: string
+    description: Amino acid substitutions in the NA protein from Nextclade analysis
+    metadata: true
+    sync_field: true
+
+  nextclade_aa_subs_flu_h5n1:
+    type: string
+    description: Amino acid substitutions in the H5N1 protein from Nextclade analysis
+    metadata: true
+    sync_field: true
+
+  nextclade_clade:
+    type: string
+    description: Clade assignment from Nextclade analysis
+    metadata: true
+    sync_field: true
+
+  percent_reference_coverage:
+    type: string
+    description: Percent of reference genome covered by the sample
+    metadata: true
+    sync_field: true
+
+  read1:
+    type: string
+    description: Read 1 sequence
+    sequence_file: true
+
+  read2:
+    type: string
+    description: Read 2 sequence
+    sequence_file: true
+
+  source_bioproject:
+    type: string
+    description: Source BioProject identifier
+    metadata: true
+    sync_field: true
+
+  srr_uid:
+    type: string
+    description: Sequence Read Archive (SRA) record uID (different than sra_accession)
+    metadata: true
+    sync_field: true
+  
+  strain:
+    type: string
+    description: Strain name
+    metadata: true
+    sync_field: true
+
+  theiacov_illumina_pe_analysis_date:
+    type: string
+    description: Date of TheiaCoV Illumina PE analysis
+    metadata: true
+    sync_field: true
+
+  theiacov_illumina_pe_version:
+    type: string
+    description: Version of TheiaCoV Illumina PE analysis
+    metadata: true
+    sync_field: true
+
+  upload_date:
+    type: string
+    description: Date of sample upload
+    metadata: true
+    sync_field: true
+
+  valid_date:
+    type: string
+    description: Collection date in YYYY-MM-DD format or YYYY-MM format
+    metadata: true
+    sync_field: true
+
+  # System fields
+  created_at:
+    type: datetime
+    required: true
+    description: Record creation timestamp
+    system_value: true
+    
+  updated_at:
+    type: datetime
+    description: Last update datetime
+    system_value: true
+
+  uploaded_at:
+    type: datetime
+    description: Date of sample upload
+    system_value: true
+
+  submitted_at:
+    type: datetime
+    description: Date of sample submission
+    system_value: true
+
+  upload_source:
+    type: string
+    description: Source of sample upload
+    system_value: true
+
+  terra_submission_id:
+    type: string
+    description: Terra submission ID
+    system_value: true
+
+  terra_workflow_id:
+    type: string
+    description: Terra workflow submission ID
+    system_value: true
+    
+  workflow_state:
+    type: string
+    description: Current state of the workflow
+    system_value: true

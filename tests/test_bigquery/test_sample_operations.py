@@ -386,3 +386,150 @@ class TestBigQuerySampleOperations:
         assert "sample_id" in result_df.columns
         assert result_df.iloc[0]["id"] == "uuid1"
         assert result_df.iloc[1]["id"] == "uuid2"
+        
+    def test_bulk_update_samples_with_batching(self, sample_operations, bigquery_client):
+        """Test bulk updating samples with batching for large update sets"""
+        # Create a large number of updates that would exceed parameter limits
+        # Each update has multiple fields to simulate real-world usage
+        updates = []
+        for i in range(3000):  # Creating 3000 updates to ensure we need multiple batches
+            updates.append({
+                "id": f"uuid{i}",
+                "workflow_state": "Succeeded" if i % 2 == 0 else "Failed",
+                "uploaded_at": datetime.now(),
+                "terra_workflow_id": f"wf-{i}",
+                "terra_submission_id": f"sub-{i}"
+            })
+        
+        # Mock the _get_schema_fields method to return valid field names
+        with patch.object(
+            sample_operations, '_get_schema_fields',
+            return_value=["id", "workflow_state", "uploaded_at", "terra_workflow_id", "terra_submission_id", "updated_at"]
+        ):
+            # Each query call will handle a batch, and we have multiple batches
+            # For testing, we'll set up side effects for all the expected calls
+            mock_query_jobs = []
+            mock_verify_results = []
+            
+            # Expected number of batches with default batch size of 1600
+            expected_batches = (len(updates) + 1599) // 1600  # Ceiling division
+            
+            # Create mock jobs and results for each batch
+            for batch in range(expected_batches):
+                # Create mock update job
+                mock_update_job = MagicMock()
+                mock_update_job.result.return_value = None
+                mock_query_jobs.append(mock_update_job)
+                
+                # Create mock verification result for this batch
+                start_idx = batch * 1600
+                end_idx = min(start_idx + 1600, len(updates))
+                batch_verify_result = [MagicMock(id=f"uuid{i}") for i in range(start_idx, end_idx)]
+                mock_verify_results.append(batch_verify_result)
+                
+                # Create mock verify job
+                mock_verify_job = MagicMock()
+                mock_verify_job.result.return_value = batch_verify_result
+                mock_query_jobs.append(mock_verify_job)
+            
+            # Setup the side effect for all query calls
+            bigquery_client.query.side_effect = mock_query_jobs
+            
+            # Test the bulk update with custom batch size
+            result = sample_operations.bulk_update_samples(updates, batch_size=1600)
+            
+            # Verify query execution count (2 queries per batch: UPDATE and SELECT)
+            assert bigquery_client.query.call_count == expected_batches * 2
+            
+            # Verify all queries had properly formatted SQL
+            for i in range(0, bigquery_client.query.call_count, 2):
+                # Check UPDATE query
+                update_query = bigquery_client.query.call_args_list[i][0][0]
+                assert "UPDATE" in update_query
+                
+                # Check verification query
+                verify_query = bigquery_client.query.call_args_list[i+1][0][0]
+                assert "SELECT id" in verify_query
+            
+            # Check result
+            assert result["updated_count"] == len(updates)
+            assert len(result["updated_ids"]) == len(updates)
+            assert result["failed_updates"] == []
+            
+            # Optional: Test with a smaller custom batch size to verify it's respected
+            bigquery_client.query.reset_mock()
+            bigquery_client.query.side_effect = None  # Reset side_effect
+            
+            # Setup mocks for new custom batch size
+            custom_batch_size = 500
+            expected_batches = (len(updates) + custom_batch_size - 1) // custom_batch_size
+            
+            # Create new side effects for all the expected calls
+            mock_query_jobs = []
+            for batch in range(expected_batches):
+                # Create mock update job
+                mock_update_job = MagicMock()
+                mock_update_job.result.return_value = None
+                mock_query_jobs.append(mock_update_job)
+                
+                # Create mock verification result for this batch
+                start_idx = batch * custom_batch_size
+                end_idx = min(start_idx + custom_batch_size, len(updates))
+                batch_verify_result = [MagicMock(id=f"uuid{i}") for i in range(start_idx, end_idx)]
+                
+                # Create mock verify job
+                mock_verify_job = MagicMock()
+                mock_verify_job.result.return_value = batch_verify_result
+                mock_query_jobs.append(mock_verify_job)
+            
+            # Setup the side effect for all query calls
+            bigquery_client.query.side_effect = mock_query_jobs
+            
+            # Test the bulk update with smaller custom batch size
+            result = sample_operations.bulk_update_samples(updates, batch_size=custom_batch_size)
+            
+            # Verify query execution count (should be more batches)
+            assert bigquery_client.query.call_count == expected_batches * 2
+            
+            # Check result
+            assert result["updated_count"] == len(updates)
+            assert len(result["updated_ids"]) == len(updates)
+            assert result["failed_updates"] == []
+
+    def test_bulk_update_samples_with_failed_batch(self, sample_operations, bigquery_client):
+        """Test bulk updating samples with one failed batch"""
+        # Create updates across multiple batches
+        updates = []
+        for i in range(2000):
+            updates.append({
+                "id": f"uuid{i}",
+                "workflow_state": "Succeeded" if i % 2 == 0 else "Failed",
+            })
+        
+        # Mock the _get_schema_fields method
+        with patch.object(
+            sample_operations, '_get_schema_fields',
+            return_value=["id", "workflow_state", "updated_at"]
+        ):
+            # Create a side effect that raises an exception for any query
+            def query_side_effect(*args, **kwargs):
+                raise Exception("Query failed: Too many parameters")
+            
+            bigquery_client.query.side_effect = query_side_effect
+            
+            # Test the bulk update
+            result = sample_operations.bulk_update_samples(updates, batch_size=1600)
+            
+            # Verify at least one query was attempted
+            assert bigquery_client.query.called
+            
+            # Check result - all updates should have failed
+            assert result["updated_count"] == 0
+            assert len(result["updated_ids"]) == 0
+            
+            # Should have failed updates for all records
+            assert len(result["failed_updates"]) == len(updates)
+            
+            # Verify the error message in failed updates
+            for failed in result["failed_updates"]:
+                assert "Error in bulk update: Query failed: Too many parameters" in failed["error"]
