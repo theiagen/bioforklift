@@ -316,6 +316,7 @@ Sync metadata between Terra data tables and BigQuery, and update destination Ter
 ```python
 sync_metadata(
     days_back: int = 30,
+    overwrite_metadata: bool = False,
     update_bigquery: bool = True,
     update_destination: bool = True,
     batch_size: int = 1,
@@ -326,6 +327,7 @@ sync_metadata(
 
 #### Parameters:
 - **days_back** (int, optional): Number of days to look back for samples, defaults to 30
+- **overwrite_metadata** (bool, optional): Whether or not to overide metadata if value from Terra table is differant than that in Bigquery. 
 - **update_bigquery** (bool, optional): Whether to update BigQuery with Terra metadata, defaults to True
 - **update_destination** (bool, optional): Whether to update destination Terra datatable, defaults to True
 - **batch_size** (int, optional): Number of configurations to process in a batch before cooldown, defaults to 1
