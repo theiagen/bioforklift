@@ -68,7 +68,7 @@ These fields are automatically managed by bioforklift and should be marked with 
     | `system_value` | Indicates that this field is managed by bioforklift and are not uploaded to Terra. |
     | `inherit_from_config` | Indicates that this field should be inherited from the configuration schema |
     | `configuration_identifier` | Indicates that this field contains the configuration identifier for the sample |
-    | `metadata` | Indicates the field contains sample metadata |
+    | `metadata` | **No functional effects** Indicates the field contains sample metadata |
     | `sync_field` | Indicates that this field should be synchronized between BigQuery and Terra |
 
     ??? tip "Accepted Data Types for the `type` field (click to expand)"
