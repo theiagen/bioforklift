@@ -503,7 +503,7 @@ for submission in workflows:
 
 #### `get_workflows_by_entity`
 
-Gets workflow metadata for specific entities.
+Gets workflow metadata for specific entities (samples).
 
 ```python
 get_workflows_by_entity(
