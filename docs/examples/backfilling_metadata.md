@@ -115,9 +115,11 @@ else:
 
 The code above can be modified to backfill any metadata that is available in the Terra workspace.
 
-## Backfilling a Forgotten Schema Entry
+## Backfilling Result or Metadata Fields
 
-This example describes how Sage backfilled a forgotten schema entry for the H5N1 USDA dashboard -- specifically, `upload_date`.
+This example describes how Sage backfilled a metadata entry for the H5N1 USDA dashboard that only appeared in the destination table -- specifically, `upload_date`.
+
+This approach would work for any result fields that only appear in the destination table.
 
 Theiagen organization members can see the full code in the cdph-automations _private_ GitHub repository. See the previous example for more detailed comments as many of the same processes are used.
 

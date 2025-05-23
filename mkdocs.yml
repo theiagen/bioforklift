@@ -45,6 +45,8 @@ markdown_extensions:
   - tables
   - attr_list
   - md_in_html
+  - toc:
+      toc_depth: 3
   - footnotes
 
 plugins:
@@ -61,9 +63,7 @@ nav:
   - Getting Started: getting_started.md
   - Core Concepts: core_concepts.md
   - Interfaces:
-    - Terra:
-      - Concepts and Usage: interfaces/terra/terra.md
-      - Classes and Methods: interfaces/terra/terra_classes.md
+    - Terra: interfaces/terra_interface.md
     - BigQuery:
       - Concepts and Usage: interfaces/bigquery/bigquery.md
       - Classes and Methods: interfaces/bigquery/bigquery_classes.md
