@@ -1,4 +1,4 @@
-# Terra Classes and Methods
+# Terra Classes, Methods, and Usage
 
 ## Module: `bioforklift.terra`
 
@@ -39,6 +39,7 @@ This module enables programmatic access to Terra's APIs, allowing you to manage 
 
 !!! info "Source vs. Destination"
     **Source**: The workspace, table, and project from which data is read or downloaded. Typically, this is where data is originally stored and uploaded by analysts.
+
     **Destination**: The workspace, table, and project to which data is uploaded, or where workflows are executed. This is typically where data is transferred for analysis or reporting.
 
     If no destination workspace is provided, the source workspace is assumed to be the destination.
@@ -49,6 +50,8 @@ This module enables programmatic access to Terra's APIs, allowing you to manage 
 ## Class: `Terra`
 
 This class is the main interface for Terra operations, and provides a single access point to data and workflow operations. This is the main class you will use to interact with Terra.
+
+The most commonly used methods are found in subclasses [TerraEntities](#class-terraentities) and [TerraSubmissions](#class-terrasubmissions). These classes are used to manage data entities and workflow submissions, respectively.
 
 ### Constructor
 
