@@ -198,6 +198,7 @@ class Terra2BQ:
         sample_identifier_field: str,
         update_bigquery: bool = True,
         update_batch_size: int = 1,
+        overwrite_metadata: bool = False,
     ) -> Dict[str, Any]:
         """
         Update BigQuery records with metadata from Terra.
@@ -208,6 +209,8 @@ class Terra2BQ:
             sync_fields: List of fields to sync
             sample_identifier_field: Field that identifies samples in Terra
             update_bigquery: Whether to actually update BigQuery
+            update_batch_size: Number of samples to update in a single batch
+            overwrite_metadata: Whether to overwrite existing metadata in BigQuery from source Terra table
 
         Returns:
             {
@@ -247,26 +250,39 @@ class Terra2BQ:
 
             for field_to_sync in sync_fields:
                 # Skip fields that already have values in BigQuery
-                if (
-                    field_to_sync in bq_sample
-                    and pd.notna(bq_sample[field_to_sync])
-                    and bq_sample[field_to_sync] != ""
-                ):
+                
+                terra_field = self._get_terra_field_name(field_to_sync, terra_row) 
+                
+                if not terra_field or pd.isna(terra_row[terra_field]) or terra_row[terra_field] == "":
                     continue
 
-                # Get column name in Terra data
-                terra_field = self._get_terra_field_name(field_to_sync, terra_row)
-
-                if (
-                    terra_field
-                    and pd.notna(terra_row[terra_field])
-                    and terra_row[terra_field] != ""
-                ):
-                    value = terra_row[terra_field]
-                    sample_update[field_to_sync] = value
-                    entity_updates[field_to_sync] = value
+                terra_value = terra_row[terra_field]
+                
+                # Set update_required to false by default
+                # If overwrite_metadata is true, we always want to update
+                update_required = False
+                
+                # Extract the value from BigQuery we want to interrogate
+                bq_value = bq_sample.get(field_to_sync)
+                
+                if overwrite_metadata:
+                    logger.debug(
+                        f"Overwriting {field_to_sync} in BigQuery with value from Terra: {terra_value}"
+                    )
+                    # If we are overwriting the values, then we need to check if they are different
+                    if pd.isna(bq_value) or bq_value == "" or bq_value != terra_value:
+                        update_required = True
+                else:
+                    # If we are not overwriting the values, then just we need to check if the value is empty
+                    if pd.isna(bq_value) or bq_value == "":
+                        update_required = True
+                    
+                        
+                if update_required:
+                    sample_update[field_to_sync] = terra_value
+                    entity_updates[field_to_sync] = terra_value
                     needs_update = True
-
+            
             if needs_update:
                 bq_updates.append(sample_update)
                 updated_entities[entity_id] = entity_updates
@@ -1788,6 +1804,7 @@ class Terra2BQ:
         self,
         config: Dict[str, Any],
         days_back: int,
+        overwrite_metadata: bool = False,
         update_bigquery: bool = True,
         update_destination: bool = True,
         use_destination_entity: bool = False,
@@ -1799,6 +1816,7 @@ class Terra2BQ:
         Args:
             config: Configuration dictionary
             days_back: Number of days to look back for samples
+            overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
             update_bigquery: Whether to update BigQuery with Terra metadata
             update_destination: Whether to update destination Terra datatable
             use_destination_entity: Whether to use the destination entity type from the configuration
@@ -1909,6 +1927,7 @@ class Terra2BQ:
             sample_identifier_field=sample_identifier_field,
             update_bigquery=update_bigquery,
             update_batch_size=update_batch_size,
+            overwrite_metadata=overwrite_metadata,
         )
 
         # Update destination Terra with updated entities
@@ -1939,11 +1958,12 @@ class Terra2BQ:
     def sync_metadata(
         self,
         days_back: int = 30,
+        overwrite_metadata: bool = False,
         update_bigquery: bool = True,
         update_destination: bool = True,
         use_destination_entity: bool = False,
         batch_size: int = 1,
-        update_batch_size: int = 1,
+        update_batch_size: int = 300,
         cooldown_seconds: int = 1,
     ) -> Dict[str, Any]:
         """
@@ -1951,6 +1971,7 @@ class Terra2BQ:
 
         Args:
             days_back: Number of days to look back for samples
+            overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
             update_bigquery: Whether to update BigQuery with Terra metadata (set to False for dry run)
             update_destination: Whether to update destination Terra datatable (set to False for dry run)
             use_destination_entity: Whether to use the destination entity type from the configuration
@@ -2023,6 +2044,7 @@ class Terra2BQ:
                 result = self.sync_metadata_for_config(
                     config=config,
                     days_back=days_back,
+                    overwrite_metadata=overwrite_metadata,
                     update_bigquery=update_bigquery,
                     update_destination=update_destination,
                     use_destination_entity=use_destination_entity,

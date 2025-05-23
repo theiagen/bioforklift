@@ -804,3 +804,145 @@ def test_update_workflow_status_success(t2bq):
     assert t2bq.setup_terra_client.call_count == 2
     assert t2bq._cleanup_terra_client.call_count == 2
     assert mock_sleep.call_count == 1  # Sleep between batches, another little nap
+    
+
+def test_update_bigquery_with_terra_metadata_overwrite_behavior(t2bq):
+    """Test that overwrite_metadata parameter controls update behavior correctly"""
+    
+    # Mock the helper method that gets Terra field names
+    t2bq._get_terra_field_name = MagicMock(side_effect=lambda field, row: field if field in row.index else None)
+    
+    # Mock the coerce_dataframe_types method
+    t2bq.samples_ops.coerce_dataframe_types = MagicMock()
+    
+    # Create test data - BigQuery samples with existing values
+    bq_samples = pd.DataFrame({
+        "id": ["sample1", "sample2", "sample3", "sample4"],
+        "entity_name": ["entity1", "entity2", "entity3", "entity4"], 
+        "existing_field": ["old_value1", "", None, "old_value4"],  # Mix of existing, empty, and null values
+        "empty_field": [None, None, "", ""]  # All empty/null values
+    })
+    
+    # Create Terra data with new values
+    terra_data = pd.DataFrame({
+        "entity_name": ["entity1", "entity2", "entity3", "entity4"],
+        "existing_field": ["new_value1", "new_value2", "new_value3", "new_value4"],
+        "empty_field": ["fill_value1", "fill_value2", "fill_value3", "fill_value4"]
+    })
+    
+    sync_fields = ["existing_field", "empty_field"]
+    sample_identifier = "entity_name"
+    
+    # Test 1: overwrite_metadata=False (default behavior)
+    # Should only update empty/null fields, not overwrite existing values
+    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
+        "updated_count": 3,  # Only samples 2, 3, and all for empty_field should be updated
+        "failed_updates": []
+    })
+    
+    result = t2bq._update_bigquery_with_terra_metadata(
+        config_samples=bq_samples,
+        terra_df=terra_data,
+        sync_fields=sync_fields,
+        sample_identifier_field=sample_identifier,
+        update_bigquery=True,
+        overwrite_metadata=False
+    )
+    
+    # Verify the correct samples were marked for update
+    assert result["status"] == "success"
+    assert result["updated_count"] == 3
+    
+    # Check what updates were sent to bulk_update_samples
+    call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]  # First positional argument
+    
+    # Should have updates for:
+    # - sample2: existing_field (was empty) and empty_field
+    # - sample3: existing_field (was null) and empty_field  
+    # - sample1: only empty_field (existing_field should not be overwritten)
+    # - sample4: only empty_field (existing_field should not be overwritten)
+    
+    # Verify sample1 - should only update empty_field, not existing_field
+    sample1_update = next((update for update in call_args if update["id"] == "sample1"), None)
+    assert sample1_update is not None
+    assert "empty_field" in sample1_update
+    assert sample1_update["empty_field"] == "fill_value1"
+    assert "existing_field" not in sample1_update  # Should not overwrite existing value
+    
+    # Verify sample2 - should update both fields (existing_field was empty)
+    sample2_update = next((update for update in call_args if update["id"] == "sample2"), None)
+    assert sample2_update is not None
+    assert sample2_update["existing_field"] == "new_value2"
+    assert sample2_update["empty_field"] == "fill_value2"
+    
+    # Verify sample3 - should update both fields (existing_field was null)
+    sample3_update = next((update for update in call_args if update["id"] == "sample3"), None)
+    assert sample3_update is not None
+    assert sample3_update["existing_field"] == "new_value3"
+    assert sample3_update["empty_field"] == "fill_value3"
+    
+    # Verify sample4 - should only update empty_field, not existing_field
+    sample4_update = next((update for update in call_args if update["id"] == "sample4"), None)
+    assert sample4_update is not None
+    assert "empty_field" in sample4_update
+    assert sample4_update["empty_field"] == "fill_value4"
+    assert "existing_field" not in sample4_update  # Should not overwrite existing value
+    
+    # Reset the mock for the second test
+    t2bq.samples_ops.bulk_update_samples.reset_mock()
+    
+    # Test 2: overwrite_metadata=True
+    # Should update all fields where Terra values differ from BigQuery values
+    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
+        "updated_count": 4,  # All samples should be updated
+        "failed_updates": []
+    })
+    
+    result = t2bq._update_bigquery_with_terra_metadata(
+        config_samples=bq_samples,
+        terra_df=terra_data,
+        sync_fields=sync_fields,
+        sample_identifier_field=sample_identifier,
+        update_bigquery=True,
+        overwrite_metadata=True
+    )
+    
+    # Verify all samples were marked for update
+    assert result["status"] == "success"
+    assert result["updated_count"] == 4
+    
+    # Check what updates were sent to bulk_update_samples
+    call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
+    
+    # All samples should now have updates for both fields
+    for i in range(1, 5):
+        sample_update = next((update for update in call_args if update["id"] == f"sample{i}"), None)
+        assert sample_update is not None
+        assert sample_update["existing_field"] == f"new_value{i}"
+        assert sample_update["empty_field"] == f"fill_value{i}"
+    
+    # Test 3: overwrite_metadata=True with identical values
+    # Should not update when Terra value equals BigQuery value
+    bq_samples_identical = pd.DataFrame({
+        "id": ["sample1"],
+        "entity_name": ["entity1"],
+        "existing_field": ["same_value"]  # Same as Terra value
+    })
+    
+    terra_data_identical = pd.DataFrame({
+        "entity_name": ["entity1"],
+        "existing_field": ["same_value"]  # Same value
+    })
+    
+    result = t2bq._update_bigquery_with_terra_metadata(
+        config_samples=bq_samples_identical,
+        terra_df=terra_data_identical,
+        sync_fields=["existing_field"],
+        sample_identifier_field=sample_identifier,
+        update_bigquery=True,
+        overwrite_metadata=True
+    )
+    
+    # Should not update when values are identical
+    assert result["status"] == "no_updates"
+    assert result["updated_count"] == 0
