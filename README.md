@@ -33,5 +33,3 @@ Finally, re authorize your gcloud authentication. This obtains your credentials 
 
 ### Overview
 <img src="assets/diagrams/Forklift_Base_Architecture.png" alt="bioforklift Base Architecture" width="800" style="max-width: 100%;" />
-
-🥶
