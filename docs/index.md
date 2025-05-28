@@ -3,7 +3,7 @@
 **bioforklift** is a Python library meant for seamlessly integrating data transfer between Biguery and Terra bioinformatics platform. Our goal is to simplify data automation for large scale sample processing worklfows for pathogen detection. 
 
 <div style="text-align: center;">
-  <img src="assets/forklift_py.png" alt="bioforklift.py" width="450" height="450" style="border-radius: 15px;">
+  <img src="assets/bioforklift_py.png" alt="bioforklift.py" width="450" height="450" style="border-radius: 15px;">
 </div>
 
 
