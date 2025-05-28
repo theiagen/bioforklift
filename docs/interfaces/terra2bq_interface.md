@@ -542,8 +542,10 @@ Syncs metadata for all configurations between Terra data tables and BigQuery, an
 ```python
 sync_metadata(
     days_back: int = 30,
+    overwrite_metadata: bool = False,
     update_bigquery: bool = True,
     update_destination: bool = True,
+    update_batch_size: int = 1,
     batch_size: int = 1,
     cooldown_seconds: int = 1
 ) -> Dict[str, Any]
@@ -568,9 +570,11 @@ _**Example**_
 ```python
 # Sync metadata for all configurations from the source entity table
 result = terra2bq.sync_metadata(
-    days_back=30,            # Look back 30 days
-    update_bigquery=True,    # Update BigQuery
-    update_destination=True  # Update destination Terra workspace
+    days_back=30,             # Look back 30 days
+    overwrite_metadata=False, # Do not overwrite existing metadata, even if value from Terra table is different than that of BigQuery
+    update_bigquery=True,     # Update BigQuery
+    update_destination=True,  # Update destination Terra workspace
+    update_batch_size=5       # Number of samples to process in batch for bigquery
 )
 print(f"Updated {result['bq_updated_count']} records in BigQuery")
 print(f"Updated {result['destination_updated_count']} entities in Terra")
