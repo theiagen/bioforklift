@@ -755,19 +755,24 @@ class BigQuerySampleOperations:
         )
         
     
-    def bulk_update_samples(self, updates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def bulk_update_samples(self, updates: List[Dict[str, Any]], batch_size: int = 1000) -> Dict[str, Any]:
         """
         Bulk update samples using a single query.
 
         Args:
             updates: List of dictionaries with updates, each must have an 'id' field
                     Example: [{'id': '123', 'status': 'succeeded', 'upload_date': '2024-02-24'}]
+            batch_size: Number of records to process in each batch (default: 1000)
 
         Returns:
             Dictionary with update results
         """
         # Function largely ported from the original bulk_update_samples function in google-workflows, 
         # but with some modifications to work with the BigQuery client and schema attributes
+        
+        all_updated_ids = []
+        all_failed_updates = []
+        
         try:
             if not updates:
                 logger.info("No updates provided")
@@ -803,93 +808,107 @@ class BigQuerySampleOperations:
             if invalid_fields:
                 logger.exception(f"Fields not in schema: {invalid_fields}")
                 raise ValueError(f"Fields not in schema: {invalid_fields}")
+            
+            total_batches = (len(updates_to_process) + batch_size - 1) // batch_size
+            logger.info(f"Processing {len(updates_to_process)} updates in {total_batches} batches of max {batch_size}")
 
-            # Build CASE statements for each field
-            update_statements = []
-            for field in all_fields:
-                cases = []
-                for i, (sample_id, update_data) in enumerate(updates_to_process):
-                    if field in update_data:
-                        cases.append(f"WHEN id = @id_{i} THEN @val_{i}_{field}")
+            for batch_index in range(total_batches):
+                start_idx = batch_index * batch_size
+                end_idx = min(start_idx + batch_size, len(updates_to_process))
+                batch = updates_to_process[start_idx:end_idx]
+                
+                logger.info(f"Processing batch {batch_index + 1}/{total_batches} with {len(batch)} updates")
+                
+                # Build CASE statements for each field
+                update_statements = []
+                for field in all_fields:
+                    cases = []
+                    for i, (sample_id, update_data) in enumerate(batch):
+                        if field in update_data:
+                            cases.append(f"WHEN id = @id_{i} THEN @val_{i}_{field}")
 
-                if cases:
-                    update_statements.append(
-                        f"{field} = CASE {' '.join(cases)} ELSE {field} END"
-                    )
+                    if cases:
+                        update_statements.append(
+                            f"{field} = CASE {' '.join(cases)} ELSE {field} END"
+                        )
 
-            # Build parameters
-            params = []
-            for i, (sample_id, update_data) in enumerate(updates_to_process):
-                params.append(
-                    bigquery.ScalarQueryParameter(f"id_{i}", "STRING", sample_id)
-                )
-
-                for field, value in update_data.items():
-                    param_name = f"val_{i}_{field}"
-
-                    # Determine parameter type from schema or value
-                    field_def = next((f for f in self.schema if f.name == field), None)
-                    param_type = parse_field_type(field_def.field_type)
-
+                # Build parameters
+                params = []
+                for i, (sample_id, update_data) in enumerate(batch):
                     params.append(
-                        bigquery.ScalarQueryParameter(param_name, param_type, value)
+                        bigquery.ScalarQueryParameter(f"id_{i}", "STRING", sample_id)
                     )
 
-            # Build update query, automatically update updated_at field
-            update_query = f"""
-            UPDATE `{self.table_name}`
-            SET 
-                {', '.join(update_statements)},
-                updated_at = CURRENT_DATETIME()
-            WHERE id IN ({','.join([f'@id_{i}' for i in range(len(updates_to_process))])})
-            """
+                    for field, value in update_data.items():
+                        param_name = f"val_{i}_{field}"
 
-            # Execute update
-            exectue_job_config = bigquery.QueryJobConfig()
-            exectue_job_config.query_parameters = params
+                        # Determine parameter type from schema or value
+                        field_def = next((f for f in self.schema if f.name == field), None)
+                        param_type = parse_field_type(field_def.field_type)
 
-            logger.debug(f"Executing bulk update query with params: \n{params}")
+                        params.append(
+                            bigquery.ScalarQueryParameter(param_name, param_type, value)
+                        )
 
-            execute_query_job = self.bq_client.query(
-                update_query, job_config=exectue_job_config
-            )
-            execute_query_job.result()
+                # Build update query, automatically update updated_at field
+                update_query = f"""
+                UPDATE `{self.table_name}`
+                SET 
+                    {', '.join(update_statements)},
+                    updated_at = CURRENT_DATETIME()
+                WHERE id IN ({','.join([f'@id_{i}' for i in range(len(batch))])})
+                """
 
-            # Verify updates were applied
-            verification_query = f"""
-            SELECT id
-            FROM `{self.table_name}`
-            WHERE id IN ({','.join([f'@id_{i}' for i in range(len(updates_to_process))])})
-            AND updated_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 MINUTE)
-            """
+                exectue_job_config = bigquery.QueryJobConfig()
+                exectue_job_config.query_parameters = params
 
-            verify_job = self.bq_client.query(
-                verification_query, job_config=exectue_job_config
-            )
-            updated_ids = [row.id for row in verify_job.result()]
+                logger.debug(f"Executing bulk update query for batch {batch_index + 1} with {len(params)} parameters")
 
-            # Determine which updates failed if any
-            failed_ids = set(update[0] for update in updates_to_process) - set(
-                updated_ids
-            )
-            failed_updates = [
-                {
-                    "id": update[0],
-                    "error": "Update verification failed",
-                    "data": update[1],
-                }
-                for update in updates_to_process
-                if update[0] in failed_ids
-            ]
+                execute_query_job = self.bq_client.query(
+                    update_query, job_config=exectue_job_config
+                )
+                execute_query_job.result()
 
-            if len(failed_updates) > 0:
-                logger.error(f"Failed to update {len(failed_updates)} records")
-                logger.error(failed_updates)
+                # Verify updates were applied
+                verification_query = f"""
+                SELECT id
+                FROM `{self.table_name}`
+                WHERE id IN ({','.join([f'@id_{i}' for i in range(len(batch))])})
+                AND updated_at >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 MINUTE)
+                """
+
+                verify_job = self.bq_client.query(
+                    verification_query, job_config=exectue_job_config
+                )
+                batch_updated_ids = [row.id for row in verify_job.result()]
+                all_updated_ids.extend(batch_updated_ids)
+
+                # Determine which updates failed if any
+                batch_failed_ids = set(item[0] for item in batch) - set(batch_updated_ids)
+                batch_failed_updates = [
+                    {
+                        "id": item[0],
+                        "error": "Update verification failed",
+                        "data": item[1],
+                    }
+                    for item in batch
+                    if item[0] in batch_failed_ids
+                ]
+                
+                all_failed_updates.extend(batch_failed_updates)
+
+                if len(batch_failed_updates) > 0:
+                    logger.error(f"Failed to update {len(batch_failed_updates)} records in batch {batch_index + 1}")
+                    logger.error(batch_failed_updates)
+            
+            # Final results
+            if len(all_failed_updates) > 0:
+                logger.error(f"Failed to update a total of {len(all_failed_updates)} records")
                 
             return {
-                "updated_count": len(updated_ids),
-                "updated_ids": updated_ids,
-                "failed_updates": failed_updates,
+                "updated_count": len(all_updated_ids),
+                "updated_ids": all_updated_ids,
+                "failed_updates": all_failed_updates,
             }
 
         except Exception as exc:
