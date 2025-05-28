@@ -298,6 +298,8 @@ columns_df = terra.entities.download_table(entity_type="sample", attributes=["sa
 
 Uploads entities to the **destination workspace**. If `destination_workspace`/`destination_project` was not provided, the source workspace and project will be used. The input is a pandas DataFrame.
 
+The dataframe does not need to have a column with the "entity:new_table_name_id" format, but it must have a column that will be used to provide the content for this information. The `entity_identifier_column` parameter is used to specify which column in the DataFrame should be used as the entity identifier. The `target` parameter indicates the name of the target datatable in the `destination_workspace` where the data will be uploaded.
+
 ```python
 upload_entities(
     data: pd.DataFrame,
