@@ -27,7 +27,7 @@ class ConfigBuilder:
         terra_source_project: str,
         terra_source_workspace: str,
         template_config_path: Optional[Union[str, Path]] = None,
-        defualt_values: Optional[Dict[str, Any]] = None,
+        default_values: Optional[Dict[str, Any]] = None,
     ):
         """
         Initializes the ConfigBuilder with the provided parameters.
@@ -39,7 +39,7 @@ class ConfigBuilder:
             terra_source_project (str): The source project in Terra.
             terra_source_workspace (str): The source workspace in Terra.
             template_config_path (Optional[Union[str, Path]]): The path to the template config file (JSON).
-            defualt_values (Optional[Dict[str, Any]]): Optional dictionary of default values to use for the configuration.
+            default_values (Optional[Dict[str, Any]]): Optional dictionary of default values to use for the configuration.
         """
 
         self.bigquery = BigQuery(project=bigquery_project, dataset=bigquery_dataset)
@@ -51,7 +51,7 @@ class ConfigBuilder:
         self.template_config_path = (
             Path(template_config_path) if template_config_path else None
         )
-        self.defualt_values = defualt_values if defualt_values else {}
+        self.default_values = default_values if default_values else {}
 
         self.config_ops = self.bigquery.get_config_operations(
             table_name=self.config_table_name,
@@ -223,7 +223,7 @@ class ConfigBuilder:
             config = self.template_config.copy() if self.template_config else {}
 
             # We need to apply defult values to the config if they are not already present
-            for key, value in self.defualt_values.items():
+            for key, value in self.default_values.items():
                 if key not in config:
                     config[key] = value
 

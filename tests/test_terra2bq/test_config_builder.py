@@ -67,7 +67,7 @@ def config_builder(mock_schema_yaml):
             terra_source_project="test-project",
             terra_source_workspace="test-workspace",
             template_config_path=None,
-            defualt_values={"test_default": "value"}
+            default_values={"test_default": "value"}
         )
         
         # Set mocked config_ops directly
@@ -85,7 +85,7 @@ class TestConfigBuilder:
         """Test initialization of ConfigBuilder."""
         assert config_builder.config_table_name == "test_config_table"
         assert config_builder.config_schema_yaml == "test_schema.yaml"
-        assert config_builder.defualt_values == {"test_default": "value"}
+        assert config_builder.default_values == {"test_default": "value"}
         assert config_builder.template_config == {}
 
     def test_init_with_template(self, mock_schema_yaml):
@@ -124,7 +124,7 @@ class TestConfigBuilder:
                 terra_source_project="test-project",
                 terra_source_workspace="test-workspace",
                 template_config_path="test_template.json",
-                defualt_values={"test_default": "value"}
+                default_values={"test_default": "value"}
             )
             
             # Verify template was loaded
