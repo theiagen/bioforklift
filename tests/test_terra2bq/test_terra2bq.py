@@ -5,6 +5,17 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, ANY
 from datetime import datetime
 from bioforklift.terra2bq import Terra2BQ
+from bioforklift.terra2bq.models import (
+    ConfigProcessingResult,
+    WorkflowResult,
+    MetadataSyncResult,
+    DataResult,
+    UploadResult,
+    DownloadResult,
+    SubmissionResult,
+    ProcessAllConfigsResult,
+    OperationStatus
+)
 
 # This is really just testing happy paths so can be a bit simpler
 # We'll use a lot of MagicMock objects to simulate the behavior of the real classes
@@ -298,8 +309,9 @@ def test_download_from_terra_to_bigquery_success(t2bq, sample_config):
     
     result = t2bq.download_from_terra_to_bigquery(sample_config)
     
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
+    assert isinstance(result, DownloadResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
 
 def test_upload_to_terra_success(t2bq, sample_config, sample_df):
     """Test successful upload to Terra"""
@@ -321,10 +333,11 @@ def test_upload_to_terra_success(t2bq, sample_config, sample_df):
     result = t2bq.upload_to_terra(sample_config, sample_df, upload_df)
     
     # Check result
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
-    assert "set_name" in result  # Just check it exists
-    assert result["uploaded_count"] == 3
+    assert isinstance(result, UploadResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
+    assert result.set_name is not None  # Just check it exists
+    assert result.uploaded_count == 3
     
     # Check that the methods were called
     t2bq.terra.entities.upload_entities.assert_called_once()
@@ -332,7 +345,7 @@ def test_upload_to_terra_success(t2bq, sample_config, sample_df):
     assert t2bq.samples_ops.bulk_update_samples.call_count == 1
     
     # Verify set_name is included in the create_entity_set call
-    set_name = result["set_name"]
+    set_name = result.set_name
     # Use kwargs to access keyword arguments
     create_kwargs = t2bq.terra.entities.create_entity_set.call_args.kwargs
     assert "set_name" in create_kwargs
@@ -362,10 +375,11 @@ def test_download_with_file_transfer(mock_gcs_transfer_client, t2bq, sample_conf
     )
     
     # Assertions for the result
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
-    assert result["loaded_count"] == 3
-    assert result["filtered_count"] == 0
+    assert isinstance(result, DownloadResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
+    assert result.loaded_count == 3
+    assert result.filtered_count == 0
     
     # Verify transfer_sequence_files was called with the right parameters
     t2bq.transfer_sequence_files.assert_called_once_with(
@@ -417,11 +431,11 @@ def test_submit_workflow_success(t2bq, sample_config, sample_df):
         result = t2bq.submit_workflow(sample_config, "test_set", sample_df)
     
     # Check result for success
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
-    assert result["set_name"] == "test_set"
-    assert result["submission_id"] == "test-submission-id"
-    assert result["workflow_count"] == 3
+    assert isinstance(result, SubmissionResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
+    assert result.submission_id == "test-submission-id"
+    assert result.workflow_count == 3
     
     # Check that sample updates were attempted
     t2bq.samples_ops.bulk_update_samples.assert_called_once()
@@ -450,32 +464,32 @@ def test_process_upload_and_submit_success(t2bq, sample_config):
         })
         
         # Mock upload_to_terra
-        t2bq.upload_to_terra = MagicMock(return_value={
-            "status": "success",
-            "config_id": sample_config["id"],
-            "set_name": "test_set_20230101",
-            "uploaded_count": 3
-        })
+        t2bq.upload_to_terra = MagicMock(return_value=UploadResult(
+            status=OperationStatus.SUCCESS,
+            config_id=sample_config["id"],
+            set_name="test_set_20230101",
+            uploaded_count=3
+        ))
         
         # Mock submit_workflow
-        t2bq.submit_workflow = MagicMock(return_value={
-            "status": "success",
-            "config_id": sample_config["id"],
-            "set_name": "test_set_20230101",
-            "submission_id": "test-submission-id",
-            "workflow_count": 3
-        })
+        t2bq.submit_workflow = MagicMock(return_value=SubmissionResult(
+            status=OperationStatus.SUCCESS,
+            config_id=sample_config["id"],
+            submission_id="test-submission-id",
+            workflow_count=3
+        ))
         
         # Now let's upload and submit
         result = t2bq.process_upload_and_submit(sample_config)
     
     # Check result for success
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
-    assert result["set_name"] == "test_set_20230101"
-    assert result["submission_id"] == "test-submission-id"
-    assert result["uploaded_count"] == 3
-    assert result["workflow_count"] == 3
+    assert isinstance(result, ConfigProcessingResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
+    assert result.set_name == "test_set_20230101"
+    assert result.submission_id == "test-submission-id"
+    assert result.uploaded_count == 3
+    assert result.workflow_count == 3
     
     # Check that components were called correctly
     t2bq.samples_ops.get_samples_by_timeframe.assert_called()
@@ -487,31 +501,32 @@ def test_process_upload_and_submit_success(t2bq, sample_config):
 def test_process_configuration_success(t2bq, sample_config):
     """Test successful processing of configuration"""
     # Mock the steps
-    t2bq.download_from_terra_to_bigquery = MagicMock(return_value={
-        "status": "success",
-        "loaded_count": 5,
-        "filtered_count": 2
-    })
+    t2bq.download_from_terra_to_bigquery = MagicMock(return_value=DownloadResult(
+        status=OperationStatus.SUCCESS,
+        loaded_count=5,
+        filtered_count=2
+    ))
     
-    t2bq.process_upload_and_submit = MagicMock(return_value={
-        "status": "success", 
-        "config_id": sample_config["id"],
-        "uploaded_count": 3,
-        "set_name": "test_set",
-        "submission_id": "test-submission"
-    })
+    t2bq.process_upload_and_submit = MagicMock(return_value=ConfigProcessingResult(
+        status=OperationStatus.SUCCESS,
+        config_id=sample_config["id"],
+        uploaded_count=3,
+        set_name="test_set",
+        submission_id="test-submission"
+    ))
     
     # Now we can process the config
     result = t2bq.process_configuration(sample_config, None, preserve_path_structure=True)
     
     # Check results
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
-    assert result["loaded_count"] == 5
-    assert result["filtered_count"] == 2
-    assert result["uploaded_count"] == 3
-    assert result["set_name"] == "test_set"
-    assert result["submission_id"] == "test-submission"
+    assert isinstance(result, ConfigProcessingResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
+    assert result.loaded_count == 5
+    assert result.filtered_count == 2
+    assert result.uploaded_count == 3
+    assert result.set_name == "test_set"
+    assert result.submission_id == "test-submission"
     
     # Check that both methods were called with the right arguments
     t2bq.download_from_terra_to_bigquery.assert_called_once_with(
@@ -532,8 +547,8 @@ def test_process_all_configs(t2bq):
     
     # Mock process_configuration, one success and one no new samples
     t2bq.process_configuration = MagicMock(side_effect=[
-        {"status": "success", "config_id": "config1", "loaded_count": 3, "uploaded_count": 2},
-        {"status": "no_new_samples", "config_id": "config2"}
+        ConfigProcessingResult(status=OperationStatus.SUCCESS, config_id="config1", loaded_count=3, uploaded_count=2),
+        ConfigProcessingResult(status=OperationStatus.NO_NEW_SAMPLES, config_id="config2")
     ])
     
     # Mock get_prefix_fields
@@ -543,8 +558,8 @@ def test_process_all_configs(t2bq):
         results = t2bq.process_all_configs(entity_type="test_entity", batch_size=1, cooldown_seconds=0)
     
     assert len(results) == 2
-    assert results[0]["status"] == "success"
-    assert results[1]["status"] == "no_new_samples"
+    assert results[0].status == OperationStatus.SUCCESS
+    assert results[1].status == OperationStatus.NO_NEW_SAMPLES
     
     # Check method calls
     t2bq.get_active_configs.assert_called_once_with(entity_type="test_entity", skip_transferred=False)
@@ -575,27 +590,28 @@ def test_sync_metadata_for_config_success(t2bq, sample_config):
     t2bq.samples_ops.get_sample_identifier_field.return_value = "entity_name"
     
     # Mock the helper methods
-    t2bq._get_terra_data = MagicMock(return_value={"status": "success", "data": terra_df})
-    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value={
-        "status": "success",
-        "updated_count": 3,
-        "updated_entities": {"entity1": {"attr1": "val1"}, "entity2": {"attr1": "val2"}, "entity3": {"attr1": "val3"}},
-        "failed_updates": []
-    })
-    t2bq._update_terra_with_synced_metadata = MagicMock(return_value={
-        "status": "success",
-        "updated_count": 3,
-        "failed_updates": []
-    })
+    t2bq._get_terra_data = MagicMock(return_value=DataResult(status=OperationStatus.SUCCESS, data=terra_df))
+    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.SUCCESS,
+        bq_updated_count=3,
+        updated_entities={"entity1": {"attr1": "val1"}, "entity2": {"attr1": "val2"}, "entity3": {"attr1": "val3"}},
+        failed_updates=[]
+    ))
+    t2bq._update_terra_with_synced_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.SUCCESS,
+        destination_updated_count=3,
+        failed_updates=[]
+    ))
     t2bq._get_target_entity_from_config = MagicMock(return_value="sample")
     
     result = t2bq.sync_metadata_for_config(sample_config, days_back=7, update_bigquery=True, update_destination=True)
     
     # Check result
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
-    assert result["bq_updated_count"] == 3
-    assert result["destination_updated_count"] == 3  
+    assert isinstance(result, MetadataSyncResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
+    assert result.bq_updated_count == 3
+    assert result.destination_updated_count == 3  
     
     # Verify the methods were called with the correct parameters
     t2bq._get_terra_data.assert_called_once_with(sample_config["entity_type"])
@@ -613,8 +629,8 @@ def test_sync_metadata_success(t2bq):
     
     # Mock sync_metadata_for_config
     t2bq.sync_metadata_for_config = MagicMock(side_effect=[
-        {"status": "success", "config_id": "config1", "bq_updated_count": 3, "destination_updated_count": 3, "failed_updates": []},
-        {"status": "no_updates", "config_id": "config2", "bq_updated_count": 0, "destination_updated_count": 0, "failed_updates": []}
+        MetadataSyncResult(status=OperationStatus.SUCCESS, config_id="config1", bq_updated_count=3, destination_updated_count=3, failed_updates=[]),
+        MetadataSyncResult(status=OperationStatus.NO_UPDATES, config_id="config2", bq_updated_count=0, destination_updated_count=0, failed_updates=[])
     ])
     
     # Mock config_ops and setup_terra_client
@@ -625,12 +641,13 @@ def test_sync_metadata_success(t2bq):
     with patch("bioforklift.terra2bq.terra2bq.sleep") as mock_sleep:
         result = t2bq.sync_metadata(days_back=7, update_bigquery=True, update_destination=True, batch_size=1, cooldown_seconds=0)
     
-    assert result["status"] == "success"
-    assert result["bq_updated_count"] == 3
-    assert result["destination_updated_count"] == 3
-    assert result["total_updated_count"] == 6
-    assert result["processed_configs"] == 2
-    assert not result["failed_updates"]
+    assert isinstance(result, MetadataSyncResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.bq_updated_count == 3
+    assert result.destination_updated_count == 3
+    assert result.total_updated_count == 6
+    assert result.processed_configs == 2
+    assert not result.failed_updates
 
     t2bq.get_active_configs.assert_called_once()
     assert t2bq.sync_metadata_for_config.call_count == 2
@@ -662,18 +679,20 @@ def test_sync_metadata_for_config_calls_get_target_entity(t2bq):
     t2bq.samples_ops.get_samples_by_timeframe.return_value = sample_df
     
     # Mock _get_terra_data
-    t2bq._get_terra_data = MagicMock(return_value={"status": "success", "data": pd.DataFrame()})
+    t2bq._get_terra_data = MagicMock(return_value=DataResult(status=OperationStatus.SUCCESS, data=pd.DataFrame()))
     
     # Mock _update_bigquery_with_terra_metadata and _update_terra_with_synced_metadata
-    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value={
-        "updated_count": 1,
-        "updated_entities": ["entity1"],
-        "failed_updates": []
-    })
-    t2bq._update_terra_with_synced_metadata = MagicMock(return_value={
-        "updated_count": 1,
-        "failed_updates": []
-    })
+    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.SUCCESS,
+        bq_updated_count=1,
+        updated_entities={"entity1": {}},
+        failed_updates=[]
+    ))
+    t2bq._update_terra_with_synced_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.SUCCESS,
+        destination_updated_count=1,
+        failed_updates=[]
+    ))
     
     # Test with use_destination_entity=True
     result = t2bq.sync_metadata_for_config(
@@ -691,9 +710,10 @@ def test_sync_metadata_for_config_calls_get_target_entity(t2bq):
     t2bq._get_target_entity_from_config.assert_any_call(config)
     
     # Verify the result
-    assert result["status"] == "success"
-    assert result["bq_updated_count"] == 1
-    assert result["destination_updated_count"] == 1
+    assert isinstance(result, MetadataSyncResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.bq_updated_count == 1
+    assert result.destination_updated_count == 1
     
     # Reset the mock and test with use_destination_entity=False
     t2bq._get_target_entity_from_config.reset_mock()
@@ -721,8 +741,8 @@ def test_update_workflow_status_for_config_success(t2bq, sample_config):
     
     # Mock the submission processing
     t2bq._process_submission = MagicMock(side_effect=[
-        {"status": "success", "updated_count": 2, "workflow_states": {"Running": 1, "Submitted": 1}, "failed_updates": []},
-        {"status": "success", "updated_count": 1, "workflow_states": {"Submitted": 1}, "failed_updates": []}
+        SubmissionResult(status=OperationStatus.SUCCESS, workflow_count=2, workflow_states={"Running": 1, "Submitted": 1}, failed_updates=[]),
+        SubmissionResult(status=OperationStatus.SUCCESS, workflow_count=1, workflow_states={"Submitted": 1}, failed_updates=[])
     ])
     
     # Mock incomplete workflow processing
@@ -733,15 +753,15 @@ def test_update_workflow_status_for_config_success(t2bq, sample_config):
     result = t2bq.update_workflow_status_for_config(sample_config, days_back=7, batch_size=100, update_bigquery=True)
     
     # Check result for success
-    assert result["status"] == "success"
-    assert result["config_id"] == sample_config["id"]
-    assert result["updated_count"] == 4  # 2 + 1 + 1 from the mocks
-    assert result["processed_submissions"] == 2
-    assert len(result["workflow_states"]) == 3
-    assert result["workflow_states"]["Running"] == 1
-    assert result["workflow_states"]["Submitted"] == 2
-    assert result["workflow_states"]["Succeeded"] == 1
-    assert not result["failed_updates"]
+    assert isinstance(result, WorkflowResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.config_id == sample_config["id"]
+    assert result.workflow_count == 4  # 2 + 1 + 1 from the mocks
+    assert len(result.workflow_states) == 3
+    assert result.workflow_states["Running"] == 1
+    assert result.workflow_states["Submitted"] == 2
+    assert result.workflow_states["Succeeded"] == 1
+    assert not result.failed_updates
     
     # Check that processing methods were called
     assert t2bq._process_submission.call_count == 2
@@ -759,22 +779,20 @@ def test_update_workflow_status_success(t2bq):
     
     # Mock update_workflow_status_for_config
     t2bq.update_workflow_status_for_config = MagicMock(side_effect=[
-        {
-            "status": "success", 
-            "config_id": "config1", 
-            "updated_count": 3, 
-            "processed_submissions": 2,
-            "workflow_states": {"Running": 2, "Submitted": 1},
-            "failed_updates": []
-        },
-        {
-            "status": "no_submissions", 
-            "config_id": "config2", 
-            "updated_count": 0,
-            "processed_submissions": 0,
-            "workflow_states": {},
-            "failed_updates": []
-        }
+        WorkflowResult(
+            status=OperationStatus.SUCCESS,
+            config_id="config1", 
+            workflow_count=3,
+            workflow_states={"Running": 2, "Submitted": 1},
+            failed_updates=[]
+        ),
+        WorkflowResult(
+            status=OperationStatus.NO_UPDATES,
+            config_id="config2", 
+            workflow_count=0,
+            workflow_states={},
+            failed_updates=[]
+        )
     ])
     
     # Mock config_ops and terra setup
@@ -792,12 +810,11 @@ def test_update_workflow_status_success(t2bq):
         )
     
     # Check result for success
-    assert result["status"] == "success"
-    assert result["updated_count"] == 3
-    assert result["processed_configs"] == 2
-    assert result["processed_submissions"] == 2
-    assert len(result["workflow_states"]) == 2
-    assert not result["failed_updates"]
+    assert isinstance(result, WorkflowResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.workflow_count == 3
+    assert len(result.workflow_states) == 2
+    assert not result.failed_updates
     
     t2bq.get_active_configs.assert_called_once()
     assert t2bq.update_workflow_status_for_config.call_count == 2
@@ -850,8 +867,9 @@ def test_update_bigquery_with_terra_metadata_overwrite_behavior(t2bq):
     )
     
     # Verify the correct samples were marked for update
-    assert result["status"] == "success"
-    assert result["updated_count"] == 3
+    assert isinstance(result, MetadataSyncResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.bq_updated_count == 3
     
     # Check what updates were sent to bulk_update_samples
     call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]  # First positional argument
@@ -908,8 +926,9 @@ def test_update_bigquery_with_terra_metadata_overwrite_behavior(t2bq):
     )
     
     # Verify all samples were marked for update
-    assert result["status"] == "success"
-    assert result["updated_count"] == 4
+    assert isinstance(result, MetadataSyncResult)
+    assert result.status == OperationStatus.SUCCESS
+    assert result.bq_updated_count == 4
     
     # Check what updates were sent to bulk_update_samples
     call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
@@ -944,5 +963,6 @@ def test_update_bigquery_with_terra_metadata_overwrite_behavior(t2bq):
     )
     
     # Should not update when values are identical
-    assert result["status"] == "no_updates"
-    assert result["updated_count"] == 0
+    assert isinstance(result, MetadataSyncResult)
+    assert result.status == OperationStatus.NO_UPDATES
+    assert result.bq_updated_count == 0
