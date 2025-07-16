@@ -31,36 +31,23 @@ terra2bq = Terra2BQ(
     )
 
 # Set to true to test out processing of a single configuration
-test_sample_automation = False
+test_sample_automation = True
 if test_sample_automation:
     results = terra2bq.process_all_configs()
     # results = terra2bq.process_all_configs(destination_bucket="theiagen-public-files/terra/test", preserve_path_structure=True)
     # Summarize results
-    success_count = sum(1 for r in results if r.get("status") == "success")
+    success_count = sum(1 for r in results if r.status == "success")
     print(f"Completed processing {len(results)} configurations ({success_count} successful)")
 
 
     # Summarize processing results
-    success_count = sum(1 for r in results if r.get("status") == "success")
+    success_count = sum(1 for r in results if r.status == "success")
     print(f"Completed processing {len(results)} configurations ({success_count} successful)")
     
 checkout_workflow_status_update = False
 if checkout_workflow_status_update:
     print("\n=== Terra2BQ Workflow Status Synchronization ===")
 
-    # First run a dry run to see what would be updated
-    print("Performing workflow status dry run...")
-    dry_run_results = terra2bq.update_workflow_status(
-        days_back=30,
-        batch_size=100, 
-        update_bigquery=False
-    )
-
-    print(f"Dry run complete - would update {dry_run_results['updated_count']} records")
-    if dry_run_results.get('workflow_states'):
-        print("Workflow states that would be updated:")
-        for state, count in dry_run_results['workflow_states'].items():
-            print(f"  - {state}: {count}")
 
     # Perform actual update
     print("\nPerforming actual workflow status update...")
@@ -72,30 +59,18 @@ if checkout_workflow_status_update:
 
     # Summarize results
     print(f"\nWorkflow Status Update Summary:")
-    print(f"- Status: {update_results['status']}")
-    print(f"- Records updated in destination: {update_results['updated_count']}")
-    print(f"- Configurations processed: {update_results['processed_configs']}")
-    print(f"- Submissions processed: {update_results['processed_submissions']}")
+    print(f"- Status: {update_results.status}")
+    print(f"- Records updated in destination: {update_results.workflow_count}")
+    print(f"- Configurations processed: {update_results.config_id}")
+    print(f"- Submissions processed: {update_results.submission_id}")
 
-    # Show workflow state distribution
-    if update_results.get('workflow_states'):
-        print("\nWorkflow State Distribution:")
-        for state, count in update_results['workflow_states'].items():
-            print(f"  - {state}: {count}")
-
-    # Show errors if any
-    if update_results.get('failed_updates'):
-        print(f"\nFailed updates: {len(update_results['failed_updates'])}")
-        for i, failure in enumerate(update_results['failed_updates'][:5]):
-            print(f"  {i+1}. Config {failure.get('config_id')}: {failure.get('error')}")
-        
-        if len(update_results['failed_updates']) > 5:
-            print(f"  ... and {len(update_results['failed_updates']) - 5} more failures")
+    if update_results.failed_updates:
+        print(f"- Failed updates: {len(update_results.failed_updates)}")
 
     print("\n=== Complete ===")
      
 # Set to true to test out sync, added dry run to see what would be updated without actually updating -- Andrew
-checkout_sync = True
+checkout_sync = False
 if checkout_sync:
     # Run sync metadata from Terra back to BigQuery
     print("\n=== Syncing Metadata from Terra ===")
@@ -111,9 +86,9 @@ if checkout_sync:
 
     # Summarize sync results
     print(f"\nSync Summary:")
-    print(f"- Status: {sync_results['status']}")
-    print(f"- Records synced: {sync_results['destination_updated_count']}")
-    print(f"- Configs processed: {sync_results['processed_configs']}")
+    print(f"- Status: {sync_results.status}")
+    print(f"- Records synced: {sync_results.destination_updated_count}")
+    print(f"- Configs processed: {sync_results.processed_configs}")
 
 alerting = False
 if alerting:

@@ -9,7 +9,13 @@ fields:
   entity_identifier:
     type: string
     required: true
+    column_mappings: ["entity:data_id"]
     description: External entity identifier
+
+  basespace_collection_id:
+    type: string
+    description: Basespace collection ID
+    use_field_name: true
     sample_identifier: true
 
   config_id:
