@@ -597,7 +597,7 @@ class Terra2BQ:
             )
 
             logger.info(
-                f"Processed submission {submission_id}: {update_result.get('updated_count', 0)} samples updated"
+                f"Processed submission {submission_id}: {update_result.workflow_count} samples updated"
             )
 
             return SubmissionResult(
