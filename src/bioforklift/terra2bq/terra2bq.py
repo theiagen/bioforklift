@@ -1928,6 +1928,9 @@ class Terra2BQ:
 
         # Get results from helper functions
         terra_data_result = self._get_terra_data(entity_type)
+        logger.debug(
+            f"Retrieved {len(terra_data_result.data)} samples from Terra for entity type {entity_type}"
+        )
         if terra_data_result.status != OperationStatus.SUCCESS:
             return MetadataSyncResult(
                 status=terra_data_result.status,
