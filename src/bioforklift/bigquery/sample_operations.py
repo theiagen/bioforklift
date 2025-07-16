@@ -400,13 +400,16 @@ class BigQuerySampleOperations:
             if sample_identifier_field and entity_type:
                 
                 # Check if column mappings are defined for the sample_identifier_field
+                # Considering use_field_name as a fallback for renaming, but inherently a column mapping
+                # This allows for flexibility in how the sample identifier is defined
                 sample_identifier_has_column_mappings = (
                     sample_identifier_field in self.field_attributes and
-                    "column_mappings" in self.field_attributes[sample_identifier_field]
+                    ("column_mappings" in self.field_attributes[sample_identifier_field] or
+                     self.field_attributes[sample_identifier_field].get("use_field_name", False))
                 )
 
                 if sample_identifier_has_column_mappings:
-                    logger.info(f"Column mappings defined for {sample_identifier_field}, skipping automatic entity_type renaming")
+                    logger.info(f"Column mappings or use_field_name defined for {sample_identifier_field}, skipping automatic entity_type renaming")
                 else:
                     entity_type_column = f"entity:{entity_type}_id"
 
