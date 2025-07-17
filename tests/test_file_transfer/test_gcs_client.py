@@ -11,7 +11,7 @@ class TestGCSTransferClient:
     def mock_storage_client(self):
         """Create a mock storage client"""
         mock_client = MagicMock(spec=storage.Client)
-        with patch('google.cloud.storage.Client', return_value=mock_client):
+        with patch('bioforklift.file_transfers.gcs_transfer.storage.Client', return_value=mock_client):
             yield mock_client
     
     @pytest.fixture
@@ -66,7 +66,6 @@ class TestGCSTransferClient:
         with pytest.raises(ValueError):
             client._parse_gcs_path('not-a-gs-path')
     
-    @patch('concurrent.futures.ThreadPoolExecutor')
     def test_execute_transfers(self, mock_storage_client):
         """Test executing transfers in parallel"""
         client = GCSTransferClient('test-bucket')

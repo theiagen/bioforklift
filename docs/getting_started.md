@@ -63,6 +63,7 @@ These fields are automatically managed by bioforklift and should be marked with 
     | `description` | Provides a description of the field |
     | `primary_key` | Identifies the primary key field that will be auto-populated with a UUID |
     | `sample_identifier` | Identifies the field that contains the sample identifier in Terra[^2] |
+    | `use_field_name` | If True, will use field name as is for sample identifiers **applies only to field where sample_identifier: true**. DO NOT USE WITH COLUMN_MAPPINGS. |
     | `column_mappings` | If the field name in BigQuery is different from the column name in Terra, you can specify the mapping here[^3] |
     | `sequence_file` | This is typically used for read data (e.g., `read1` and `read2`)[^4] |
     | `system_value` | Indicates that this field is managed by bioforklift and are not uploaded to Terra. |

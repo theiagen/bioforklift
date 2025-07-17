@@ -13,6 +13,17 @@ from bioforklift.terra import Terra
 from bioforklift.bigquery.utils import drop_system_value_columns
 from bioforklift.terra.models import WorkflowConfig
 from bioforklift.forklift_logging import setup_logger
+from bioforklift.terra2bq.models import (
+    ConfigProcessingResult,
+    WorkflowResult,
+    MetadataSyncResult,
+    DataResult,
+    UploadResult,
+    DownloadResult,
+    SubmissionResult,
+    ProcessAllConfigsResult,
+    OperationStatus
+)
 
 logger = setup_logger(__name__)
 
@@ -160,7 +171,7 @@ class Terra2BQ:
 
         return target_entity_clean
 
-    def _get_terra_data(self, entity_type: str) -> Dict[str, Any]:
+    def _get_terra_data(self, entity_type: str) -> DataResult:
         """
         Download data from Terra for a specific entity type.
 
@@ -168,7 +179,7 @@ class Terra2BQ:
             entity_type: Terra entity type
 
         Returns:
-            Dictionary with download results and data
+            DataResult with download results and data
         """
         try:
             logger.info(f"Downloading data from Terra entity type: {entity_type}")
@@ -176,19 +187,19 @@ class Terra2BQ:
 
             if terra_df.empty:
                 logger.info(f"No data found in Terra table: {entity_type}")
-                return {"status": "no_terra_data", "data": None}
+                return DataResult(status=OperationStatus.NO_TERRA_DATA, data=None)
 
             logger.info(f"Downloaded {len(terra_df)} samples from Terra")
-            return {"status": "success", "data": terra_df}
+            return DataResult(status=OperationStatus.SUCCESS, data=terra_df)
 
         except Exception as exc:
             logger.error(f"Failed to download data from Terra: {str(exc)}")
-            return {
-                "status": "error",
-                "message": f"Failed to download data from Terra: {str(exc)}",
-                "data": None,
-                "error": str(exc),
-            }
+            return DataResult(
+                status=OperationStatus.ERROR,
+                message=f"Failed to download data from Terra: {str(exc)}",
+                data=None,
+                error=str(exc),
+            )
 
     def _update_bigquery_with_terra_metadata(
         self,
@@ -199,7 +210,7 @@ class Terra2BQ:
         update_bigquery: bool = True,
         update_batch_size: int = 1,
         overwrite_metadata: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> MetadataSyncResult:
         """
         Update BigQuery records with metadata from Terra.
 
@@ -213,12 +224,7 @@ class Terra2BQ:
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery from source Terra table
 
         Returns:
-            {
-            "status": "success" if bq_updates else "no_updates",
-            "updated_count": updated_count,
-            "updated_entities": updated_entities,
-            "failed_updates": failed_updates
-            }
+            MetadataSyncResult with update status, counts, and entities
         """
         bq_updates = []
         updated_entities = {}
@@ -317,12 +323,12 @@ class Terra2BQ:
         else:
             logger.info("No updates needed - all sync fields are up to date")
 
-        return {
-            "status": "success" if bq_updates else "no_updates",
-            "updated_count": updated_count,
-            "updated_entities": updated_entities,
-            "failed_updates": failed_updates,
-        }
+        return MetadataSyncResult(
+            status=OperationStatus.SUCCESS if bq_updates else OperationStatus.NO_UPDATES,
+            bq_updated_count=updated_count,
+            updated_entities=updated_entities,
+            failed_updates=failed_updates,
+        )
 
     def _get_terra_field_name(
         self, field_to_sync: str, terra_row: pd.Series
@@ -361,7 +367,7 @@ class Terra2BQ:
 
     def _retroactively_mark_samples_as_uploaded(
         self, config: Dict[str, Any], bq_load_result: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> UploadResult:
         """
         Mark newly loaded samples as already uploaded for same-table configuration.
 
@@ -370,10 +376,7 @@ class Terra2BQ:
         bq_load_result: Result from loading data to BigQuery
 
         Returns:
-            {
-                "status": str,
-                "backfilled_count": int
-            }
+            UploadResult with backfilled count and status
         """
 
         newly_loaded_ids_without_upload = self.samples_ops.get_recent_sample_ids(
@@ -383,7 +386,11 @@ class Terra2BQ:
 
         if not newly_loaded_ids_without_upload:
             logger.info("No samples to backfill upload status")
-            return {"status": "no_samples_to_backfill", "backfilled_count": 0}
+            return UploadResult(
+                status=OperationStatus.NO_UPDATES,
+                config_id=config.get("id"),
+                uploaded_count=0,
+            )
 
         current_datetime = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -412,17 +419,18 @@ class Terra2BQ:
             f"Backfilled upload status for {update_result.get('updated_count', 0)} samples"
         )
 
-        return {
-            "status": "success",
-            "backfilled_count": update_result.get("updated_count", 0),
-        }
+        return UploadResult(
+            status=OperationStatus.SUCCESS,
+            config_id=config.get("id"),
+            uploaded_count=update_result.get("updated_count", 0),
+        )
 
     def _update_terra_with_synced_metadata(
         self,
         updated_entities: Dict[str, Dict[str, Any]],
         destination_entity_type: str,
         update_destination: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> MetadataSyncResult:
         """
         Update entities in destination Terra datatable.
 
@@ -432,13 +440,17 @@ class Terra2BQ:
             update_destination: Whether to actually update Terra
 
         Returns:
-            Dictionary with update results
+            MetadataSyncResult with update results
         """
         updated_successfully = 0
         failed_updates = []
 
         if not updated_entities:
-            return {"status": "no_updates", "updated_count": 0, "failed_updates": []}
+            return MetadataSyncResult(
+                status=OperationStatus.NO_UPDATES,
+                destination_updated_count=0,
+                failed_updates=[],
+            )
 
         logger.info(
             f"Updating {len(updated_entities)} entities in destination Terra datatable"
@@ -468,15 +480,15 @@ class Terra2BQ:
                 )
                 failed_updates.append({"entity_id": entity_id, "error": str(terra_exc)})
 
-        return {
-            "status": "success" if updated_successfully > 0 else "no_updates",
-            "updated_count": updated_successfully,
-            "failed_updates": failed_updates,
-        }
+        return MetadataSyncResult(
+            status=OperationStatus.SUCCESS if updated_successfully > 0 else OperationStatus.NO_UPDATES,
+            destination_updated_count=updated_successfully,
+            failed_updates=failed_updates,
+        )
 
     def _process_submission(
         self, config_id: str, submission_id: str, batch_size: int, update_bigquery: bool
-    ) -> Dict[str, Any]:
+    ) -> SubmissionResult:
         """
         Process a single submission and update workflow IDs and states.
 
@@ -500,13 +512,13 @@ class Terra2BQ:
 
             if not workflows:
                 logger.info(f"No workflows found for submission {submission_id}")
-                return {
-                    "status": "no_workflows",
-                    "submission_id": submission_id,
-                    "updated_count": 0,
-                    "workflow_states": {},
-                    "failed_updates": [],
-                }
+                return SubmissionResult(
+                    status=OperationStatus.NO_UPDATES,
+                    submission_id=submission_id,
+                    workflow_count=0,
+                    workflow_states={},
+                    failed_updates=[],
+                )
 
             # Extract entity names and workflow info
             entity_names = []
@@ -528,13 +540,13 @@ class Terra2BQ:
                 logger.info(
                     f"No entity names found in workflows for submission {submission_id}"
                 )
-                return {
-                    "status": "no_entities",
-                    "submission_id": submission_id,
-                    "updated_count": 0,
-                    "workflow_states": {},
-                    "failed_updates": [],
-                }
+                return SubmissionResult(
+                    status=OperationStatus.NO_UPDATES,
+                    submission_id=submission_id,
+                    workflow_count=0,
+                    workflow_states={},
+                    failed_updates=[],
+                )
 
             # Get samples matching these entity names
             samples = self.samples_ops.get_samples_by_entity_names(
@@ -545,13 +557,13 @@ class Terra2BQ:
                 logger.info(
                     f"No matching samples found for entity names in submission {submission_id}"
                 )
-                return {
-                    "status": "no_samples",
-                    "submission_id": submission_id,
-                    "updated_count": 0,
-                    "workflow_states": {},
-                    "failed_updates": [],
-                }
+                return SubmissionResult(
+                    status=OperationStatus.NO_UPDATES,
+                    submission_id=submission_id,
+                    workflow_count=0,
+                    workflow_states={},
+                    failed_updates=[],
+                )
 
             # Create updates for samples
             sample_id_field = self.samples_ops.get_sample_identifier_field()
@@ -585,29 +597,29 @@ class Terra2BQ:
             )
 
             logger.info(
-                f"Processed submission {submission_id}: {update_result.get('updated_count', 0)} samples updated"
+                f"Processed submission {submission_id}: {update_result.workflow_count} samples updated"
             )
 
-            return {
-                "status": "success"
-                if update_result.get("updated_count", 0) > 0
-                else "no_updates",
-                "submission_id": submission_id,
-                "updated_count": update_result.get("updated_count", 0),
-                "workflow_states": workflow_states,
-                "failed_updates": update_result.get("failed_updates", []),
-            }
+            return SubmissionResult(
+                status=OperationStatus.SUCCESS
+                if update_result.workflow_count > 0
+                else OperationStatus.NO_UPDATES,
+                submission_id=submission_id,
+                workflow_count=update_result.workflow_count,
+                workflow_states=workflow_states,
+                failed_updates=update_result.failed_updates,
+            )
 
         except Exception as exc:
             logger.error(f"Error processing submission {submission_id}: {str(exc)}")
-            return {
-                "status": "error",
-                "message": str(exc),
-                "submission_id": submission_id,
-                "updated_count": 0,
-                "workflow_states": {},
-                "failed_updates": [{"submission_id": submission_id, "error": str(exc)}],
-            }
+            return SubmissionResult(
+                status=OperationStatus.ERROR,
+                message=str(exc),
+                submission_id=submission_id,
+                workflow_count=0,
+                workflow_states={},
+                failed_updates=[{"submission_id": submission_id, "error": str(exc)}],
+            )
 
     def _apply_batch_updates(
         self,
@@ -615,7 +627,7 @@ class Terra2BQ:
         batch_size: int,
         update_bigquery: bool,
         context: str = "",
-    ) -> Dict[str, Any]:
+    ) -> WorkflowResult:
         """
         Apply batch updates to BigQuery.
 
@@ -629,7 +641,11 @@ class Terra2BQ:
             Dictionary with update results
         """
         if not batch_updates:
-            return {"status": "no_updates", "updated_count": 0, "failed_updates": []}
+            return WorkflowResult(
+                status=OperationStatus.NO_UPDATES,
+                workflow_count=0,
+                failed_updates=[],
+            )
 
         total_updated = 0
         failed_updates = []
@@ -662,11 +678,11 @@ class Terra2BQ:
             )
             total_updated = len(batch_updates)
 
-        return {
-            "status": "success" if total_updated > 0 else "no_updates",
-            "updated_count": total_updated,
-            "failed_updates": failed_updates,
-        }
+        return WorkflowResult(
+            status=OperationStatus.SUCCESS if total_updated > 0 else OperationStatus.NO_UPDATES,
+            workflow_count=total_updated,
+            failed_updates=failed_updates,
+        )
 
     def _process_incomplete_workflows(
         self, config_id: str, days_back: int, batch_size: int, update_bigquery: bool
@@ -741,8 +757,8 @@ class Terra2BQ:
                             context="incomplete workflows",
                         )
 
-                        if update_result.get("failed_updates"):
-                            failed_updates.extend(update_result.get("failed_updates"))
+                        if update_result.failed_updates:
+                            failed_updates.extend(update_result.failed_updates)
 
                         state_updates = []
 
@@ -763,8 +779,8 @@ class Terra2BQ:
                     context="incomplete workflows (final batch)",
                 )
 
-                if update_result.get("failed_updates"):
-                    failed_updates.extend(update_result.get("failed_updates"))
+                if update_result.failed_updates:
+                    failed_updates.extend(update_result.failed_updates)
 
             # Return results
             return {
@@ -817,7 +833,7 @@ class Terra2BQ:
 
     def _process_single_datatable_workflow(
         self, config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> SubmissionResult:
         """
         Process workflow submission for single-datatable configurations.
         This skips the upload step and creates entity sets directly from existing data.
@@ -837,10 +853,11 @@ class Terra2BQ:
         samples_df = self.get_samples_for_submission(config)
 
         if samples_df.empty:
-            return {
-                "status": "no_samples_for_submission",
-                "config_id": config.get("id"),
-            }
+            return SubmissionResult(
+                status=OperationStatus.NO_UPDATES,
+                config_id=config.get("id"),
+                workflow_count=0,
+            )
 
         try:
             # Get entity type from config
@@ -881,40 +898,36 @@ class Terra2BQ:
 
             # Combine results from all submissions
             total_workflow_count = sum(
-                result.get("workflow_count", 0)
+                result.workflow_count
                 for result in submission_results
-                if result.get("status") == "success"
+                if result.status == OperationStatus.SUCCESS
             )
 
-            return {
-                "status": "success"
+            return SubmissionResult(
+                status=OperationStatus.SUCCESS
                 if any(
-                    result.get("status") == "success" for result in submission_results
+                    result.status == OperationStatus.SUCCESS for result in submission_results
                 )
-                else "error",
-                "config_id": config.get("id"),
-                "set_names": [
-                    result.get("set_name")
+                else OperationStatus.ERROR,
+                config_id=config.get("id"),
+                submission_id=",".join([
+                    result.submission_id
                     for result in submission_results
-                    if result.get("status") == "success"
-                ],
-                "submission_ids": [
-                    result.get("submission_id")
-                    for result in submission_results
-                    if result.get("status") == "success"
-                ],
-                "workflow_count": total_workflow_count,
-            }
+                    if result.status == OperationStatus.SUCCESS and result.submission_id
+                ]),
+                workflow_count=total_workflow_count,
+            )
 
         except Exception as exc:
             logger.error(
                 f"Error creating entity set or submitting workflow: {str(exc)}"
             )
-            return {
-                "status": "error",
-                "message": str(exc),
-                "config_id": config.get("id"),
-            }
+            return SubmissionResult(
+                status=OperationStatus.ERROR,
+                message=str(exc),
+                config_id=config.get("id"),
+                workflow_count=0,
+            )
 
     def initialize_operations(self) -> None:
         logger.info("Initializing Terra2BQ operations objects")
@@ -1061,7 +1074,7 @@ class Terra2BQ:
         config: Dict[str, Any],
         destination_bucket: Optional[str] = None,
         preserve_path_structure: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> DownloadResult:
         """
         Pull data from source Terra table and load it into BigQuery.
 
@@ -1070,7 +1083,7 @@ class Terra2BQ:
             destination_bucket: Optional GCS bucket for transferring sequence files
             preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
         Returns:
-            Dictionary with load results and status
+            DownloadResult with load results and status
         """
         if not self.samples_ops:
             raise ValueError(
@@ -1100,7 +1113,7 @@ class Terra2BQ:
 
         if terra_df.empty:
             logger.warning(f"No data found in Terra table: {entity_type}")
-            return {"status": "no_data", "config_id": config.get("id")}
+            return DownloadResult(status=OperationStatus.NO_DATA, config_id=config.get("id"))
 
         # Apply metadata cleanup function if provided
         if self.metadata_cleanup_fn:
@@ -1116,18 +1129,18 @@ class Terra2BQ:
                     logger.warning(
                         "All rows were filtered out by the metadata cleanup function"
                     )
-                    return {
-                        "status": "no_data_after_cleanup",
-                        "config_id": config.get("id"),
-                    }
+                    return DownloadResult(
+                        status=OperationStatus.NO_DATA_AFTER_CLEANUP,
+                        config_id=config.get("id"),
+                    )
 
             except Exception as exc:
                 logger.error(f"Error in metadata cleanup function: {str(exc)}")
-                return {
-                    "status": "error",
-                    "message": f"Metadata cleanup error: {str(exc)}",
-                    "config_id": config.get("id"),
-                }
+                return DownloadResult(
+                    status=OperationStatus.ERROR,
+                    message=f"Metadata cleanup error: {str(exc)}",
+                    config_id=config.get("id"),
+                )
 
         # If a destination bucket is provided, transfer sequence files, and update paths
         if destination_bucket:
@@ -1158,11 +1171,11 @@ class Terra2BQ:
             logger.error(
                 f"Failed to load data into BigQuery: {bq_load_result.get('errors')}"
             )
-            return {
-                "status": "error",
-                "message": f"Failed to load data: {bq_load_result.get('errors')}",
-                "config_id": config.get("id"),
-            }
+            return DownloadResult(
+                status=OperationStatus.ERROR,
+                message=f"Failed to load data: {bq_load_result.get('errors')}",
+                config_id=config.get("id"),
+            )
 
         # If the source and destination datatables are the same, we need to backfill the upload status
         if is_single_datatable and bq_load_result.get("loaded", 0) > 0:
@@ -1173,19 +1186,19 @@ class Terra2BQ:
                 config, bq_load_result
             )
             logger.info(
-                f"Backfilled upload status for {backfill_result.get('backfilled_count', 0)} samples"
+                f"Backfilled upload status for {backfill_result.uploaded_count} samples"
             )
 
-        return {
-            "status": "success",
-            "config_id": config.get("id"),
-            "loaded_count": bq_load_result.get("loaded", 0),
-            "filtered_count": bq_load_result.get("filtered", 0),
-        }
+        return DownloadResult(
+            status=OperationStatus.SUCCESS,
+            config_id=config.get("id"),
+            loaded_count=bq_load_result.get("loaded", 0),
+            filtered_count=bq_load_result.get("filtered", 0),
+        )
 
     def upload_to_terra(
         self, config: Dict[str, Any], samples_df: pd.DataFrame, upload_df: pd.DataFrame
-    ) -> Dict[str, Any]:
+    ) -> UploadResult:
         """
         Upload data to Terra destination table and create entity set.
 
@@ -1227,11 +1240,11 @@ class Terra2BQ:
             )
         except Exception as exc:
             logger.error(f"Failed to upload data to Terra: {str(exc)}")
-            return {
-                "status": "error",
-                "message": f"Failed to upload to Terra: {str(exc)}",
-                "config_id": config.get("id"),
-            }
+            return UploadResult(
+                status=OperationStatus.ERROR,
+                message=f"Failed to upload to Terra: {str(exc)}",
+                config_id=config.get("id"),
+            )
 
         # Create a Set name and create Set in Terra
         current_datetime = datetime.now(pytz.utc)
@@ -1259,11 +1272,11 @@ class Terra2BQ:
             )
         except Exception as exc:
             logger.error(f"Failed to create entity set in Terra: {str(exc)}")
-            return {
-                "status": "error",
-                "message": f"Failed to create entity set: {str(exc)}",
-                "config_id": config.get("id"),
-            }
+            return UploadResult(
+                status=OperationStatus.ERROR,
+                message=f"Failed to create entity set: {str(exc)}",
+                config_id=config.get("id"),
+            )
 
         # Get IDs from the samples DataFrame
         id_values = samples_df["id"].tolist()
@@ -1287,12 +1300,12 @@ class Terra2BQ:
                 f"Failed to update {len(update_result['failed_updates'])} records in BigQuery"
             )
 
-        return {
-            "status": "success",
-            "config_id": config.get("id"),
-            "set_name": set_name,
-            "uploaded_count": update_result.get("updated_count", 0),
-        }
+        return UploadResult(
+            status=OperationStatus.SUCCESS,
+            config_id=config.get("id"),
+            set_name=set_name,
+            uploaded_count=update_result.get("updated_count", 0),
+        )
 
     def get_samples_for_submission(
         self,
@@ -1351,7 +1364,7 @@ class Terra2BQ:
         config: Dict[str, Any],
         set_name: str,
         samples_df: pd.DataFrame,
-    ) -> Dict[str, Any]:
+    ) -> SubmissionResult:
         """
         Submit a workflow to Terra for the given set and update tracking info.
 
@@ -1393,12 +1406,11 @@ class Terra2BQ:
                 logger.error(
                     f"Invalid terra_method_config JSON in configuration: {config.get('id')}"
                 )
-                return {
-                    "status": "error",
-                    "message": "Invalid terra_method_config JSON",
-                    "config_id": config.get("id"),
-                    "set_name": set_name,
-                }
+                return SubmissionResult(
+                    status=OperationStatus.ERROR,
+                    message="Invalid terra_method_config JSON",
+                    config_id=config.get("id"),
+                )
 
         # Prepare workflow configuration
         workflow_config_dict = {
@@ -1443,12 +1455,11 @@ class Terra2BQ:
 
         except Exception as exc:
             logger.error(f"Failed to submit workflow to Terra: {str(exc)}")
-            return {
-                "status": "error",
-                "message": f"Failed to submit workflow: {str(exc)}",
-                "config_id": config.get("id"),
-                "set_name": set_name,
-            }
+            return SubmissionResult(
+                status=OperationStatus.ERROR,
+                message=f"Failed to submit workflow: {str(exc)}",
+                config_id=config.get("id"),
+            )
 
         current_time = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1481,15 +1492,14 @@ class Terra2BQ:
                 )
 
         # Return success results
-        return {
-            "status": "success",
-            "config_id": config.get("id"),
-            "set_name": set_name,
-            "submission_id": submission_id,
-            "workflow_count": len(samples_df),
-        }
+        return SubmissionResult(
+            status=OperationStatus.SUCCESS,
+            config_id=config.get("id"),
+            submission_id=submission_id,
+            workflow_count=len(samples_df),
+        )
 
-    def process_upload_and_submit(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def process_upload_and_submit(self, config: Dict[str, Any]) -> ConfigProcessingResult:
         """
         Process a configuration by uploading data and submitting a workflow.
         This is a wrapper function that handles the sequence:
@@ -1525,26 +1535,36 @@ class Terra2BQ:
                 logger.info(
                     f"No samples to upload today for configuration {config.get('id')}"
                 )
-                return {"status": "no_new_samples", "config_id": config.get("id")}
+                return ConfigProcessingResult(
+                    status=OperationStatus.NO_NEW_SAMPLES,
+                    config_id=config.get("id"),
+                    uploaded_count=0,
+                )
 
             upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
             logger.info(f"Prepared {len(upload_df)} samples for upload to Terra")
 
             upload_result = self.upload_to_terra(config, samples_df, upload_df)
             logger.debug(f"Upload result: {upload_result}")
-            if upload_result.get("status") != "success":
-                return upload_result
+            if upload_result.status != OperationStatus.SUCCESS:
+                return ConfigProcessingResult(
+                    status=upload_result.status,
+                    message=upload_result.message,
+                    config_id=config.get("id"),
+                    uploaded_count=0,
+                )
 
             logger.info(
-                f"Upload successful, created entity set: {upload_result.get('set_name')}"
+                f"Upload successful, created entity set: {upload_result.set_name}"
             )
-            set_name = upload_result.get("set_name")
+            set_name = upload_result.set_name
             if not set_name:
-                return {
-                    "status": "error",
-                    "message": "Upload successful but set_name not returned",
-                    "config_id": config.get("id"),
-                }
+                return ConfigProcessingResult(
+                    status=OperationStatus.ERROR,
+                    message="Upload successful but set_name not returned",
+                    config_id=config.get("id"),
+                    uploaded_count=upload_result.uploaded_count,
+                )
 
             # 3. Get latest sample data after upload
             submission_samples = self.get_samples_for_submission(
@@ -1552,13 +1572,13 @@ class Terra2BQ:
             )
 
             if submission_samples.empty:
-                return {
-                    "status": "error",
-                    "message": "No samples found for submission after upload",
-                    "config_id": config.get("id"),
-                    "set_name": set_name,
-                    "uploaded_count": upload_result.get("uploaded_count", 0),
-                }
+                return ConfigProcessingResult(
+                    status=OperationStatus.ERROR,
+                    message="No samples found for submission after upload",
+                    config_id=config.get("id"),
+                    set_name=set_name,
+                    uploaded_count=upload_result.uploaded_count,
+                )
 
             # 4. Submit workflow
             submission_result = self.submit_workflow(
@@ -1566,22 +1586,26 @@ class Terra2BQ:
             )
             logger.debug(f"Submission result: {submission_result}")
 
-            combined_result = {
-                **submission_result,
-                "uploaded_count": upload_result.get("uploaded_count", 0),
-            }
-
-            return combined_result
+            return ConfigProcessingResult(
+                status=submission_result.status,
+                message=submission_result.message,
+                config_id=submission_result.config_id,
+                uploaded_count=upload_result.uploaded_count,
+                workflow_count=submission_result.workflow_count,
+                set_name=set_name,
+                submission_id=submission_result.submission_id,
+            )
 
         except Exception as exc:
             logger.error(
                 f"Error processing configuration {config.get('id')}: {str(exc)}"
             )
-            return {
-                "status": "error",
-                "message": str(exc),
-                "config_id": config.get("id"),
-            }
+            return ConfigProcessingResult(
+                status=OperationStatus.ERROR,
+                message=str(exc),
+                config_id=config.get("id"),
+                uploaded_count=0,
+            )
 
     def process_configuration(
         self,
@@ -1589,7 +1613,7 @@ class Terra2BQ:
         destination_bucket: Optional[str] = None,
         preserve_path_structure: bool = False,
         skip_transferred: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> ConfigProcessingResult:
         """
         Process a single configuration to download data from Terra, Upload to BigQuery,
         Upload new samples to destination, and submit a workflow.
@@ -1607,8 +1631,14 @@ class Terra2BQ:
             download_result = self.download_from_terra_to_bigquery(
                 config_copy, destination_bucket, preserve_path_structure
             )
-            if download_result.get("status") != "success":
-                return download_result
+            if download_result.status != OperationStatus.SUCCESS:
+                return ConfigProcessingResult(
+                    status=download_result.status,
+                    message=download_result.message,
+                    config_id=download_result.config_id,
+                    loaded_count=download_result.loaded_count,
+                    filtered_count=download_result.filtered_count,
+                )
 
             is_single_datatable = config_copy.get("single_datatable", False)
 
@@ -1634,27 +1664,27 @@ class Terra2BQ:
                     self.config_ops.mark_configs_as_transferred(config_copy.get("id"))
 
             # Combine results from both stages
-            result = {
-                **submission_result,
-                "loaded_count": download_result.get("loaded_count", 0),
-                "filtered_count": download_result.get("filtered_count", 0),
-            }
-
-            # Add backfilled count for single-datatable configurations
-            if is_single_datatable and "backfilled_count" in download_result:
-                result["backfilled_count"] = download_result.get("backfilled_count", 0)
-
-            return result
+            return ConfigProcessingResult(
+                status=submission_result.status,
+                message=submission_result.message,
+                config_id=submission_result.config_id,
+                loaded_count=download_result.loaded_count,
+                filtered_count=download_result.filtered_count,
+                uploaded_count=getattr(submission_result, 'uploaded_count', 0),
+                workflow_count=submission_result.workflow_count,
+                set_name=getattr(submission_result, 'set_name', None),
+                submission_id=submission_result.submission_id,
+            )
 
         except Exception as exc:
             logger.error(
                 f"Error processing configuration {config_copy.get('id')}: {str(exc)}"
             )
-            return {
-                "status": "error",
-                "message": str(exc),
-                "config_id": config_copy.get("id"),
-            }
+            return ConfigProcessingResult(
+                status=OperationStatus.ERROR,
+                message=str(exc),
+                config_id=config_copy.get("id"),
+            )
 
         finally:
             # Clean up Terra client
@@ -1668,7 +1698,7 @@ class Terra2BQ:
         destination_bucket: Optional[str] = None,
         preserve_path_structure: bool = False,
         skip_transferred: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[ConfigProcessingResult]:
         """
         Process all active configurations with progress tracking and batch processing.
 
@@ -1737,24 +1767,24 @@ class Terra2BQ:
                 results.append(result)
 
                 # We want loggable status messages
-                status = result.get("status")
-                if status == "success":
+                status = result.status
+                if status == OperationStatus.SUCCESS:
                     logger.info(
                         f"Successfully processed configuration {config.get('id')}: "
-                        f"Loaded {result.get('loaded_count')} samples, "
-                        f"uploaded {result.get('uploaded_count')} to Terra set {result.get('set_name')}, "
-                        f"submitted workflow {result.get('submission_id')} with {result.get('workflow_count')} tasks"
+                        f"Loaded {result.loaded_count} samples, "
+                        f"uploaded {result.uploaded_count} to Terra set {result.set_name}, "
+                        f"submitted workflow {result.submission_id} with {result.workflow_count} tasks"
                     )
-                elif status == "no_data":
+                elif status == OperationStatus.NO_DATA:
                     logger.info(f"No data found for configuration {config.get('id')}")
-                elif status == "no_new_samples":
+                elif status == OperationStatus.NO_NEW_SAMPLES:
                     logger.info(
                         f"No new samples to process for configuration {config.get('id')} "
-                        f"(loaded: {result.get('loaded_count', 0)}, filtered: {result.get('filtered_count', 0)})"
+                        f"(loaded: {result.loaded_count}, filtered: {result.filtered_count})"
                     )
                 else:
                     logger.warning(
-                        f"Error processing configuration {config.get('id')}: {result.get('message')}"
+                        f"Error processing configuration {config.get('id')}: {result.message}"
                     )
 
             except Exception as exc:
@@ -1762,11 +1792,11 @@ class Terra2BQ:
                     f"Error processing configuration {config.get('id')}: {str(exc)}"
                 )
                 results.append(
-                    {
-                        "status": "error",
-                        "message": str(exc),
-                        "config_id": config.get("id"),
-                    }
+                    ConfigProcessingResult(
+                        status=OperationStatus.ERROR,
+                        message=str(exc),
+                        config_id=config.get("id"),
+                    )
                 )
 
             # Add little cooldown between batches, but not after the last one
@@ -1783,14 +1813,14 @@ class Terra2BQ:
 
         # Parsing summaries from results for logging & reporting
         success_count = sum(
-            1 for result in results if result.get("status") == "success"
+            1 for result in results if result.status == OperationStatus.SUCCESS
         )
-        error_count = sum(1 for result in results if result.get("status") == "error")
+        error_count = sum(1 for result in results if result.status == OperationStatus.ERROR)
         no_data_count = sum(
-            1 for result in results if result.get("status") == "no_data"
+            1 for result in results if result.status == OperationStatus.NO_DATA
         )
         no_samples_count = sum(
-            1 for result in results if result.get("status") == "no_new_samples"
+            1 for result in results if result.status == OperationStatus.NO_NEW_SAMPLES
         )
 
         logger.info(
@@ -1809,7 +1839,7 @@ class Terra2BQ:
         update_destination: bool = True,
         use_destination_entity: bool = False,
         update_batch_size: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> MetadataSyncResult:
         """
         Sync metadata for a single configuration.
 
@@ -1843,13 +1873,13 @@ class Terra2BQ:
             logger.warning(
                 f"Configuration {config_id} missing entity_type field, skipping"
             )
-            return {
-                "status": "error",
-                "message": "Missing entity_type field",
-                "config_id": config_id,
-                "bq_updated_count": 0,
-                "destination_updated_count": 0,
-            }
+            return MetadataSyncResult(
+                status=OperationStatus.ERROR,
+                message="Missing entity_type field",
+                config_id=config_id,
+                bq_updated_count=0,
+                destination_updated_count=0,
+            )
 
         # Get the field to use as the config identifier for identifying samples
         config_identifier_field = self.samples_ops.get_config_identifier_field()
@@ -1857,13 +1887,13 @@ class Terra2BQ:
             logger.warning(
                 f"No config_identifier field defined in sample schema, skipping config {config_id}"
             )
-            return {
-                "status": "error",
-                "message": "No config_identifier field defined",
-                "config_id": config_id,
-                "bq_updated_count": 0,
-                "destination_updated_count": 0,
-            }
+            return MetadataSyncResult(
+                status=OperationStatus.ERROR,
+                message="No config_identifier field defined",
+                config_id=config_id,
+                bq_updated_count=0,
+                destination_updated_count=0,
+            )
 
         # Get all samples from the timeframe and filter for this configuration
         all_samples_df = self.samples_ops.get_samples_by_timeframe(
@@ -1875,12 +1905,12 @@ class Terra2BQ:
 
         if all_samples_df.empty:
             logger.info(f"No samples found in the last {days_back} days")
-            return {
-                "status": "no_samples",
-                "config_id": config_id,
-                "bq_updated_count": 0,
-                "destination_updated_count": 0,
-            }
+            return MetadataSyncResult(
+                status=OperationStatus.NO_UPDATES,
+                config_id=config_id,
+                bq_updated_count=0,
+                destination_updated_count=0,
+            )
 
         # Filter samples for this configuration
         config_samples = all_samples_df[
@@ -1889,35 +1919,39 @@ class Terra2BQ:
 
         if config_samples.empty:
             logger.info(f"No samples found for configuration {config_id}")
-            return {
-                "status": "no_samples",
-                "config_id": config_id,
-                "bq_updated_count": 0,
-                "destination_updated_count": 0,
-            }
+            return MetadataSyncResult(
+                status=OperationStatus.NO_UPDATES,
+                config_id=config_id,
+                bq_updated_count=0,
+                destination_updated_count=0,
+            )
 
         # Get results from helper functions
         terra_data_result = self._get_terra_data(entity_type)
-        if terra_data_result["status"] != "success":
-            return {
-                **terra_data_result,
-                "config_id": config_id,
-                "bq_updated_count": 0,
-                "destination_updated_count": 0,
-            }
+        logger.debug(
+            f"Retrieved {len(terra_data_result.data)} samples from Terra for entity type {entity_type}"
+        )
+        if terra_data_result.status != OperationStatus.SUCCESS:
+            return MetadataSyncResult(
+                status=terra_data_result.status,
+                message=terra_data_result.message,
+                config_id=config_id,
+                bq_updated_count=0,
+                destination_updated_count=0,
+            )
 
-        terra_df = terra_data_result["data"]
+        terra_df = terra_data_result.data
         sync_fields = self.samples_ops.get_sync_fields()
         sample_identifier_field = self.samples_ops.get_sample_identifier_field()
 
         if not sample_identifier_field:
-            return {
-                "status": "error",
-                "message": "No sample_identifier field defined",
-                "config_id": config_id,
-                "bq_updated_count": 0,
-                "destination_updated_count": 0,
-            }
+            return MetadataSyncResult(
+                status=OperationStatus.ERROR,
+                message="No sample_identifier field defined",
+                config_id=config_id,
+                bq_updated_count=0,
+                destination_updated_count=0,
+            )
 
         # Update BigQuery with Terra metadata
         bq_result = self._update_bigquery_with_terra_metadata(
@@ -1931,29 +1965,33 @@ class Terra2BQ:
         )
 
         # Update destination Terra with updated entities
-        destination_result = {"updated_count": 0, "failed_updates": []}
+        destination_result = MetadataSyncResult(
+            status=OperationStatus.NO_UPDATES,
+            destination_updated_count=0,
+            failed_updates=[],
+        )
 
-        if bq_result["updated_entities"] and update_destination:
+        if bq_result.updated_entities and update_destination:
             destination_entity_type = self._get_target_entity_from_config(config)
             destination_result = self._update_terra_with_synced_metadata(
-                updated_entities=bq_result["updated_entities"],
+                updated_entities=bq_result.updated_entities,
                 destination_entity_type=destination_entity_type,
                 update_destination=update_destination,
             )
 
-        return {
-            "status": "success"
+        return MetadataSyncResult(
+            status=OperationStatus.SUCCESS
             if (
-                bq_result["updated_count"] > 0
-                or destination_result["updated_count"] > 0
+                bq_result.bq_updated_count > 0
+                or destination_result.destination_updated_count > 0
             )
-            else "no_updates",
-            "config_id": config_id,
-            "bq_updated_count": bq_result["updated_count"],
-            "destination_updated_count": destination_result["updated_count"],
-            "failed_updates": bq_result["failed_updates"]
-            + destination_result["failed_updates"],
-        }
+            else OperationStatus.NO_UPDATES,
+            config_id=config_id,
+            bq_updated_count=bq_result.bq_updated_count,
+            destination_updated_count=destination_result.destination_updated_count,
+            total_updated_count=bq_result.bq_updated_count + destination_result.destination_updated_count,
+            failed_updates=bq_result.failed_updates + destination_result.failed_updates,
+        )
 
     def sync_metadata(
         self,
@@ -1965,7 +2003,7 @@ class Terra2BQ:
         batch_size: int = 1,
         update_batch_size: int = 300,
         cooldown_seconds: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> MetadataSyncResult:
         """
         Sync metadata between Terra data tables and BigQuery, and update destination Terra datatable.
 
@@ -1999,13 +2037,23 @@ class Terra2BQ:
 
         if not configs:
             logger.info("No active configurations found")
-            return {"status": "no_configs", "synced_count": 0}
+            return MetadataSyncResult(
+                status=OperationStatus.NO_CONFIGS,
+                bq_updated_count=0,
+                destination_updated_count=0,
+                processed_configs=0,
+            )
 
         # Get the fields that should be synced
         sync_fields = self.samples_ops.get_sync_fields()
         if not sync_fields:
             logger.info("No sync fields defined in the sample schema")
-            return {"status": "no_sync_fields", "synced_count": 0}
+            return MetadataSyncResult(
+                status=OperationStatus.NO_UPDATES,
+                bq_updated_count=0,
+                destination_updated_count=0,
+                processed_configs=0,
+            )
 
         logger.info(f"Found {len(sync_fields)} fields to sync: {sync_fields}")
 
@@ -2052,28 +2100,28 @@ class Terra2BQ:
                 )
 
                 # Update aggregated metrics for reporting
-                bq_updated_count += result.get("bq_updated_count", 0)
-                destination_updated_count += result.get("destination_updated_count", 0)
-                if result.get("failed_updates"):
-                    failed_updates.extend(result.get("failed_updates"))
+                bq_updated_count += result.bq_updated_count
+                destination_updated_count += result.destination_updated_count
+                if result.failed_updates:
+                    failed_updates.extend(result.failed_updates)
 
                 processed_configs += 1
 
                 # Informative logging based on result of operation
-                status = result.get("status")
-                if status == "success":
+                status = result.status
+                if status == OperationStatus.SUCCESS:
                     logger.info(
                         f"Successfully processed configuration {config.get('id')}: "
-                        f"Updated {result.get('bq_updated_count')} samples in BigQuery, "
-                        f"Updated {result.get('destination_updated_count')} entities in Terra"
+                        f"Updated {result.bq_updated_count} samples in BigQuery, "
+                        f"Updated {result.destination_updated_count} entities in Terra"
                     )
-                elif status == "no_updates":
+                elif status == OperationStatus.NO_UPDATES:
                     logger.info(
                         f"No updates needed for configuration {config.get('id')}"
                     )
                 else:
                     logger.warning(
-                        f"Status {status} for configuration {config.get('id')}: {result.get('message', '')}"
+                        f"Status {status} for configuration {config.get('id')}: {result.message or ''}"
                     )
 
             except Exception as exc:
@@ -2108,16 +2156,16 @@ class Terra2BQ:
             f"Updated {destination_updated_count} entities in Terra destination"
         )
 
-        return {
-            "status": "success"
+        return MetadataSyncResult(
+            status=OperationStatus.SUCCESS
             if (bq_updated_count > 0 or destination_updated_count > 0)
-            else "no_updates",
-            "bq_updated_count": bq_updated_count,
-            "destination_updated_count": destination_updated_count,
-            "total_updated_count": bq_updated_count + destination_updated_count,
-            "processed_configs": processed_configs,
-            "failed_updates": failed_updates,
-        }
+            else OperationStatus.NO_UPDATES,
+            bq_updated_count=bq_updated_count,
+            destination_updated_count=destination_updated_count,
+            total_updated_count=bq_updated_count + destination_updated_count,
+            processed_configs=processed_configs,
+            failed_updates=failed_updates,
+        )
 
     def update_workflow_status_for_config(
         self,
@@ -2125,7 +2173,7 @@ class Terra2BQ:
         days_back: int,
         batch_size: int,
         update_bigquery: bool,
-    ) -> Dict[str, Any]:
+    ) -> WorkflowResult:
         """
         Update workflow status for a single configuration.
 
@@ -2153,15 +2201,14 @@ class Terra2BQ:
             logger.warning(
                 f"No config_identifier field defined in sample schema, skipping config {config_id}"
             )
-            return {
-                "status": "error",
-                "message": "No config_identifier field defined",
-                "config_id": config_id,
-                "updated_count": 0,
-                "processed_submissions": 0,
-                "workflow_states": {},
-                "failed_updates": [],
-            }
+            return WorkflowResult(
+                status=OperationStatus.ERROR,
+                message="No config_identifier field defined",
+                config_id=config_id,
+                workflow_count=0,
+                workflow_states={},
+                failed_updates=[],
+            )
 
         prefix_field = self.config_ops.get_prefix_fields()
         logger.info(
@@ -2177,31 +2224,29 @@ class Terra2BQ:
             logger.info(f"Found {len(submission_ids)} submission IDs to process")
 
             if not submission_ids:
-                return {
-                    "status": "no_submissions",
-                    "config_id": config_id,
-                    "updated_count": 0,
-                    "processed_submissions": 0,
-                    "workflow_states": {},
-                    "failed_updates": [],
-                }
+                return WorkflowResult(
+                    status=OperationStatus.NO_UPDATES,
+                    config_id=config_id,
+                    workflow_count=0,
+                    workflow_states={},
+                    failed_updates=[],
+                )
 
         except Exception as exc:
             logger.error(f"Error getting submission IDs: {str(exc)}")
-            return {
-                "status": "error",
-                "message": f"Failed to get submission IDs: {str(exc)}",
-                "config_id": config_id,
-                "updated_count": 0,
-                "processed_submissions": 0,
-                "workflow_states": {},
-                "failed_updates": [
+            return WorkflowResult(
+                status=OperationStatus.ERROR,
+                message=f"Failed to get submission IDs: {str(exc)}",
+                config_id=config_id,
+                workflow_count=0,
+                workflow_states={},
+                failed_updates=[
                     {
                         "config_id": config_id,
                         "error": f"Failed to get submission IDs: {str(exc)}",
                     }
                 ],
-            }
+            )
 
         # Process submissions
         total_updated = 0
@@ -2216,17 +2261,17 @@ class Terra2BQ:
                 update_bigquery=update_bigquery,
             )
 
-            total_updated += submission_result.get("updated_count", 0)
+            total_updated += submission_result.workflow_count
 
             # Update workflow states summary
-            for state, count in submission_result.get("workflow_states", {}).items():
+            for state, count in submission_result.workflow_states.items():
                 if state not in workflow_states:
                     workflow_states[state] = 0
                 workflow_states[state] += count
 
             # Add failed updates to summary
-            if submission_result.get("failed_updates"):
-                failed_updates.extend(submission_result.get("failed_updates"))
+            if submission_result.failed_updates:
+                failed_updates.extend(submission_result.failed_updates)
 
         # Process incomplete workflows
         incomplete_result = self._process_incomplete_workflows(
@@ -2236,27 +2281,26 @@ class Terra2BQ:
             update_bigquery=update_bigquery,
         )
 
-        total_updated += incomplete_result.get("updated_count", 0)
+        total_updated += incomplete_result["updated_count"]
 
         # Now we can update the workflow states summary
-        for state, count in incomplete_result.get("workflow_states", {}).items():
+        for state, count in incomplete_result["workflow_states"].items():
             if state not in workflow_states:
                 workflow_states[state] = 0
             workflow_states[state] += count
 
         # Add failed updates
-        if incomplete_result.get("failed_updates"):
-            failed_updates.extend(incomplete_result.get("failed_updates"))
+        if incomplete_result["failed_updates"]:
+            failed_updates.extend(incomplete_result["failed_updates"])
 
         # Finally return the results summary
-        return {
-            "status": "success" if total_updated > 0 else "no_updates",
-            "config_id": config_id,
-            "updated_count": total_updated,
-            "processed_submissions": len(submission_ids),
-            "workflow_states": workflow_states,
-            "failed_updates": failed_updates,
-        }
+        return WorkflowResult(
+            status=OperationStatus.SUCCESS if total_updated > 0 else OperationStatus.NO_UPDATES,
+            config_id=config_id,
+            workflow_count=total_updated,
+            workflow_states=workflow_states,
+            failed_updates=failed_updates,
+        )
 
     def update_workflow_status(
         self,
@@ -2265,7 +2309,7 @@ class Terra2BQ:
         update_bigquery: bool = True,
         config_batch_size: int = 4,
         cooldown_seconds: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> WorkflowResult:
         """
         Update terra_workflow_ids and states from Terra submissions.
 
@@ -2303,7 +2347,12 @@ class Terra2BQ:
         configs = self.get_active_configs()
         if not configs:
             logger.info("No active configurations found")
-            return {"status": "no_configs", "updated_count": 0}
+            return WorkflowResult(
+                status=OperationStatus.NO_CONFIGS,
+                workflow_count=0,
+                workflow_states={},
+                failed_updates=[],
+            )
 
         # Track metrics and progress
         total_configs = len(configs)
@@ -2348,35 +2397,31 @@ class Terra2BQ:
                 )
 
                 # Update aggregated metrics
-                total_updated += result.get("updated_count", 0)
-                submission_count += result.get("processed_submissions", 0)
+                total_updated += result.workflow_count
+                submission_count += getattr(result, 'processed_submissions', 0)
                 processed_configs += 1
 
-                for state, count in result.get("workflow_states", {}).items():
+                for state, count in result.workflow_states.items():
                     if state not in status_summary:
                         status_summary[state] = 0
                     status_summary[state] += count
 
-                if result.get("failed_updates"):
-                    failed_updates.extend(result.get("failed_updates"))
+                if result.failed_updates:
+                    failed_updates.extend(result.failed_updates)
 
-                status = result.get("status")
-                if status == "success":
+                status = result.status
+                if status == OperationStatus.SUCCESS:
                     logger.info(
                         f"Successfully processed configuration {config.get('id')}: "
-                        f"Updated {result.get('updated_count')} workflow records"
+                        f"Updated {result.workflow_count} workflow records"
                     )
-                elif status == "no_updates":
+                elif status == OperationStatus.NO_UPDATES:
                     logger.info(
                         f"No workflow updates needed for configuration {config.get('id')}"
                     )
-                elif status == "no_submissions":
-                    logger.info(
-                        f"No submissions found for configuration {config.get('id')}"
-                    )
                 else:
                     logger.warning(
-                        f"Status {status} for configuration {config.get('id')}: {result.get('message', '')}"
+                        f"Status {status} for configuration {config.get('id')}: {result.message or ''}"
                     )
 
             except Exception as exc:
@@ -2406,11 +2451,9 @@ class Terra2BQ:
             f"Updated {total_updated} workflow records"
         )
 
-        return {
-            "status": "success" if total_updated > 0 else "no_updates",
-            "updated_count": total_updated,
-            "processed_configs": processed_configs,
-            "processed_submissions": submission_count,
-            "workflow_states": status_summary,
-            "failed_updates": failed_updates,
-        }
+        return WorkflowResult(
+            status=OperationStatus.SUCCESS if total_updated > 0 else OperationStatus.NO_UPDATES,
+            workflow_count=total_updated,
+            workflow_states=status_summary,
+            failed_updates=failed_updates,
+        )

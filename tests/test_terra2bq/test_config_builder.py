@@ -54,8 +54,8 @@ def config_builder(mock_schema_yaml):
     mock_terra.entities.list_entity_types = MagicMock(return_value=["table1", "table2"])
     
     # Patch the dependencies
-    with patch('bioforklift.bigquery.BigQuery', return_value=mock_bigquery), \
-         patch('bioforklift.terra.Terra', return_value=mock_terra), \
+    with patch('bioforklift.terra2bq.config_builder.BigQuery', return_value=mock_bigquery), \
+         patch('bioforklift.terra2bq.config_builder.Terra', return_value=mock_terra), \
          patch('builtins.open', mock_open(read_data=mock_schema_yaml)):
         
         # Create the ConfigBuilder instance
@@ -93,8 +93,8 @@ class TestConfigBuilder:
         mock_template = {"template_key": "template_value"}
         
         # Patch dependencies
-        with patch('bioforklift.bigquery.BigQuery') as mock_bigquery_class, \
-             patch('bioforklift.terra.Terra') as mock_terra_class, \
+        with patch('bioforklift.terra2bq.config_builder.BigQuery') as mock_bigquery_class, \
+             patch('bioforklift.terra2bq.config_builder.Terra') as mock_terra_class, \
              patch('pathlib.Path.exists', return_value=True), \
              patch('builtins.open') as mock_open_func:
             
