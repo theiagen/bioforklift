@@ -16,6 +16,13 @@ COPY . .
 # Build the application
 RUN npm run build
 
+# Debug: Check what was built
+RUN echo "Checking build output:" && ls -la && \
+    echo "Looking for build directory:" && \
+    (ls -la build/ 2>/dev/null || echo "No build directory found") && \
+    (ls -la dist/ 2>/dev/null || echo "No dist directory found") && \
+    echo "Build step completed"
+
 # Production stage
 FROM node:18-alpine AS production
 
@@ -25,7 +32,7 @@ WORKDIR /app
 # Install serve to run the built application
 RUN npm install -g serve
 
-# Copy built application from builder stage
+# Copy built application from builder stage (SvelteKit builds to build directory)
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json ./
 
