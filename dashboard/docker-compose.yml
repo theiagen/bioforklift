@@ -55,8 +55,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - MOCK_DATA=${MOCK_DATA:-true}
       - BIGQUERY_PROJECT_ID=${BIGQUERY_PROJECT_ID}
@@ -84,8 +84,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    ports:
-      - "5173:5173"
+    expose:
+      - "5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -93,5 +93,19 @@ services:
       - NODE_ENV=development
     depends_on:
       - backend-dev
+    profiles:
+      - dev
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - backend-dev
+      - frontend-dev
     profiles:
       - dev
