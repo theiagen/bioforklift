@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Dashboard API</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .test { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        .success { background: #d4edda; }
+        .error { background: #f8d7da; }
+        pre { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Dashboard API Debug</h1>
+    <div id="results"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1';
+        const resultsDiv = document.getElementById('results');
+
+        async function testEndpoint(name, url) {
+            const testDiv = document.createElement('div');
+            testDiv.className = 'test';
+            testDiv.innerHTML = `<h3>Testing: ${name}</h3><p>URL: ${url}</p><p>Status: Loading...</p>`;
+            resultsDiv.appendChild(testDiv);
+
+            try {
+                console.log(`Testing ${name}: ${url}`);
+                const response = await fetch(url);
+                console.log(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log(`Response data:`, data);
+                
+                testDiv.className = 'test success';
+                testDiv.innerHTML = `
+                    <h3>✅ ${name}</h3>
+                    <p>URL: ${url}</p>
+                    <p>Status: ${response.status} ${response.statusText}</p>
+                    <pre>${JSON.stringify(data, null, 2).substring(0, 500)}${JSON.stringify(data, null, 2).length > 500 ? '...' : ''}</pre>
+                `;
+            } catch (error) {
+                console.error(`Error testing ${name}:`, error);
+                testDiv.className = 'test error';
+                testDiv.innerHTML = `
+                    <h3>❌ ${name}</h3>
+                    <p>URL: ${url}</p>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+        }
+
+        async function runTests() {
+            console.log('Starting API tests...');
+            
+            // Test all endpoints
+            await testEndpoint('Health Check', `${API_BASE.replace('/api/v1', '')}/health`);
+            await testEndpoint('System Health', `${API_BASE}/metrics/system-health`);
+            await testEndpoint('Daily Runs', `${API_BASE}/metrics/daily-runs?days_back=7`);
+            await testEndpoint('Workflow States', `${API_BASE}/metrics/workflow-states`);
+            await testEndpoint('Recent Failures', `${API_BASE}/metrics/recent-failures?limit=5`);
+            await testEndpoint('Configuration Metrics', `${API_BASE}/metrics/configurations?days_back=30`);
+            await testEndpoint('Processing Times', `${API_BASE}/metrics/processing-times?days_back=30`);
+            await testEndpoint('Active Configurations', `${API_BASE}/metrics/active-configurations`);
+            await testEndpoint('Full Dashboard', `${API_BASE}/metrics/dashboard?days_back=30`);
+            
+            console.log('All tests completed');
+        }
+
+        // Run tests when page loads
+        runTests();
+    </script>
+</body>
+</html>

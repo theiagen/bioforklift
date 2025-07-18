@@ -1,0 +1,14 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+google-cloud-bigquery==3.29.0
+pandas==2.2.3
+pydantic==2.10.6
+python-dotenv==1.0.0
+cachetools==5.3.2
+faker==22.0.0
+authlib==1.2.1
+httpx==0.25.2
+python-multipart==0.0.6
+google-cloud-resource-manager==1.10.4
+google-auth==2.23.4
+itsdangerous==2.1.2

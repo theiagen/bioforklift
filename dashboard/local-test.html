@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Dashboard Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        .metric { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+        .btn { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        .btn:hover { background: #0056b3; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🧬 Bioforklift Dashboard Test</h1>
+    
+    <div class="status warning">
+        <strong>Instructions:</strong> This page should be served from http://localhost:5173 (not file://) to test the dashboard properly.
+        <br><br>
+        <strong>Current URL:</strong> <span id="current-url"></span>
+    </div>
+    
+    <button class="btn" onclick="testAPI()">Test API Connection</button>
+    <button class="btn" onclick="loadDashboard()">Load Dashboard Data</button>
+    <button class="btn" onclick="window.open('http://localhost:8000/docs', '_blank')">Open API Docs</button>
+    
+    <div id="results"></div>
+
+    <script>
+        document.getElementById('current-url').textContent = window.location.href;
+        
+        const API_BASE = 'http://localhost:8000';
+        const resultsDiv = document.getElementById('results');
+
+        function addResult(title, content, type = 'success') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>${title}</strong><br>${content}`;
+            resultsDiv.appendChild(div);
+        }
+
+        async function testAPI() {
+            resultsDiv.innerHTML = '';
+            
+            try {
+                // Test health endpoint
+                console.log('Testing health endpoint...');
+                const healthResponse = await fetch(`${API_BASE}/health`);
+                console.log('Health response:', healthResponse);
+                
+                if (!healthResponse.ok) {
+                    throw new Error(`Health check failed: ${healthResponse.status}`);
+                }
+                
+                const healthData = await healthResponse.json();
+                addResult('✅ Health Check', `Status: ${healthData.status} | Service: ${healthData.service}`);
+                
+                // Test system health
+                console.log('Testing system health...');
+                const metricsResponse = await fetch(`${API_BASE}/api/v1/metrics/system-health`);
+                console.log('Metrics response:', metricsResponse);
+                
+                if (!metricsResponse.ok) {
+                    throw new Error(`Metrics failed: ${metricsResponse.status}`);
+                }
+                
+                const metricsData = await metricsResponse.json();
+                console.log('Metrics data:', metricsData);
+                
+                const successRate = metricsData.samples_last_24h > 0 
+                    ? (metricsData.successful_last_24h / metricsData.samples_last_24h * 100).toFixed(1)
+                    : 0;
+                
+                addResult('✅ System Health', 
+                    `Samples (24h): ${metricsData.samples_last_24h} | Success Rate: ${successRate}% | In Progress: ${metricsData.currently_in_progress}`);
+                
+            } catch (error) {
+                console.error('API test failed:', error);
+                addResult('❌ API Test Failed', error.message, 'error');
+                
+                if (window.location.protocol === 'file:') {
+                    addResult('💡 CORS Issue Detected', 
+                        'You are viewing this page with file:// protocol. Please access it via:<br>' +
+                        '<strong>http://localhost:5173/test</strong> or serve it from a web server.', 'warning');
+                }
+            }
+        }
+
+        async function loadDashboard() {
+            resultsDiv.innerHTML = '';
+            
+            try {
+                console.log('Loading dashboard data...');
+                const response = await fetch(`${API_BASE}/api/v1/metrics/dashboard?days_back=7`);
+                
+                if (!response.ok) {
+                    throw new Error(`Dashboard API failed: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Dashboard data:', data);
+                
+                addResult('✅ Dashboard Data Loaded', 
+                    `Daily Runs: ${data.daily_runs.length} days | ` +
+                    `Configurations: ${data.configuration_metrics.length} | ` +
+                    `Recent Failures: ${data.recent_failures.length}`);
+                
+                // Show some sample data
+                const sampleDiv = document.createElement('div');
+                sampleDiv.className = 'status success';
+                sampleDiv.innerHTML = `
+                    <strong>📊 Sample Data Preview:</strong>
+                    <pre>${JSON.stringify({
+                        latest_run: data.daily_runs[0],
+                        system_health: data.system_health,
+                        workflow_states: data.workflow_distribution.workflow_states
+                    }, null, 2)}</pre>
+                `;
+                resultsDiv.appendChild(sampleDiv);
+                
+            } catch (error) {
+                console.error('Dashboard load failed:', error);
+                addResult('❌ Dashboard Load Failed', error.message, 'error');
+            }
+        }
+
+        // Auto-test when page loads if served from localhost
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            testAPI();
+        }
+    </script>
+</body>
+</html>

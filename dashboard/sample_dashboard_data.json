@@ -1,0 +1,202 @@
+{
+  "daily_runs": [
+    {
+      "date": "2025-07-06",
+      "total_runs": 17,
+      "successful_runs": 15,
+      "failed_runs": 1,
+      "aborted_runs": 0,
+      "in_progress_runs": 1
+    },
+    {
+      "date": "2025-07-05",
+      "total_runs": 8,
+      "successful_runs": 6,
+      "failed_runs": 2,
+      "aborted_runs": 0,
+      "in_progress_runs": 0
+    },
+    {
+      "date": "2025-07-04",
+      "total_runs": 14,
+      "successful_runs": 12,
+      "failed_runs": 0,
+      "aborted_runs": 1,
+      "in_progress_runs": 1
+    },
+    {
+      "date": "2025-07-03",
+      "total_runs": 21,
+      "successful_runs": 18,
+      "failed_runs": 2,
+      "aborted_runs": 1,
+      "in_progress_runs": 0
+    },
+    {
+      "date": "2025-07-02",
+      "total_runs": 18,
+      "successful_runs": 16,
+      "failed_runs": 2,
+      "aborted_runs": 0,
+      "in_progress_runs": 0
+    }
+  ],
+  "workflow_distribution": {
+    "workflow_states": {
+      "Succeeded": 315,
+      "Failed": 24,
+      "Running": 28,
+      "Queued": 4,
+      "Aborted": 8,
+      "Submitted": 6
+    },
+    "total_workflows": 385
+  },
+  "configuration_metrics": [
+    {
+      "config_id": "config-003",
+      "config_name": "Bacterial Genomics QC",
+      "total_samples": 72,
+      "successful_samples": 49,
+      "failed_samples": 23,
+      "success_rate": 69.33829755364464,
+      "avg_processing_time_minutes": 86.17638453830908
+    },
+    {
+      "config_id": "config-002",
+      "config_name": "Flu Strain Classification",
+      "total_samples": 65,
+      "successful_samples": 48,
+      "failed_samples": 17,
+      "success_rate": 74.97424195778652,
+      "avg_processing_time_minutes": 24.77645753420447
+    },
+    {
+      "config_id": "config-004",
+      "config_name": "Viral Metagenomics",
+      "total_samples": 52,
+      "successful_samples": 42,
+      "failed_samples": 10,
+      "success_rate": 81.29577630849919,
+      "avg_processing_time_minutes": 97.64857427120286
+    }
+  ],
+  "recent_failures": [
+    {
+      "entity_identifier": "SAMPLE_3680",
+      "config_id": "config-002",
+      "config_name": "Flu Strain Classification",
+      "workflow_state": "Failed",
+      "created_at": "2025-07-02T15:43:55.976233",
+      "submitted_at": "2025-07-02T16:22:55.976233",
+      "terra_submission_id": "sub_4103dae2",
+      "terra_workflow_id": "wf_19e669a5"
+    },
+    {
+      "entity_identifier": "SAMPLE_8460",
+      "config_id": "config-003",
+      "config_name": "Bacterial Genomics QC",
+      "workflow_state": "Failed",
+      "created_at": "2025-07-02T10:34:09.384570",
+      "submitted_at": "2025-07-02T11:08:09.384570",
+      "terra_submission_id": "sub_ac2d18a8",
+      "terra_workflow_id": "wf_4ab5399d"
+    },
+    {
+      "entity_identifier": "SAMPLE_4888",
+      "config_id": "config-001",
+      "config_name": "TB Drug Resistance Analysis",
+      "workflow_state": "Failed",
+      "created_at": "2025-07-01T17:44:52.604116",
+      "submitted_at": "2025-07-01T18:37:52.604116",
+      "terra_submission_id": "sub_e9ec1a4e",
+      "terra_workflow_id": "wf_f444362b"
+    },
+    {
+      "entity_identifier": "SAMPLE_1061",
+      "config_id": "config-005",
+      "config_name": "AMR Detection Pipeline",
+      "workflow_state": "Failed",
+      "created_at": "2025-07-01T13:26:32.003794",
+      "submitted_at": "2025-07-01T14:19:32.003794",
+      "terra_submission_id": "sub_874eac74",
+      "terra_workflow_id": "wf_a41ba0ac"
+    },
+    {
+      "entity_identifier": "SAMPLE_1561",
+      "config_id": "config-000",
+      "config_name": "COVID-19 Sequencing Pipeline",
+      "workflow_state": "Failed",
+      "created_at": "2025-06-30T15:37:50.890861",
+      "submitted_at": "2025-06-30T16:23:50.890861",
+      "terra_submission_id": "sub_9fa3be78",
+      "terra_workflow_id": "wf_bdd14557"
+    }
+  ],
+  "processing_trends": [
+    {
+      "date": "2025-07-06",
+      "avg_processing_time_minutes": 72.70236275903487,
+      "sample_count": 25
+    },
+    {
+      "date": "2025-07-05",
+      "avg_processing_time_minutes": 68.09338233972385,
+      "sample_count": 42
+    },
+    {
+      "date": "2025-07-04",
+      "avg_processing_time_minutes": 65.03070901493592,
+      "sample_count": 19
+    },
+    {
+      "date": "2025-07-03",
+      "avg_processing_time_minutes": 75.68584906324426,
+      "sample_count": 34
+    },
+    {
+      "date": "2025-07-02",
+      "avg_processing_time_minutes": 71.90195586909712,
+      "sample_count": 41
+    }
+  ],
+  "active_configurations": [
+    {
+      "id": "config-000",
+      "name": "COVID-19 Sequencing Pipeline",
+      "state": "Pennsylvania",
+      "prefix": "covid-19_s",
+      "terra_analysis_method": "Pipeline_Illumina_SE",
+      "active": true,
+      "created_at": "2024-09-05T19:34:37.579720",
+      "updated_at": "2025-07-06T17:50:19.701199"
+    },
+    {
+      "id": "config-001",
+      "name": "TB Drug Resistance Analysis",
+      "state": "West Virginia",
+      "prefix": "tb_drug_re",
+      "terra_analysis_method": "Pipeline_Illumina_PE",
+      "active": true,
+      "created_at": "2024-11-21T00:40:10.163489",
+      "updated_at": "2025-07-06T17:50:51.055596"
+    },
+    {
+      "id": "config-002",
+      "name": "Flu Strain Classification",
+      "state": "New Hampshire",
+      "prefix": "flu_strain",
+      "terra_analysis_method": "Pipeline_ONT",
+      "active": true,
+      "created_at": "2025-01-25T21:30:26.800907",
+      "updated_at": "2025-07-06T17:50:40.111159"
+    }
+  ],
+  "system_health": {
+    "total_samples": 1011,
+    "samples_last_24h": 187,
+    "successful_last_24h": 154,
+    "failed_last_24h": 33,
+    "currently_in_progress": 19
+  }
+}
