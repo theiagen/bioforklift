@@ -65,6 +65,10 @@ services:
       - PORT=8000
       - LOG_LEVEL=debug
       - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - ENVIRONMENT=development
+      - SECRET_KEY=dev-secret-key-for-development-only
+      - TARGET_PROJECT_ID=${TARGET_PROJECT_ID:-mock-project}
+      - DATASET_ID=${DATASET_ID:-mock-dataset}
     volumes:
       - ./backend:/app
       - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/credentials.json:ro

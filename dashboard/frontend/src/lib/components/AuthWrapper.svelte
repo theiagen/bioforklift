@@ -3,7 +3,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { authStatus, authLoading, user, initAuth } from '$stores/auth';
+  import { authStatus, authLoading, user, initAuth } from '$lib/stores/auth';
   import LoadingSpinner from './LoadingSpinner.svelte';
   
   let mounted = false;
