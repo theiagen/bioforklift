@@ -6,7 +6,6 @@
   import WorkflowDistribution from '$lib/components/WorkflowDistribution.svelte';
   import ConfigurationTable from '$lib/components/ConfigurationTable.svelte';
   import RecentFailures from '$lib/components/RecentFailures.svelte';
-  import ProcessingTimeTrends from '$lib/components/ProcessingTimeTrends.svelte';
   import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   
@@ -15,6 +14,8 @@
   let error: string | null = null;
   let lastRefresh = new Date();
   let daysBack = 30;
+  let customDaysInput = '';
+  let showCustomInput = false;
   
   async function loadDashboardData() {
     try {
@@ -26,6 +27,7 @@
       console.log('✅ Dashboard data loaded successfully:', dashboardData);
       console.log('📊 Daily runs:', dashboardData?.daily_runs?.length);
       console.log('💚 System health:', dashboardData?.system_health);
+      console.log('🔄 Workflow distribution:', dashboardData?.workflow_distribution);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
       error = 'Failed to load dashboard data. Please check your connection and try again.';
@@ -36,6 +38,36 @@
   
   async function refreshData() {
     await loadDashboardData();
+  }
+
+  function setDaysBack(days: number) {
+    daysBack = days;
+    showCustomInput = false;
+    customDaysInput = '';
+  }
+
+  function toggleCustomInput() {
+    showCustomInput = !showCustomInput;
+    if (showCustomInput) {
+      customDaysInput = daysBack.toString();
+    }
+  }
+
+  function applyCustomDays() {
+    const customDays = parseInt(customDaysInput);
+    if (!isNaN(customDays) && customDays > 0 && customDays <= 365) {
+      daysBack = customDays;
+      showCustomInput = false;
+    }
+  }
+
+  function handleCustomKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      applyCustomDays();
+    } else if (event.key === 'Escape') {
+      showCustomInput = false;
+      customDaysInput = '';
+    }
   }
   
   let previousDaysBack = daysBack;
@@ -69,18 +101,64 @@
     </div>
     <div class="flex items-center space-x-4">
       <div class="flex items-center space-x-2">
-        <label for="days-back" class="text-sm font-medium text-gray-700">
-          Days back:
-        </label>
-        <select
-          id="days-back"
-          bind:value={daysBack}
-          class="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-        >
-          <option value={7}>7 days</option>
-          <option value={30}>30 days</option>
-          <option value={90}>90 days</option>
-        </select>
+        <span class="text-sm font-medium text-gray-700">
+          Time period:
+        </span>
+        
+        <!-- Preset buttons -->
+        <div class="flex space-x-1">
+          <button
+            on:click={() => setDaysBack(7)}
+            class="px-3 py-1 text-sm rounded-md transition-colors {daysBack === 7 ? 'bg-primary-100 text-primary-800 border border-primary-300' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'}"
+          >
+            7d
+          </button>
+          <button
+            on:click={() => setDaysBack(30)}
+            class="px-3 py-1 text-sm rounded-md transition-colors {daysBack === 30 ? 'bg-primary-100 text-primary-800 border border-primary-300' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'}"
+          >
+            30d
+          </button>
+          <button
+            on:click={() => setDaysBack(90)}
+            class="px-3 py-1 text-sm rounded-md transition-colors {daysBack === 90 ? 'bg-primary-100 text-primary-800 border border-primary-300' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'}"
+          >
+            90d
+          </button>
+          <button
+            on:click={toggleCustomInput}
+            class="px-3 py-1 text-sm rounded-md transition-colors {showCustomInput || ![7, 30, 90].includes(daysBack) ? 'bg-primary-100 text-primary-800 border border-primary-300' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'}"
+          >
+            {![7, 30, 90].includes(daysBack) ? `${daysBack}d` : 'Custom'}
+          </button>
+        </div>
+        
+        <!-- Custom input field -->
+        {#if showCustomInput}
+          <div class="flex items-center space-x-1">
+            <input
+              type="number"
+              bind:value={customDaysInput}
+              on:keydown={handleCustomKeydown}
+              placeholder="Days"
+              min="1"
+              max="365"
+              class="w-16 px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <button
+              on:click={applyCustomDays}
+              class="px-2 py-1 text-sm bg-primary-600 text-white rounded-md hover:bg-primary-700"
+            >
+              ✓
+            </button>
+            <button
+              on:click={() => showCustomInput = false}
+              class="px-2 py-1 text-sm bg-gray-400 text-white rounded-md hover:bg-gray-500"
+            >
+              ✕
+            </button>
+          </div>
+        {/if}
       </div>
       <button
         on:click={refreshData}
@@ -110,9 +188,6 @@
       <DailyRunsChart dailyRuns={dashboardData.daily_runs} />
       <WorkflowDistribution workflowDistribution={dashboardData.workflow_distribution} />
     </div>
-    
-    <!-- Processing Time Trends -->
-    <ProcessingTimeTrends processingTrends={dashboardData.processing_trends} />
     
     <!-- Configuration Metrics -->
     <ConfigurationTable configurations={dashboardData.configuration_metrics} />

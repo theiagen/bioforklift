@@ -37,6 +37,8 @@ class DataServiceFactory:
         
         try:
             # Try to create BigQuery service
+            logger.info("GOOGLE_CLIENT_ID: %s", os.environ.get('GOOGLE_CLIENT_ID'))
+            logger.info("GOOGLE_CLIENT_SECRET: %s", os.environ.get('GOOGLE_CLIENT_SECRET'))
             logger.info(f"Using BigQuery data service for project: {project_id}, dataset: {dataset_id}")
             return BigQueryService(project_id, dataset_id)
             

@@ -20,7 +20,15 @@
   };
   
   function createChart() {
-    if (!chartCanvas || !workflowDistribution?.workflow_states) return;
+    console.log('🔍 WorkflowDistribution - createChart called');
+    console.log('📊 workflowDistribution:', workflowDistribution);
+    console.log('🎯 workflow_states:', workflowDistribution?.workflow_states);
+    console.log('🖥️ chartCanvas:', chartCanvas);
+    
+    if (!chartCanvas || !workflowDistribution?.workflow_states) {
+      console.log('❌ Missing chartCanvas or workflow_states - returning early');
+      return;
+    }
     
     // Destroy existing chart
     if (chart) {
@@ -28,7 +36,11 @@
     }
     
     const entries = Object.entries(workflowDistribution.workflow_states || {});
-    if (entries.length === 0) return;
+    console.log('📋 entries:', entries);
+    if (entries.length === 0) {
+      console.log('❌ No entries found - returning early');
+      return;
+    }
     
     // Sort by count (descending)
     entries.sort((a, b) => b[1] - a[1]);

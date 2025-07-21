@@ -3,18 +3,18 @@ import { handleAuthError } from '$lib/auth';
 
 // API types
 export interface DailyRunSummary {
-  date: string;
+  date: string; // Date is serialized as string over JSON
   total_runs: number;
   successful_runs: number;
   failed_runs: number;
   aborted_runs: number;
   in_progress_runs: number;
-  success_rate: number;
+  success_rate: number; // Computed property from backend
 }
 
 export interface WorkflowStateDistribution {
   workflow_states: Record<string, number>;
-  total_workflows: number;
+  total_workflows: number; // Computed property from backend
 }
 
 export interface ConfigurationMetrics {
@@ -32,14 +32,14 @@ export interface RecentFailure {
   config_id: string | null;
   config_name: string | null;
   workflow_state: string;
-  created_at: string;
-  submitted_at: string | null;
+  created_at: string; // DateTime is serialized as string over JSON
+  submitted_at: string | null; // DateTime is serialized as string over JSON
   terra_submission_id: string | null;
   terra_workflow_id: string | null;
 }
 
 export interface ProcessingTimeTrend {
-  date: string;
+  date: string; // Date is serialized as string over JSON
   avg_processing_time_minutes: number | null;
   sample_count: number;
 }
@@ -51,8 +51,8 @@ export interface ActiveConfiguration {
   prefix: string;
   terra_analysis_method: string;
   active: boolean;
-  created_at: string;
-  updated_at: string | null;
+  created_at: string; // DateTime is serialized as string over JSON
+  updated_at: string | null; // DateTime is serialized as string over JSON
 }
 
 export interface SystemHealthMetrics {

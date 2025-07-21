@@ -58,8 +58,8 @@ class MockDataService:
             
             # Distribute remaining runs
             remaining = total_runs - successful_runs
-            failed_runs = random.randint(0, remaining)
-            aborted_runs = random.randint(0, remaining - failed_runs)
+            failed_runs = int(remaining * random.uniform(0.0, 0.8))
+            aborted_runs = int((remaining - failed_runs) * random.uniform(0.0, 0.7))
             in_progress_runs = remaining - failed_runs - aborted_runs
             
             data.append({
@@ -175,18 +175,21 @@ class MockDataService:
     def get_system_health_metrics(self) -> Dict[str, Any]:
         """Generate mock system health metrics"""
         total_samples = random.randint(1000, 5000)
-        samples_24h = random.randint(50, 200)
+        samples_24h = random.randint(1, 200)  # Ensure at least 1 sample to avoid division by zero
         
         success_rate = random.uniform(0.80, 0.95)
         successful_24h = int(samples_24h * success_rate)
         failed_24h = samples_24h - successful_24h
         
+        success_rate_24h = round((successful_24h / samples_24h) * 100, 2)
+        failure_rate_24h = round((failed_24h / samples_24h) * 100, 2)
+        
         return {
-            'total_samples': total_samples,
-            'samples_last_24h': samples_24h,
-            'successful_last_24h': successful_24h,
-            'failed_last_24h': failed_24h,
-            'currently_in_progress': random.randint(5, 25),
-            'success_rate_24h': (successful_24h / samples_24h) * 100 if samples_24h > 0 else 0,
-            'failure_rate_24h': (failed_24h / samples_24h) * 100 if samples_24h > 0 else 0
+            'total_samples': int(total_samples),
+            'samples_last_24h': int(samples_24h),
+            'successful_last_24h': int(successful_24h),
+            'failed_last_24h': int(failed_24h),
+            'currently_in_progress': int(random.randint(5, 25)),
+            'success_rate_24h': float(success_rate_24h),
+            'failure_rate_24h': float(failure_rate_24h)
         }

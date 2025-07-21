@@ -12,12 +12,6 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S svelte -u 1001 && \
-    chown -R svelte:nodejs /app
-USER svelte
-
 # Expose port
 EXPOSE 5173
 

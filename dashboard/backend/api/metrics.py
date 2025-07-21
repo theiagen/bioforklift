@@ -155,6 +155,9 @@ async def get_dashboard_metrics(
         )
     except Exception as e:
         logger.error(f"Error fetching dashboard metrics: {e}")
+        logger.error(f"Exception type: {type(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to fetch dashboard metrics")
 
 
