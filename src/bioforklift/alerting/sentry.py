@@ -31,7 +31,7 @@ class SentryMonitor:
             dsn: Sentry DSN. If None, will try to get from SENTRY_DSN env var
             service_name: Name of the service for tagging
             traces_sample_rate: Sampling rate for performance monitoring
-            release: Release version. Defaults to K_REVISION env var or 'development'
+            release: Release version. Defaults to 'development'
             environment: Environment name. Defaults to ENVIRONMENT env var or 'production'
             custom_tags: Additional tags to add to all events
         """
@@ -45,7 +45,7 @@ class SentryMonitor:
         sentry_sdk.init(
             dsn=dsn,
             traces_sample_rate=traces_sample_rate,
-            release=release or os.environ.get('K_REVISION', 'development'),
+            release=release or 'development',
             environment=environment or os.environ.get('ENVIRONMENT', 'production'),
             integrations=[
                 LoggingIntegration(level="INFO", event_level="ERROR"),
@@ -58,8 +58,6 @@ class SentryMonitor:
         """Add custom context to all Sentry events."""
         event.setdefault('tags', {}).update({
             'service': self.service_name,
-            'cloud_run_service': os.environ.get('K_SERVICE', 'unknown'),
-            'revision': os.environ.get('K_REVISION', 'unknown'),
             'project': os.environ.get('GOOGLE_CLOUD_PROJECT', 'unknown'),
             **self.custom_tags
         })

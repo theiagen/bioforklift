@@ -21,8 +21,6 @@ def mock_env():
     """Mock environment variables"""
     env_vars = {
         'SENTRY_DSN': 'https://test@sentry.io/123',
-        'K_SERVICE': 'test-service',
-        'K_REVISION': 'test-revision',
         'GOOGLE_CLOUD_PROJECT': 'test-project',
         'ENVIRONMENT': 'test'
     }
@@ -59,7 +57,7 @@ class TestSentryMonitor:
         call_args = mock_sentry_sdk.init.call_args[1]
         assert call_args['dsn'] == "https://test@sentry.io/123"
         assert call_args['environment'] == 'test'
-        assert call_args['release'] == 'test-revision'
+        assert call_args['release'] == 'development'
 
     def test_init_no_dsn_raises_error(self, mock_sentry_sdk):
         """Test that initialization without DSN raises ValueError"""
@@ -107,8 +105,6 @@ class TestSentryMonitor:
         expected_tags = {
             "existing": "tag",
             "service": "test-service",
-            "cloud_run_service": "test-service",
-            "revision": "test-revision",
             "project": "test-project",
             "custom": "value"
         }
