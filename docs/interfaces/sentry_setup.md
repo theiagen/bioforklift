@@ -30,7 +30,6 @@ For production deployments, use environment variables:
 ```bash
 export SENTRY_DSN="your-sentry-dsn-here"
 export ENVIRONMENT="production"  # Optional: defaults to 'production'
-export K_REVISION="v1.0.0"       # Optional: for release tracking
 ```
 
 Then initialize without parameters:
