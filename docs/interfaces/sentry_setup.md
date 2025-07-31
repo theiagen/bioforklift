@@ -19,7 +19,8 @@ from bioforklift.alerting import init_sentry
 # Initialize Sentry monitoring
 sentry_monitor = init_sentry(
     dsn="your-sentry-dsn-here",
-    service_name="your-service-name"
+    service_name="your-service-name",
+    project_name="your-project-name"
 )
 ```
 
@@ -35,7 +36,7 @@ export ENVIRONMENT="production"  # Optional: defaults to 'production'
 Then initialize without parameters:
 
 ```python
-sentry_monitor = init_sentry(service_name="your-service-name")
+sentry_monitor = init_sentry(service_name="your-service-name", project_name="your-project-name")
 ```
 
 ## Usage Examples
