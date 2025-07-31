@@ -33,7 +33,7 @@ class TestSentryMonitor:
     
     def test_init_with_dsn_parameter(self, mock_sentry_sdk):
         """Test initialization with DSN provided as parameter"""
-        monitor = SentryMonitor(dsn="https://test@sentry.io/456", service_name="test-service")
+        monitor = SentryMonitor(dsn="https://test@sentry.io/456", service_name="test-service", project_name="test-project")
         
         assert monitor.service_name == "test-service"
         assert monitor.custom_tags == {}
@@ -72,7 +72,9 @@ class TestSentryMonitor:
         monitor = SentryMonitor(
             dsn="https://test@sentry.io/789",
             service_name="custom-service",
+            project_name="test-project",
             traces_sample_rate=0.5,
+            profile_sample_rate=0.5,
             release="v1.0.0",
             environment="staging",
             custom_tags=custom_tags
@@ -94,6 +96,7 @@ class TestSentryMonitor:
         monitor = SentryMonitor(
             dsn="https://test@sentry.io/123",
             service_name="test-service",
+            project_name="test-project",
             custom_tags=custom_tags
         )
         
