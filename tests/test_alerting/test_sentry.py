@@ -74,7 +74,6 @@ class TestSentryMonitor:
             service_name="custom-service",
             project_name="test-project",
             traces_sample_rate=0.5,
-            profile_sample_rate=0.5,
             release="v1.0.0",
             environment="staging",
             custom_tags=custom_tags
