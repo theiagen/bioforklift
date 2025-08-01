@@ -21,7 +21,6 @@ class SentryMonitor:
         service_name: str = "bioforklift-service",
         project_name: str = "bioforklift",
         traces_sample_rate: float = 1.0,
-        profile_sample_rate: float = 1.0,
         release: Optional[str] = None,
         environment: Optional[str] = None,
         custom_tags: Optional[Dict[str, str]] = None
@@ -34,7 +33,6 @@ class SentryMonitor:
             service_name: Name of the service for tagging
             project_name: Name of the project for tagging
             traces_sample_rate: Sampling rate for performance monitoring
-            profile_sample_rate: Sampling rate for profiling
             release: Release version. Defaults to 'development'
             environment: Environment name. Defaults to ENVIRONMENT env var or 'production'
             custom_tags: Additional tags to add to all events
@@ -50,7 +48,6 @@ class SentryMonitor:
         sentry_sdk.init(
             dsn=dsn,
             traces_sample_rate=traces_sample_rate,
-            profile_sample_rate=profile_sample_rate,
             release=release or 'development',
             environment=environment or os.environ.get('ENVIRONMENT', 'production'),
             integrations=[
