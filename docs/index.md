@@ -23,7 +23,7 @@ bioforklift provides a comprehensive solution for managing the flow of genomic s
 - **Workflow Management**: Submit, track, and monitor Terra workflows
 - **Metadata Synchronization**: Keep your metadata in sync across workspaces and datatables
 - **Configurable Operations**: Use YAML-based configuration for flexible setup
-- **Alerting System**: Get notifications about workflow status through Slack
+- **Alerting System**: Get notifications about workflow status through Slack and error monitoring through Sentry
 
 ## Modules
 
@@ -32,7 +32,7 @@ They key modules for Forkflift include the following:
 - **Terra2BQ**: Integration layer that combines BigQuery and Terra operations
 - **BigQuery**: Interface with Google BigQuery for data storage and retrieval, generalizing common retrieval patterns
 - **Terra**: Connect to Terra for bioinformatics workflow execution
-- **Alerting**: Send notifications and reports to Slack
+- **Alerting**: Send notifications and reports to Slack, error monitoring with Sentry
 
 The goal is to make sure we can expand and integrate other data stores or alerting systems as needed to have a complete ecosystem for large scale bioinformatics data flows.
 

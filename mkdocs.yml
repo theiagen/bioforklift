@@ -70,4 +70,6 @@ nav:
     - Backfilling Metadata: examples/backfilling_metadata.md
     - H5N1: examples/h5n1_example.md
     - CalTB-Net: examples/tb_example.md
+  - Alerting:
+    - Sentry: interfaces/sentry_setup.md
     
