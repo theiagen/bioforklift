@@ -614,7 +614,7 @@ def test_sync_metadata_for_config_success(t2bq, sample_config):
     assert result.destination_updated_count == 3  
     
     # Verify the methods were called with the correct parameters
-    t2bq._get_terra_data.assert_called_once_with(sample_config["entity_type"])
+    t2bq._get_terra_data.assert_called_once_with(sample_config["entity_type"], use_destination=False)
     t2bq._update_bigquery_with_terra_metadata.assert_called_once()
     t2bq._update_terra_with_synced_metadata.assert_called_once()  
 
@@ -655,8 +655,30 @@ def test_sync_metadata_success(t2bq):
     assert t2bq._cleanup_terra_client.call_count == 2
     assert mock_sleep.call_count == 1  # Sleep between batches, a little nap
     
-def test_sync_metadata_for_config_calls_get_target_entity(t2bq):
-    """Test that sync_metadata_for_config calls _get_target_entity_from_config when use_destination_entity is True"""
+def test_sync_metadata_for_config_invalid_parameter_combination(t2bq):
+    """Test that sync_metadata_for_config rejects invalid parameter combination"""
+    # Create a test config
+    config = {"id": "test_config", "prefix_field": "test_prefix", "entity_type": "sample"}
+    
+    # Test with both update_destination=True and use_destination_entity=True (should be blocked)
+    result = t2bq.sync_metadata_for_config(
+        config=config,
+        days_back=7,
+        update_bigquery=True,
+        update_destination=True,
+        use_destination_entity=True
+    )
+    
+    # Verify the result shows an error
+    assert isinstance(result, MetadataSyncResult)
+    assert result.status == OperationStatus.ERROR
+    assert "Invalid parameter combination" in result.message
+    assert result.bq_updated_count == 0
+    assert result.destination_updated_count == 0
+
+
+def test_sync_metadata_for_config_calls_get_target_entity_with_use_destination_entity(t2bq):
+    """Test that sync_metadata_for_config calls _get_target_entity_from_config when use_destination_entity is True (without update_destination)"""
     # Create a test config
     config = {"id": "test_config", "prefix_field": "test_prefix", "entity_type": "sample"}
     
@@ -681,42 +703,49 @@ def test_sync_metadata_for_config_calls_get_target_entity(t2bq):
     # Mock _get_terra_data
     t2bq._get_terra_data = MagicMock(return_value=DataResult(status=OperationStatus.SUCCESS, data=pd.DataFrame()))
     
-    # Mock _update_bigquery_with_terra_metadata and _update_terra_with_synced_metadata
+    # Mock _update_bigquery_with_terra_metadata
     t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value=MetadataSyncResult(
         status=OperationStatus.SUCCESS,
         bq_updated_count=1,
-        updated_entities={"entity1": {}},
-        failed_updates=[]
-    ))
-    t2bq._update_terra_with_synced_metadata = MagicMock(return_value=MetadataSyncResult(
-        status=OperationStatus.SUCCESS,
-        destination_updated_count=1,
+        updated_entities={},
         failed_updates=[]
     ))
     
-    # Test with use_destination_entity=True
+    # Test with use_destination_entity=True but update_destination=False
     result = t2bq.sync_metadata_for_config(
         config=config,
         days_back=7,
         update_bigquery=True,
-        update_destination=True,
+        update_destination=False,
         use_destination_entity=True
     )
     
-    # Verify _get_target_entity_from_config was called twice:
-    # - Once for getting the entity type when use_destination_entity=True
-    # - Once for getting the destination entity type when updating Terra
-    assert t2bq._get_target_entity_from_config.call_count == 2
-    t2bq._get_target_entity_from_config.assert_any_call(config)
+    # Verify _get_target_entity_from_config was called once for getting the entity type
+    assert t2bq._get_target_entity_from_config.call_count == 1
+    t2bq._get_target_entity_from_config.assert_called_with(config)
     
     # Verify the result
     assert isinstance(result, MetadataSyncResult)
     assert result.status == OperationStatus.SUCCESS
     assert result.bq_updated_count == 1
-    assert result.destination_updated_count == 1
     
     # Reset the mock and test with use_destination_entity=False
     t2bq._get_target_entity_from_config.reset_mock()
+    
+    # Mock _update_bigquery_with_terra_metadata to return some updated entities for destination update
+    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.SUCCESS,
+        bq_updated_count=1,
+        updated_entities={"entity1": {"attr1": "val1"}},  # Non-empty to trigger destination update
+        failed_updates=[]
+    ))
+    
+    # Mock _update_terra_with_synced_metadata for the destination update
+    t2bq._update_terra_with_synced_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.SUCCESS,
+        destination_updated_count=1,
+        failed_updates=[]
+    ))
     
     result = t2bq.sync_metadata_for_config(
         config=config,
