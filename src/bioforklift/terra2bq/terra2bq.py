@@ -171,19 +171,21 @@ class Terra2BQ:
 
         return target_entity_clean
 
-    def _get_terra_data(self, entity_type: str) -> DataResult:
+    def _get_terra_data(self, entity_type: str, use_destination: bool = False) -> DataResult:
         """
         Download data from Terra for a specific entity type.
 
         Args:
             entity_type: Terra entity type
+            use_destination: Whether to use destination workspace/project
 
         Returns:
             DataResult with download results and data
         """
         try:
-            logger.info(f"Downloading data from Terra entity type: {entity_type}")
-            terra_df = self.terra.entities.download_table(entity_type)
+            workspace_info = "destination" if use_destination else "source"
+            logger.info(f"Downloading data from Terra entity type: {entity_type} (using {workspace_info})")
+            terra_df = self.terra.entities.download_table(entity_type, use_destination=use_destination)
 
             if terra_df.empty:
                 logger.info(f"No data found in Terra table: {entity_type}")
@@ -1863,6 +1865,21 @@ class Terra2BQ:
         """
         config_id = config.get("id")
 
+        # Defensive check: prevent conflicting parameter combination
+        if update_destination and use_destination_entity:
+            logger.error(
+                f"Invalid parameter combination for config {config_id}: "
+                "update_destination=True and use_destination_entity=True are mutually exclusive. "
+                "This would create a circular update pattern."
+            )
+            return MetadataSyncResult(
+                status=OperationStatus.ERROR,
+                message="Invalid parameter combination: update_destination and use_destination_entity cannot both be True",
+                config_id=config_id,
+                bq_updated_count=0,
+                destination_updated_count=0,
+            )
+
         if use_destination_entity:
             # Use the destination entity type from the configuration
             entity_type = self._get_target_entity_from_config(config)
@@ -1927,7 +1944,7 @@ class Terra2BQ:
             )
 
         # Get results from helper functions
-        terra_data_result = self._get_terra_data(entity_type)
+        terra_data_result = self._get_terra_data(entity_type, use_destination=use_destination_entity)
         logger.debug(
             f"Retrieved {len(terra_data_result.data)} samples from Terra for entity type {entity_type}"
         )
@@ -2027,6 +2044,20 @@ class Terra2BQ:
             "failed_updates": 0
             }
         """
+        # Defensive check: prevent conflicting parameter combination
+        if update_destination and use_destination_entity:
+            logger.error(
+                "Invalid parameter combination: update_destination=True and use_destination_entity=True "
+                "are mutually exclusive. This would create a circular update pattern."
+            )
+            return MetadataSyncResult(
+                status=OperationStatus.ERROR,
+                message="Invalid parameter combination: update_destination and use_destination_entity cannot both be True",
+                bq_updated_count=0,
+                destination_updated_count=0,
+                processed_configs=0,
+            )
+
         self.initialize_operations()
 
         if not self.samples_ops:
