@@ -531,7 +531,8 @@ def test_process_configuration_success(t2bq, sample_config):
     # Check that both methods were called with the right arguments
     t2bq.download_from_terra_to_bigquery.assert_called_once_with(
     sample_config, 
-    None, 
+    None,
+    None,
     True
     )
     t2bq.process_upload_and_submit.assert_called_once_with(sample_config)
