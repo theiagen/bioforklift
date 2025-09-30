@@ -9,6 +9,7 @@ from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
 from .utils import load_schema_from_yaml, parse_field_type
 from bioforklift.forklift_logging import setup_logger
+from bioforklift.data_processing import ConfigDataProcessor
 
 logger = setup_logger(__name__)
 
@@ -28,21 +29,38 @@ class BigQueryConfigOperations:
         self.table_name = f"{client.project}.{client.dataset}.{table_name}"
         self.location = location
 
-        # Load schema from yaml if provided, otherwise use schema parameter
+        # Initialize data processor if schema YAML is provided
+        self.data_processor = None
         self.field_attributes = {}
+
         if config_schema_yaml:
-            schema_info = load_schema_from_yaml(config_schema_yaml)
-            self.schema = schema_info["schema"]
-            self.field_attributes = schema_info["field_attributes"]
+            # Use the new ConfigDataProcessor for all data processing
+            self.data_processor = ConfigDataProcessor(config_schema_yaml)
+            self.schema = self.data_processor.schema
+            self.field_attributes = self.data_processor.field_attributes
+            logger.info(f"Schema loaded from YAML with ConfigDataProcessor: {config_schema_yaml}")
         else:
+            # Fallback to original behavior for backward compatibility
             self.schema = config_schema
+            logger.info("Schema loaded from parameter (legacy mode)")
 
     def _get_schema_fields(self) -> List[str]:
         """Get list of field names defined in the schema"""
-        return [field.name for field in self.schema]
+        if self.data_processor:
+            return self.data_processor.get_schema_fields()
+        else:
+            return [field.name for field in self.schema]
 
     def _prepare_config_for_insert(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare a configuration for insertion"""
+        if self.data_processor:
+            return self.data_processor.prepare_config_for_insert(config_data)
+        else:
+            # Legacy processing for backward compatibility
+            return self._legacy_prepare_config_for_insert(config_data)
+
+    def _legacy_prepare_config_for_insert(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Legacy preparation method for backward compatibility"""
         # Create a copy to avoid modifying the original
         config = config_data.copy()
 
@@ -83,14 +101,17 @@ class BigQueryConfigOperations:
         Returns:
             String with the name of the field to be used as prefix
         """
-        return next(
-            (
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("use_as_prefix")
-            ),
-            None,
-        )
+        if self.data_processor:
+            return self.data_processor.get_prefix_field()
+        else:
+            return next(
+                (
+                    field_name
+                    for field_name, attrs in self.field_attributes.items()
+                    if attrs.get("use_as_prefix")
+                ),
+                None,
+            )
 
     def get_alerts_display_field(self) -> str:
         """
@@ -99,14 +120,17 @@ class BigQueryConfigOperations:
         Returns:
             String with the name of the field to be used as display for alerts
         """
-        return next(
-            (
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("display_for_alerts")
-            ),
-            None,
-        )
+        if self.data_processor:
+            return self.data_processor.get_alerts_display_field()
+        else:
+            return next(
+                (
+                    field_name
+                    for field_name, attrs in self.field_attributes.items()
+                    if attrs.get("display_for_alerts")
+                ),
+                None,
+            )
 
     def create_config(
         self, config_data: Union[Dict[str, Any], str, Path]
@@ -440,12 +464,17 @@ class BigQueryConfigOperations:
             if len(dataframe) == 0:
                 return {"success": True, "loaded": 0, "errors": None}
 
-            # Process each row
-            configs_to_load = []
-            for _, row in dataframe.iterrows():
-                config_data = row.to_dict()
-                prepared_config = self._prepare_config_for_insert(config_data)
-                configs_to_load.append(prepared_config)
+            if self.data_processor:
+                # Use ConfigDataProcessor for efficient DataFrame processing
+                processed_df = self.data_processor.process_configs_dataframe(dataframe, schema)
+                configs_to_load = processed_df.to_dict('records')
+            else:
+                # Legacy row-by-row processing for backward compatibility
+                configs_to_load = []
+                for _, row in dataframe.iterrows():
+                    config_data = row.to_dict()
+                    prepared_config = self._prepare_config_for_insert(config_data)
+                    configs_to_load.append(prepared_config)
 
             # Setup load job
             job_config = LoadJobConfig()

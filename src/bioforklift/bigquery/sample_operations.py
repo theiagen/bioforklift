@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Set
 import uuid
 import pandas as pd
 from google.cloud import bigquery
@@ -7,6 +7,7 @@ from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
 from .utils import load_schema_from_yaml, parse_field_type
 from bioforklift.forklift_logging import setup_logger
+from bioforklift.data_processing import SampleDataProcessor
 
 logger = setup_logger(__name__)
 
@@ -25,16 +26,20 @@ class BigQuerySampleOperations:
         self.table_name = f"{client.project}.{client.dataset}.{table_name}"
         self.location = location
 
-        # Load schema from YAML if provided, otherwise use schema parameter
+        # Initialize data processor if schema YAML is provided
+        self.data_processor = None
         self.field_attributes = {}
+
         if sample_schema_yaml:
-            schema_info = load_schema_from_yaml(sample_schema_yaml)
-            self.schema = schema_info["schema"]
-            self.field_attributes = schema_info["field_attributes"]
-            logger.info(f"Schema loaded from YAML: {sample_schema_yaml}")
+            # Use the new SampleDataProcessor for all data processing
+            self.data_processor = SampleDataProcessor(sample_schema_yaml)
+            self.schema = self.data_processor.schema
+            self.field_attributes = self.data_processor.field_attributes
+            logger.info(f"Schema loaded from YAML with SampleDataProcessor: {sample_schema_yaml}")
         else:
+            # Fallback to original behavior for backward compatibility
             self.schema = sample_schema
-            logger.info("Schema loaded from parameter")
+            logger.info("Schema loaded from parameter (legacy mode)")
 
     def _generate_system_values(self, row_count: int) -> Dict[str, List[Any]]:
         """Generate system values for auto-populated fields going into the table"""
@@ -270,8 +275,19 @@ class BigQuerySampleOperations:
         return coerced_df
 
     def prepare_samples_dataframe(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        logger.info("Preparing samples; filtering duplicates and adding time tracking")
         """Prepare DataFrame by filtering duplicates and adding system-generated values"""
+        logger.info("Preparing samples; filtering duplicates and adding time tracking")
+
+        if self.data_processor:
+            # Use the new SampleDataProcessor for all processing
+            existing_ids = set(self.get_existing_identifiers())
+            return self.data_processor.process_samples(dataframe, existing_ids)
+        else:
+            # Fallback to legacy processing for backward compatibility
+            return self._legacy_prepare_samples_dataframe(dataframe)
+
+    def _legacy_prepare_samples_dataframe(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """Legacy processing method for backward compatibility"""
         dataframe = dataframe.copy()
         # First we need to map field names from source to BigQuery
         mapped_df = self._map_field_names(dataframe)
@@ -283,21 +299,19 @@ class BigQuerySampleOperations:
         if len(filtered_bigquery_mapped_df) == 0:
             logger.info("No new samples to load after filtering duplicates")
             return filtered_bigquery_mapped_df
-        
+
         # Validate that each sample has at least one sequence file
         validated_sequence_df = self._validate_sequence_files(filtered_bigquery_mapped_df)
 
-        
         if len(validated_sequence_df) == 0:
             return validated_sequence_df
-
 
         # Then add system values (datetime tracking) for remaining rows
         system_values = self._generate_system_values(len(validated_sequence_df))
 
         for field_name, values in system_values.items():
             validated_sequence_df[field_name] = values
-            
+
         # Coerce DataFrame types to match schema
         coerced_df = self.coerce_dataframe_types(validated_sequence_df)
 
@@ -305,14 +319,17 @@ class BigQuerySampleOperations:
     
     def get_sample_identifier_field(self) -> Optional[str]:
         """Get the field name marked as sample_identifier"""
-        return next(
-            (
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("sample_identifier")
-            ),
-            None,
-        )
+        if self.data_processor:
+            return self.data_processor.get_sample_identifier_field()
+        else:
+            return next(
+                (
+                    field_name
+                    for field_name, attrs in self.field_attributes.items()
+                    if attrs.get("sample_identifier")
+                ),
+                None,
+            )
         
     def get_config_identifier_field(self) -> Optional[str]:
         """Get the field name marked as sample_identifier"""
@@ -327,11 +344,14 @@ class BigQuerySampleOperations:
         
     def get_sequence_file_fields(self) -> List[str]:
         """Get list of field names that are marked as sequence files in the schema"""
-        return [
-            field_name
-            for field_name, attrs in self.field_attributes.items()
-            if attrs.get("sequence_file") is True
-        ]
+        if self.data_processor:
+            return self.data_processor.get_sequence_file_fields()
+        else:
+            return [
+                field_name
+                for field_name, attrs in self.field_attributes.items()
+                if attrs.get("sequence_file") is True
+            ]
 
     def get_sync_fields(self) -> List[str]:
         """
