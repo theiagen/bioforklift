@@ -1075,6 +1075,7 @@ class Terra2BQ:
         self,
         config: Dict[str, Any],
         destination_bucket: Optional[str] = None,
+        page_size: Optional[int] = None,
         preserve_path_structure: bool = False,
     ) -> DownloadResult:
         """
@@ -1083,10 +1084,12 @@ class Terra2BQ:
         Args:
             config: Configuration dictionary
             destination_bucket: Optional GCS bucket for transferring sequence files
+            page_size: Number of rows to fetch per page from Terra (for large tables)
             preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
         Returns:
             DownloadResult with load results and status
         """
+        
         if not self.samples_ops:
             raise ValueError(
                 "Sample operations not initialized. Make sure samples_schema_yaml is provided"
@@ -1109,7 +1112,7 @@ class Terra2BQ:
         # Download data from Terra if not provided
         if not self.bigquery_upload_df:
             logger.info(f"Downloading data from Terra entity type: {entity_type}")
-            terra_df = self.terra.entities.download_table(entity_type)
+            terra_df = self.terra.entities.download_table(entity_type, page_size=page_size)
         else:
             terra_df = self.bigquery_upload_df
 
@@ -1613,6 +1616,7 @@ class Terra2BQ:
         self,
         config: Dict[str, Any],
         destination_bucket: Optional[str] = None,
+        page_size: Optional[int] = None,
         preserve_path_structure: bool = False,
         skip_transferred: bool = False,
     ) -> ConfigProcessingResult:
@@ -1631,7 +1635,7 @@ class Terra2BQ:
 
             # Process in stages with clean state transitions
             download_result = self.download_from_terra_to_bigquery(
-                config_copy, destination_bucket, preserve_path_structure
+                config_copy, destination_bucket, page_size, preserve_path_structure
             )
             if download_result.status != OperationStatus.SUCCESS:
                 return ConfigProcessingResult(
@@ -1698,6 +1702,7 @@ class Terra2BQ:
         batch_size: int = 1,
         cooldown_seconds: int = 1,
         destination_bucket: Optional[str] = None,
+        page_size: Optional[int] = None,
         preserve_path_structure: bool = False,
         skip_transferred: bool = False,
     ) -> List[ConfigProcessingResult]:
@@ -1709,6 +1714,7 @@ class Terra2BQ:
             batch_size: Number of configurations to process in a batch before cooldown
             cooldown_seconds: Seconds to wait between batches (to avoid rate limiting in case we need to scale up)
             destination_bucket: Optional GCS bucket for transferring sequence files
+            page_size: Number of rows to fetch per page from Terra (for large tables)
             preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
             skip_transferred: Whether to skip configurations that have already been transferred (for transient configs)
 
@@ -1763,6 +1769,7 @@ class Terra2BQ:
                 result = self.process_configuration(
                     config,
                     destination_bucket,
+                    page_size,
                     preserve_path_structure,
                     skip_transferred,
                 )

@@ -42,6 +42,8 @@ class TestDownloadTable:
             params={"model": "flexible"},
             stream=True,
             use_destination=False,
+            timeout=None,
+            max_retries=3,
         )
 
         # Verify iter_content was called with correct chunk size
@@ -78,6 +80,8 @@ class TestDownloadTable:
             params={"model": "flexible", "attributeNames": "id,status,date"},
             stream=True,
             use_destination=False,
+            timeout=None,
+            max_retries=3,
         )
 
         # Verify iter_content was called with correct chunk size
@@ -86,6 +90,101 @@ class TestDownloadTable:
         # Verify the DataFrame has the correct structure
         assert list(dataframe.columns) == ["id", "status", "date"]
         assert len(dataframe) == 2
+
+    def test_download_table_with_timeout(
+        self, data_ops, mock_terra_client, mock_response
+    ):
+        """Test table download with custom timeout"""
+        mock_terra_client._http_request.return_value = mock_response
+
+        dataframe = data_ops.download_table("sample", timeout=(60, 600))
+
+        # Verify timeout was passed through
+        mock_terra_client._http_request.assert_called_once_with(
+            "GET",
+            "entities/sample/tsv",
+            params={"model": "flexible"},
+            stream=True,
+            use_destination=False,
+            timeout=(60, 600),
+            max_retries=3,
+        )
+
+    def test_download_table_with_max_retries(
+        self, data_ops, mock_terra_client, mock_response
+    ):
+        """Test table download with custom max_retries"""
+        mock_terra_client._http_request.return_value = mock_response
+
+        dataframe = data_ops.download_table("sample", max_retries=5)
+
+        # Verify max_retries was passed through
+        mock_terra_client._http_request.assert_called_once_with(
+            "GET",
+            "entities/sample/tsv",
+            params={"model": "flexible"},
+            stream=True,
+            use_destination=False,
+            timeout=None,
+            max_retries=5,
+        )
+
+    def test_download_table_with_pagination(self, data_ops, mock_terra_client):
+        """Test table download with pagination"""
+        # Mock list_entity_types response
+        mock_terra_client.get.return_value = Mock(
+            status_code=200,
+            json=lambda: {
+                "sample": {
+                    "count": 150,
+                    "idName": "sample_id",
+                    "attributeNames": ["sample_id", "value1", "value2"],
+                }
+            },
+        )
+
+        # Mock paginated responses
+        page1_response = Mock(
+            json=lambda: {
+                "results": [
+                    {"name": f"sample{i}", "attributes": {"value1": f"v1_{i}", "value2": f"v2_{i}"}}
+                    for i in range(1, 101)
+                ]
+            }
+        )
+        page2_response = Mock(
+            json=lambda: {
+                "results": [
+                    {"name": f"sample{i}", "attributes": {"value1": f"v1_{i}", "value2": f"v2_{i}"}}
+                    for i in range(101, 151)
+                ]
+            }
+        )
+
+        mock_terra_client._http_request.side_effect = [page1_response, page2_response]
+
+        # Call with page_size to trigger pagination
+        dataframe = data_ops.download_table("sample", page_size=100)
+
+        # Verify pagination calls
+        assert mock_terra_client._http_request.call_count == 2
+
+        # Verify first page request
+        first_call = mock_terra_client._http_request.call_args_list[0]
+        assert first_call[0][0] == "GET"
+        assert first_call[0][1] == "entityQuery/sample"
+        assert first_call[1]["params"]["page"] == 1
+        assert first_call[1]["params"]["pageSize"] == 100
+
+        # Verify second page request
+        second_call = mock_terra_client._http_request.call_args_list[1]
+        assert second_call[1]["params"]["page"] == 2
+
+        # Verify DataFrame
+        assert len(dataframe) == 150
+        assert "sample_id" in dataframe.columns
+        assert "value1" in dataframe.columns
+        assert "value2" in dataframe.columns
 
 
 class TestCreateEntitySet:

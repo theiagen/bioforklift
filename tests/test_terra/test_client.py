@@ -314,3 +314,133 @@ class TestTerraClient:
                 params={"validate": True},
                 use_destination=True,
             )
+
+    def test_http_request_with_timeout(self, terra_client):
+        """Test _http_request with custom timeout"""
+        with patch('requests.request') as mock_request:
+            mock_response = MagicMock()
+            mock_response.ok = True
+            mock_request.return_value = mock_response
+
+            terra_client._http_request(
+                "GET",
+                "entities",
+                timeout=(60, 600)
+            )
+
+            mock_request.assert_called_once()
+            assert mock_request.call_args[1]["timeout"] == (60, 600)
+
+    def test_http_request_default_timeout(self, terra_client):
+        """Test _http_request uses default timeout"""
+        with patch('requests.request') as mock_request:
+            mock_response = MagicMock()
+            mock_response.ok = True
+            mock_request.return_value = mock_response
+
+            terra_client._http_request("GET", "entities")
+
+            mock_request.assert_called_once()
+            assert mock_request.call_args[1]["timeout"] == (30, 300)
+
+    def test_http_request_retry_on_502(self, terra_client):
+        """Test _http_request retries on 502 error"""
+        with patch('requests.request') as mock_request:
+            with patch('time.sleep'):  # Mock sleep to speed up test
+                # First call returns 502, second succeeds
+                mock_502_response = MagicMock()
+                mock_502_response.ok = False
+                mock_502_response.status_code = 502
+
+                mock_success_response = MagicMock()
+                mock_success_response.ok = True
+                mock_success_response.status_code = 200
+
+                mock_request.side_effect = [mock_502_response, mock_success_response]
+
+                response = terra_client._http_request("GET", "entities")
+
+                assert mock_request.call_count == 2
+                assert response == mock_success_response
+
+    def test_http_request_retry_exhausted_on_502(self, terra_client):
+        """Test _http_request raises error after max retries on 502"""
+        with patch('requests.request') as mock_request:
+            with patch('time.sleep'):  # Mock sleep to speed up test
+                # All calls return 502
+                mock_502_response = MagicMock()
+                mock_502_response.ok = False
+                mock_502_response.status_code = 502
+                mock_502_response.json.return_value = {"message": "Bad Gateway"}
+                mock_502_response.text = "Bad Gateway"
+
+                mock_request.return_value = mock_502_response
+
+                with pytest.raises(TerraServerError):
+                    terra_client._http_request("GET", "entities", max_retries=3)
+
+                assert mock_request.call_count == 3
+
+    def test_http_request_retry_on_connection_error(self, terra_client):
+        """Test _http_request retries on connection error"""
+        with patch('requests.request') as mock_request:
+            with patch('time.sleep'):
+                # First call raises ConnectionError, second succeeds
+                mock_success_response = MagicMock()
+                mock_success_response.ok = True
+
+                mock_request.side_effect = [
+                    requests.ConnectionError("Connection failed"),
+                    mock_success_response
+                ]
+
+                response = terra_client._http_request("GET", "entities")
+
+                assert mock_request.call_count == 2
+                assert response == mock_success_response
+
+    def test_http_request_retry_exhausted_on_connection_error(self, terra_client):
+        """Test _http_request raises error after max retries on connection error"""
+        with patch('requests.request') as mock_request:
+            with patch('time.sleep'):
+                mock_request.side_effect = requests.ConnectionError("Connection failed")
+
+                with pytest.raises(TerraConnectionError) as exc_info:
+                    terra_client._http_request("GET", "entities", max_retries=3)
+
+                assert mock_request.call_count == 3
+                assert "Connection failed" in str(exc_info.value)
+
+    def test_http_request_retry_on_timeout(self, terra_client):
+        """Test _http_request retries on timeout"""
+        with patch('requests.request') as mock_request:
+            with patch('time.sleep'):
+                # First call raises Timeout, second succeeds
+                mock_success_response = MagicMock()
+                mock_success_response.ok = True
+
+                mock_request.side_effect = [
+                    requests.Timeout("Request timed out"),
+                    mock_success_response
+                ]
+
+                response = terra_client._http_request("GET", "entities")
+
+                assert mock_request.call_count == 2
+                assert response == mock_success_response
+
+    def test_http_request_no_retry_on_404(self, terra_client):
+        """Test _http_request does not retry on 404 error"""
+        with patch('requests.request') as mock_request:
+            mock_404_response = MagicMock()
+            mock_404_response.ok = False
+            mock_404_response.status_code = 404
+            mock_404_response.json.return_value = {"message": "Not found"}
+
+            mock_request.return_value = mock_404_response
+
+            with pytest.raises(TerraNotFoundError):
+                terra_client._http_request("GET", "entities")
+
+            # Should not retry on 404
+            assert mock_request.call_count == 1

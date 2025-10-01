@@ -1,4 +1,5 @@
 import requests
+import time
 from typing import Optional, Dict
 from datetime import datetime, timedelta, timezone
 from bioforklift.forklift_logging import setup_logger
@@ -210,6 +211,8 @@ class TerraClient:
         files: Optional[Dict] = None,
         stream: Optional[bool] = False,
         use_destination: bool = False,
+        timeout: Optional[tuple] = None,
+        max_retries: int = 3,
     ) -> requests.Response:
         """
         Make HTTP request to Terra Firecloud API with dynamic method
@@ -222,42 +225,77 @@ class TerraClient:
             files: Files to upload
             stream: Whether to stream the response
             use_destination: Whether to use destination workspace (True) or source workspace (False)
+            timeout: Request timeout as (connect_timeout, read_timeout) in seconds
+            max_retries: Maximum number of retries for transient server errors (502, 503, 504)
         """
         url = self._build_firecloud_url(endpoint, use_destination)
         logger.debug("FireCloud URL Built")
-        try:
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=self._headers,
-                params=params,
-                json=data,
-                files=files,
-                stream=stream,
-            )
 
-            if not response.ok:
-                logger.error(
-                    f"Request to {method} {response.url} failed with status code {response.status_code}"
+        # Default timeout: 30s to connect, 5min to read
+        if timeout is None:
+            timeout = (30, 300)
+
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                response = requests.request(
+                    method=method,
+                    url=url,
+                    headers=self._headers,
+                    params=params,
+                    json=data,
+                    files=files,
+                    stream=stream,
+                    timeout=timeout,
                 )
-                self._handle_response_error(response)
 
-            logger.debug(f"{method} request to {response.url} successful")
+                if not response.ok:
+                    # Check if this is a retryable server error
+                    if response.status_code in (502, 503, 504) and attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                        logger.warning(
+                            f"Request to {method} {response.url} failed with status {response.status_code}, "
+                            f"retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                        )
+                        time.sleep(wait_time)
+                        continue
 
-            return response
+                    logger.error(
+                        f"Request to {method} {response.url} failed with status code {response.status_code}"
+                    )
+                    self._handle_response_error(response)
 
-        except requests.ConnectionError as connection_error:
-            raise TerraConnectionError(
-                f"Failed to connect to Terra Firecloud API: {str(connection_error)}"
-            ) from connection_error
-        except requests.Timeout as timeout_error:
-            raise TerraConnectionError(
-                f"Request to Terra Firecloud API timed out: {str(timeout_error)}"
-            ) from timeout_error
-        except requests.RequestException as request_exception_error:
-            raise TerraAPIError(
-                f"Request to Terra Firecloud API failed: {str(request_exception_error)}"
-            ) from request_exception_error
+                logger.debug(f"{method} request to {response.url} successful")
+                return response
+
+            except requests.ConnectionError as connection_error:
+                last_exception = TerraConnectionError(
+                    f"Failed to connect to Terra Firecloud API: {str(connection_error)}"
+                )
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Connection error, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                raise last_exception from connection_error
+            except requests.Timeout as timeout_error:
+                last_exception = TerraConnectionError(
+                    f"Request to Terra Firecloud API timed out: {str(timeout_error)}"
+                )
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Timeout error, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                raise last_exception from timeout_error
+            except requests.RequestException as request_exception_error:
+                raise TerraAPIError(
+                    f"Request to Terra Firecloud API failed: {str(request_exception_error)}"
+                ) from request_exception_error
+
+        # If we exhausted all retries, raise the last exception
+        if last_exception:
+            raise last_exception
 
     def reset_auth_cache(self) -> None:
         """
