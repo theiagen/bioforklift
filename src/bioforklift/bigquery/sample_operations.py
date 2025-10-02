@@ -241,12 +241,9 @@ class BigQuerySampleOperations:
                         needs_conversion = False
                         logger.debug(f"Column {column} already has compatible type {pandas_dtype}, skipping conversion")
                 
-                # Special case for strings as object type in pandas
-                if bq_type == 'STRING' and pandas_dtype == 'object':
-                    # Check if all non-null values are already strings
-                    if all(isinstance(val, str) for val in coerced_df[column].dropna()):
-                        needs_conversion = False
-                        logger.debug(f"Column {column} already contains string values, skipping conversion")
+                if pandas_dtype == 'object': 
+                    # Object types can be mixed, so we may still need conversion
+                    needs_conversion = True
                 
                 # Only attempt conversion if needed
                 if needs_conversion:
@@ -264,13 +261,16 @@ class BigQuerySampleOperations:
                         elif bq_type == 'DATETIME' or bq_type == 'TIMESTAMP':
                             coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce')
                         elif bq_type == 'STRING':
-                            # Convert all values to strings, handling possible numeric values like if sample id is 1234
-                            coerced_df[column] = coerced_df[column].astype(str)
+                            # Convert to string while preserving None as None (not string "None")
+                            # This ensures NULL values in BigQuery instead of the string "None"
+                            coerced_df[column] = coerced_df[column].apply(
+                                lambda x: str(x) if pd.notna(x) else None
+                            )
                         
                         logger.debug(f"Converted column {column} from {pandas_dtype} to {bq_type}")
                     except Exception as e:
                         # Log error but continue with other columns, will fail downstream if necessary
-                        logger.warning(f"Error converting column {column} to {bq_type}: {str(e)}")
+                        logger.error(f"FAILED to convert column {column} to {bq_type}: {str(e)}", exc_info=True)
         
         return coerced_df
 

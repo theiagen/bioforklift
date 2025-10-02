@@ -1,4 +1,5 @@
 import io
+import math
 import pandas as pd
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -45,7 +46,7 @@ class TerraEntities:
         else:
             # Return the full entity data structure dictionary
             return entity_data
-
+    
     def download_table(
         self,
         entity_type: str,
@@ -54,6 +55,9 @@ class TerraEntities:
         model: str = "flexible",
         chunk_size: int = 65553,
         use_destination: bool = False,
+        timeout: Optional[tuple] = None,
+        max_retries: int = 3,
+        page_size: Optional[int] = None,
     ) -> pd.DataFrame:
         """
         Download table from Terra workspace
@@ -65,10 +69,26 @@ class TerraEntities:
             model: Data model type ('flexible' or 'strict')
             chunk_size: Size of chunks for streaming
             use_destination: Whether to use destination workspace (True) or source workspace (False)
+            timeout: Request timeout as (connect_timeout, read_timeout) in seconds. Defaults to (30, 300)
+            max_retries: Maximum number of retries for transient server errors. Defaults to 3
+            page_size: If provided, uses paginated API with this page size (recommended for large tables >10k rows)
 
         Returns:
             pandas DataFrame with table data
         """
+        
+        # Use pagination if page_size is specified
+        if page_size:
+            return self._download_table_paginated(
+                entity_type=entity_type,
+                destination=destination,
+                attributes=attributes,
+                use_destination=use_destination,
+                page_size=page_size,
+                timeout=timeout,
+                max_retries=max_retries,
+            )
+
         params = {"model": model}
         if attributes:
             params["attributeNames"] = ",".join(attributes)
@@ -79,6 +99,8 @@ class TerraEntities:
             params=params,
             stream=True,
             use_destination=use_destination,
+            timeout=timeout,
+            max_retries=max_retries,
         )
         logger.info(
             f"Downloaded {entity_type} table from Terra with response; {response}"
@@ -86,6 +108,121 @@ class TerraEntities:
         return stream_terra_table(
             response, destination=destination, chunk_size=chunk_size
         )
+
+    def _download_table_paginated(
+        self,
+        entity_type: str,
+        destination: Optional[Path] = None,
+        attributes: Optional[List[str]] = None,
+        use_destination: bool = False,
+        page_size: int = 1000,
+        timeout: Optional[tuple] = None,
+        max_retries: int = 3,
+    ) -> pd.DataFrame:
+        """
+        Download table using paginated API for large tables
+
+        Args:
+            entity_type: Type of entity (e.g., 'specimen', 'sample')
+            destination: Path to save TSV file
+            attributes: Specific columns to download
+            use_destination: Whether to use destination workspace (True) or source workspace (False)
+            page_size: Number of entities per page
+            timeout: Request timeout as (connect_timeout, read_timeout) in seconds
+            max_retries: Maximum number of retries for transient server errors
+
+        Returns:
+            pandas DataFrame with table data
+        """
+        # Get entity metadata to determine total count and available attributes
+        entity_types = self.list_entity_types(
+            include_attributes=True, use_destination=use_destination
+        )
+
+        if entity_type not in entity_types:
+            raise ValueError(f"Entity type '{entity_type}' not found in workspace")
+
+        entity_metadata = entity_types[entity_type]
+        entity_count = entity_metadata["count"]
+        entity_id_name = entity_metadata["idName"]
+        all_attributes = entity_metadata["attributeNames"]
+
+        # Determine which attributes to fetch
+        if attributes:
+            attribute_names = [attr for attr in all_attributes if attr in attributes]
+        else:
+            attribute_names = all_attributes
+
+        # Always include the entity id
+        if entity_id_name not in attribute_names:
+            attribute_names.insert(0, f'entity:{entity_id_name}')
+
+        logger.info(f"Downloading {entity_count} {entity_type}(s) using pagination")
+
+        # Calculate number of pages
+        num_pages = int(math.ceil(float(entity_count) / page_size))
+        logger.info(f"Fetching {num_pages} pages with {page_size} entities per page")
+
+        # Fetch all pages
+        all_rows = []
+        for page in range(1, num_pages + 1):
+            logger.info(f"Fetching page {page}/{num_pages}")
+
+            params = {
+                "page": page,
+                "pageSize": page_size,
+                "sortDirection": "asc",
+            }
+
+            # Add fields parameter if specific attributes requested
+            if attributes:
+                params["fields"] = ",".join(attributes)
+
+            # Use entityQuery endpoint for pagination
+            response = self.client._http_request(
+                "GET",
+                f"entityQuery/{entity_type}",
+                params=params,
+                use_destination=use_destination,
+                timeout=timeout,
+                max_retries=max_retries,
+            )
+
+            page_data = response.json()
+            
+            # entityQuery returns a dict with "results" key
+            entities = page_data.get("results", [])
+
+            logger.info(f"Page {page} returned {len(entities)} entities")
+
+            # Extract entity data from response
+            for entity in entities:
+                entity_attributes = entity.get("attributes", {})
+                entity_name = entity.get("name", "")
+
+                # Build row with entity ID and attributes
+                row = {f'entity:{entity_id_name}': entity_name}
+                for attr_name in attribute_names:
+                    # Skip the entity ID column as it's already added above
+                    if attr_name == f'entity:{entity_id_name}':
+                        continue
+                    # Use None instead of empty string for missing values to preserve data types
+                    row[attr_name] = entity_attributes.get(attr_name)
+
+                all_rows.append(row)
+
+            logger.info(f"Progress: {len(all_rows)} entities fetched (page {page}/{num_pages})")
+
+        entity_df = pd.DataFrame(all_rows, columns=attribute_names)
+        
+
+        # Save to file if destination provided
+        if destination:
+            logger.info(f"Writing {len(entity_df)} entities to {destination}")
+            entity_df.to_csv(destination, sep="\t", index=False)
+
+        logger.info(f"Successfully downloaded {len(entity_df)} {entity_type} entities")
+        return entity_df
 
     def upload_entities(
         self,
