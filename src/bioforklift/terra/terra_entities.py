@@ -46,7 +46,7 @@ class TerraEntities:
         else:
             # Return the full entity data structure dictionary
             return entity_data
-
+    
     def download_table(
         self,
         entity_type: str,
@@ -189,7 +189,7 @@ class TerraEntities:
             )
 
             page_data = response.json()
-
+            
             # entityQuery returns a dict with "results" key
             entities = page_data.get("results", [])
 
@@ -201,18 +201,20 @@ class TerraEntities:
                 entity_name = entity.get("name", "")
 
                 # Build row with entity ID and attributes
-                row = {entity_id_name: entity_name}
+                row = {f'entity:{entity_id_name}': entity_name}
                 for attr_name in attribute_names:
-                    if attr_name == entity_id_name:
+                    # Skip the entity ID column as it's already added above
+                    if attr_name == f'entity:{entity_id_name}':
                         continue
-                    row[attr_name] = entity_attributes.get(attr_name, "")
+                    # Use None instead of empty string for missing values to preserve data types
+                    row[attr_name] = entity_attributes.get(attr_name)
 
                 all_rows.append(row)
 
             logger.info(f"Progress: {len(all_rows)} entities fetched (page {page}/{num_pages})")
 
-        # Create DataFrame
         entity_df = pd.DataFrame(all_rows, columns=attribute_names)
+        
 
         # Save to file if destination provided
         if destination:
