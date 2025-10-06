@@ -1,19 +1,13 @@
-"""
-Sample data processing and validation logic.
-
-This module contains the SampleDataProcessor class which handles all data transformation,
-validation, and preprocessing operations for sample data before it's sent to BigQuery.
-"""
-
 import re
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Set
 import pandas as pd
 from google.cloud.bigquery import SchemaField
-
-from bioforklift.bigquery.utils import load_schema_from_yaml, parse_field_type
+from bioforklift.bigquery.utils import load_schema_from_yaml
 from bioforklift.forklift_logging import setup_logger
+from .schema_models import SchemaDefinition
+from .schema_converter import convert_to_schema_definition
 
 logger = setup_logger(__name__)
 
@@ -41,12 +35,20 @@ class SampleDataProcessor:
         schema_info = load_schema_from_yaml(schema_yaml)
         self.schema = schema_info["schema"]
         self.field_attributes = schema_info["field_attributes"]
+
+        # Add typed schema definition for type-safe attribute access
+        self.schema_definition: SchemaDefinition = convert_to_schema_definition(
+            self.schema,
+            self.field_attributes
+        )
+
         logger.info(f"SampleDataProcessor initialized with schema: {schema_yaml}")
 
     def process_samples(
         self,
         dataframe: pd.DataFrame,
-        existing_identifiers: Optional[Set[str]] = None
+        existing_identifiers: Optional[Set[str]] = None,
+        config: Optional[Dict[str, Any]] = None
     ) -> pd.DataFrame:
         """
         Complete sample processing pipeline.
@@ -54,6 +56,7 @@ class SampleDataProcessor:
         Args:
             dataframe: Raw input DataFrame
             existing_identifiers: Set of existing sample IDs to filter out
+            config: Optional configuration dictionary for entity type mapping and field inheritance
 
         Returns:
             Processed DataFrame ready for BigQuery upload
@@ -67,7 +70,9 @@ class SampleDataProcessor:
         # Data transformation pipeline
         processed_df = (
             dataframe
+            .pipe(self._apply_entity_type_mapping, config)
             .pipe(self._map_field_names)
+            .pipe(self._apply_config_field_inheritance, config)
             .pipe(self._filter_columns)
             .pipe(self._filter_existing_samples, existing_identifiers or set())
             .pipe(self._validate_sequence_files)
@@ -79,10 +84,96 @@ class SampleDataProcessor:
         logger.info(f"Processing complete: {len(processed_df)} samples ready for upload")
         return processed_df
 
+    def _apply_entity_type_mapping(
+        self,
+        dataframe: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None
+    ) -> pd.DataFrame:
+        """
+        Map Terra entity:entity_type_id column to sample identifier if needed.
+
+        This handles the special Terra naming pattern where columns are named
+        like 'entity:sample_id' based on the entity_type in the config.
+        Only applies if column_mappings are not already defined for the sample identifier.
+
+        Args:
+            dataframe: Input DataFrame
+            config: Configuration dictionary containing entity_type
+
+        Returns:
+            DataFrame with entity column mapped to sample identifier
+        """
+        if config is None:
+            return dataframe
+
+        entity_type = config.get("entity_type")
+        if not entity_type:
+            return dataframe
+
+        sample_identifier_field = self.get_sample_identifier_field()
+        if not sample_identifier_field:
+            return dataframe
+
+        # Check if column mappings already handle this
+        if sample_identifier_field in self.field_attributes:
+            attrs = self.field_attributes[sample_identifier_field]
+            if "column_mappings" in attrs or attrs.get("use_field_name"):
+                logger.debug(
+                    f"Column mappings defined for {sample_identifier_field}, "
+                    f"skipping entity_type mapping"
+                )
+                return dataframe
+
+        # Map entity:entity_type_id to sample_identifier (in place)
+        entity_column = f"entity:{entity_type}_id"
+        if entity_column in dataframe.columns:
+            logger.info(f"Mapping {entity_column} to {sample_identifier_field}")
+            dataframe.rename(columns={entity_column: sample_identifier_field}, inplace=True)
+        else:
+            logger.debug(f"Column '{entity_column}' not found for entity type mapping")
+
+        return dataframe
+
+    def _apply_config_field_inheritance(
+        self,
+        dataframe: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None
+    ) -> pd.DataFrame:
+        """
+        Apply configuration values to fields that inherit from config.
+
+        Fields with 'inherit_from_config' attribute will have their values
+        populated from the corresponding config field.
+
+        Args:
+            dataframe: Input DataFrame
+            config: Configuration dictionary
+
+        Returns:
+            DataFrame with config-inherited fields populated
+        """
+        if config is None or dataframe.empty:
+            return dataframe
+
+        config_fields = self.get_config_source_fields()
+        if not config_fields:
+            return dataframe
+
+        # Apply config values in place
+        for field_name, config_field in config_fields.items():
+            if config_field in config:
+                dataframe[field_name] = config[config_field]
+                logger.debug(f"Inherited field '{field_name}' from config['{config_field}']")
+            else:
+                logger.warning(
+                    f"Configuration field '{config_field}' not found in config for "
+                    f"field '{field_name}'"
+                )
+
+        return dataframe
+
     def _map_field_names(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Map source field names to BigQuery field names using column_mappings attributes"""
-        mapped_df = dataframe.copy()
-
         for field_name, attrs in self.field_attributes.items():
             if "column_mappings" in attrs:
                 source_fields = attrs["column_mappings"]
@@ -92,11 +183,11 @@ class SampleDataProcessor:
                 # Try each possible source field
                 for source_field in source_fields:
                     if source_field in dataframe.columns:
-                        mapped_df = mapped_df.rename(columns={source_field: field_name})
+                        dataframe.rename(columns={source_field: field_name}, inplace=True)
                         logger.debug(f"Mapped column '{source_field}' to '{field_name}'")
                         break
 
-        return self._add_missing_schema_columns(mapped_df)
+        return self._add_missing_schema_columns(dataframe)
 
     def _filter_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Keep only columns that are defined in the schema"""
@@ -105,10 +196,11 @@ class SampleDataProcessor:
 
         if extra_columns:
             logger.debug(f"Filtering out extra columns: {extra_columns}")
-            return dataframe.drop(columns=extra_columns)
+            dataframe.drop(columns=extra_columns, inplace=True)
         else:
             logger.debug("No extra columns to filter out")
-            return dataframe
+
+        return dataframe
 
     def _filter_existing_samples(
         self,
@@ -180,8 +272,6 @@ class SampleDataProcessor:
             if dataframe.empty:
                 return dataframe
 
-            validated_df = dataframe.copy()
-
             # Get fields with pattern attributes
             pattern_fields = {
                 field_name: attrs.get('pattern')
@@ -191,16 +281,16 @@ class SampleDataProcessor:
 
             if not pattern_fields:
                 logger.debug("No pattern validation fields defined in schema")
-                return validated_df
+                return dataframe
 
             logger.info(f"Validating patterns for fields: {list(pattern_fields.keys())}")
 
             # Track validation results
-            initial_count = len(validated_df)
+            initial_count = len(dataframe)
             validation_failures = []
 
             for field_name, pattern in pattern_fields.items():
-                if field_name not in validated_df.columns:
+                if field_name not in dataframe.columns:
                     logger.debug(f"Pattern field '{field_name}' not present in data, skipping")
                     continue
 
@@ -209,7 +299,7 @@ class SampleDataProcessor:
                     regex = re.compile(pattern)
 
                     # Get non-null values for validation
-                    field_data = validated_df[field_name].dropna()
+                    field_data = dataframe[field_name].dropna()
 
                     if field_data.empty:
                         logger.debug(f"No non-null values for pattern field '{field_name}', skipping")
@@ -223,24 +313,24 @@ class SampleDataProcessor:
                         invalid_values = field_data[invalid_mask].tolist()
                         validation_failures.extend([
                             f"Field '{field_name}': '{value}' doesn't match pattern '{pattern}'"
-                            for value in invalid_values[:5]  # Limit error messages
+                            for value in invalid_values[:5]
                         ])
 
                         # Remove invalid rows
-                        validated_df = validated_df.drop(index=invalid_indices)
+                        dataframe = dataframe.drop(index=invalid_indices)
                         logger.warning(f"Removed {len(invalid_indices)} rows with invalid '{field_name}' values")
 
                 except re.error as regex_error:
                     logger.error(f"Invalid regex pattern for field '{field_name}': {pattern} - {regex_error}")
                     raise ValueError(f"Invalid regex pattern for field '{field_name}': {regex_error}")
 
-            filtered_count = initial_count - len(validated_df)
+            filtered_count = initial_count - len(dataframe)
             if filtered_count > 0:
                 logger.info(f"Pattern validation filtered out {filtered_count} rows")
                 if validation_failures:
                     logger.debug(f"Pattern validation failures: {validation_failures[:10]}")
 
-            return validated_df
+            return dataframe
 
         except Exception as exc:
             logger.exception("Error during pattern validation")
@@ -251,13 +341,12 @@ class SampleDataProcessor:
         if dataframe.empty:
             return dataframe
 
-        df_with_system_values = dataframe.copy()
         system_values = self._generate_system_values(len(dataframe))
 
         for field_name, values in system_values.items():
-            df_with_system_values[field_name] = values
+            dataframe[field_name] = values
 
-        return df_with_system_values
+        return dataframe
 
     def _generate_system_values(self, row_count: int) -> Dict[str, List[Any]]:
         """Generate system values for auto-populated fields"""
@@ -282,8 +371,6 @@ class SampleDataProcessor:
         if dataframe.empty:
             return dataframe
 
-        coerced_df = dataframe.copy()
-
         # Create mapping from field name to field type
         field_type_map = {field.name: field.field_type for field in self.schema}
 
@@ -300,10 +387,10 @@ class SampleDataProcessor:
         }
 
         # Iterate through each column and attempt type conversion only if needed
-        for column in coerced_df.columns:
+        for column in dataframe.columns:
             if column in field_type_map:
                 bq_type = field_type_map[column]
-                pandas_dtype = str(coerced_df[column].dtype)
+                pandas_dtype = str(dataframe[column].dtype)
 
                 # Check if conversion is needed
                 needs_conversion = True
@@ -318,19 +405,19 @@ class SampleDataProcessor:
 
                     try:
                         if bq_type == "INTEGER":
-                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce').astype('Int64')
+                            dataframe[column] = pd.to_numeric(dataframe[column], errors='coerce').astype('Int64')
                         elif bq_type == "FLOAT":
-                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
+                            dataframe[column] = pd.to_numeric(dataframe[column], errors='coerce')
                         elif bq_type == "BOOLEAN":
-                            coerced_df[column] = coerced_df[column].astype('boolean')
+                            dataframe[column] = dataframe[column].astype('boolean')
                         elif bq_type == "DATETIME":
-                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce')
+                            dataframe[column] = pd.to_datetime(dataframe[column], errors='coerce')
                         elif bq_type == "STRING":
-                            coerced_df[column] = coerced_df[column].astype('string')
+                            dataframe[column] = dataframe[column].astype('string')
                     except Exception as e:
                         logger.warning(f"Failed to convert column '{column}' to {bq_type}: {e}")
 
-        return coerced_df
+        return dataframe
 
     def _add_missing_schema_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Add any missing schema columns to DataFrame with null values"""
@@ -352,6 +439,13 @@ class SampleDataProcessor:
         """Get the field marked as sample_identifier"""
         for field_name, attrs in self.field_attributes.items():
             if attrs.get("sample_identifier"):
+                return field_name
+        return None
+    
+    def get_config_identifier_field(self) -> Optional[str]:
+        """Get the field marked as config_identifier"""
+        for field_name, attrs in self.field_attributes.items():
+            if attrs.get("config_identifier"):
                 return field_name
         return None
 

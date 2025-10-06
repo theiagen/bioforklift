@@ -1,14 +1,27 @@
-"""
-Data processing module for bioforklift.
-
-This module contains classes for processing and validating data before it's sent to BigQuery.
-Separates data transformation logic from BigQuery API operations.
-"""
-
 from .sample_processor import SampleDataProcessor
-from .config_processor import ConfigDataProcessor
+from .config_processor import ConfigProcessor
+from .schema_models import (
+    FieldAttributes,
+    SampleFieldAttributes,
+    ConfigFieldAttributes,
+    FieldDefinition,
+    SchemaDefinition,
+)
+from .schema_converter import (
+    convert_field_attributes,
+    convert_to_schema_definition,
+    extract_field_attributes_dict,
+)
 
 __all__ = [
     "SampleDataProcessor",
-    "ConfigDataProcessor",
+    "ConfigProcessor",
+    "FieldAttributes",
+    "SampleFieldAttributes",
+    "ConfigFieldAttributes",
+    "FieldDefinition",
+    "SchemaDefinition",
+    "convert_field_attributes",
+    "convert_to_schema_definition",
+    "extract_field_attributes_dict",
 ]

@@ -1,477 +1,86 @@
+from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Union, Set
-import uuid
 import pandas as pd
 from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
-from .utils import load_schema_from_yaml, parse_field_type
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.data_processing import SampleDataProcessor
 
 logger = setup_logger(__name__)
 
+
 class BigQuerySampleOperations:
-    """Base operations for BigQuery tables with support for custom field attributes containing sample data"""
+    """
+    BigQuery API operations for sample tables.
+
+    This class handles pure BigQuery operations (loading, querying, updating).
+    All data processing and validation is delegated to SampleDataProcessor.
+    """
 
     def __init__(
         self,
         client: "BigQueryClient",
         table_name: str,
         sample_schema_yaml: Optional[str] = None,
-        sample_schema: Optional[List[SchemaField]] = None,
         location: str = "us-central1",
     ):
+        """
+        Initialize BigQuery sample operations.
+
+        Args:
+            client: BigQuery client instance
+            table_name: Name of the samples table
+            sample_schema_yaml: Path to YAML schema file (required for data processing)
+            sample_schema: Optional schema override (legacy support)
+            location: BigQuery location
+        """
         self.bq_client = client
         self.table_name = f"{client.project}.{client.dataset}.{table_name}"
         self.location = location
 
-        # Initialize data processor if schema YAML is provided
-        self.data_processor = None
-        self.field_attributes = {}
-
+        # Initialize data processor - required for full functionality
         if sample_schema_yaml:
-            # Use the new SampleDataProcessor for all data processing
             self.data_processor = SampleDataProcessor(sample_schema_yaml)
             self.schema = self.data_processor.schema
             self.field_attributes = self.data_processor.field_attributes
-            logger.info(f"Schema loaded from YAML with SampleDataProcessor: {sample_schema_yaml}")
+            logger.info(f"Initialized with SampleDataProcessor: {sample_schema_yaml}")
         else:
-            # Fallback to original behavior for backward compatibility
-            self.schema = sample_schema
-            logger.info("Schema loaded from parameter (legacy mode)")
+            raise ValueError("Either sample_schema_yaml or sample_schema must be provided")
 
-    def _generate_system_values(self, row_count: int) -> Dict[str, List[Any]]:
-        """Generate system values for auto-populated fields going into the table"""
-        # Need to cast the pandas equivalent to a BigQuery datetime - weirdly called Timestamp
-        current_datetime = pd.Timestamp.now(tz="UTC")
-        system_tracking_values = {}
-        logger.debug(f"Timestamp for system values: {current_datetime}")
-    
-        for field_name, attrs in self.field_attributes.items():
-            # Check for primary key fields
-            if attrs.get("primary_key"):
-                system_tracking_values[field_name] = [
-                    str(uuid.uuid4()) for _ in range(row_count)
-                ]
-            # Direct check for created_at field
-            elif field_name == "created_at":
-                system_tracking_values[field_name] = [current_datetime] * row_count
-
-        return system_tracking_values
-    
-    def _filter_existing_samples(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Remove rows with existing sample identifiers"""
-        try:
-            # Need to find the sample identifier field from attributes
-            sample_identifier_field = self.get_sample_identifier_field()
-
-            if not sample_identifier_field:
-                logger.error("No field marked as sample_identifier in schema")
-                raise ValueError("No field marked as sample_identifier in schema")
-
-            # Get existing identifiers for samples in the database
-            existing_ids = set(self.get_existing_identifiers())
-
-            # Filter out existing samples
-            new_samples_df = dataframe[~dataframe[sample_identifier_field].isin(existing_ids)]
-
-            filtered_count = len(dataframe) - len(new_samples_df)
-            if filtered_count > 0:
-                logger.debug(f"Filtered out {filtered_count} existing samples")
-
-            return new_samples_df
-
-        except Exception as exc:
-            logger.exception("Error filtering existing samples")
-            raise RuntimeError(f"Error filtering existing samples: {str(exc)}")
-        
-    def _get_schema_fields(self) -> List[str]:
-        """Get list of field names defined in the schema"""
-        return [field.name for field in self.schema]
-    
-    def _add_missing_schema_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Add any missing schema columns to DataFrame with null values"""
-
-        schema_fields = self._get_schema_fields()
-
-        # Add any missing columns with None/null values
-        for field in schema_fields:
-            if field not in dataframe.columns:
-                logger.debug(f"Adding missing schema field: {field}")
-                dataframe[field] = None
-
-        return dataframe
-    
-    def _get_config_source_fields(self) -> Dict[str, str]:
+    def prepare_samples_dataframe(
+        self,
+        dataframe: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None
+    ) -> pd.DataFrame:
         """
-        Get fields that should be populated from parent configuration.
-        
-        Returns:
-            Dictionary mapping field names to their config source fields
-            e.g., {'config_identifier': 'id', 'workflow_name': 'terra_analysis_method'}
-        """
-        return {
-            field_name: attrs.get('inherit_from_config')
-            for field_name, attrs in self.field_attributes.items()
-            if attrs.get('inherit_from_config')
-        }
-        
-    def _filter_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Keep only columns that are defined in the schema"""
-        schema_fields = self._get_schema_fields()
-        extra_columns = set(dataframe.columns) - set(schema_fields)
-        if extra_columns:
-            logger.debug(f"Filtering out extra columns: {extra_columns}")
-            filtered_out_excess_columns_df = dataframe.drop(columns=extra_columns)
-            return filtered_out_excess_columns_df
-        else:
-            logger.debug("No extra columns to filter out")
-            return dataframe
-    
-    def _map_field_names(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Map source field names to BigQuery field names using column_mappings attributes"""
+        Prepare DataFrame by filtering duplicates and adding system-generated values.
 
-        mapped_columns_df = dataframe.copy()
-        
-        for field_name, attrs in self.field_attributes.items():
-            if "column_mappings" in attrs:
-                source_fields = attrs["column_mappings"]
-                if isinstance(source_fields, str):
-                    source_fields = [source_fields]
+        Delegates all processing to SampleDataProcessor.
 
-                # Try each possible source field
-                for source_field in source_fields:
-                    if source_field in dataframe.columns:
-                        mapped_columns_df = dataframe.rename(
-                            columns={source_field: field_name}
-                        )
-                        break
-
-        # Always return the DataFrame, whether mappings were applied or not
-        return self._add_missing_schema_columns(mapped_columns_df)
-    
-    def _validate_sequence_files(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """
-        Validate that each sample has at least one sequence file field with a value.
-        Removes rows that don't have any sequence files.
-        
         Args:
-            dataframe: DataFrame containing the data to validate
-            
+            dataframe: Raw sample data
+            config: Optional configuration for entity type mapping and field inheritance
+
         Returns:
-            DataFrame with only valid samples that have at least one sequence file
+            Processed DataFrame ready for BigQuery upload
         """
-        try:
-            # Get fields marked as sequence_file
-            sequence_file_fields = self.get_sequence_file_fields()
-            
-            if not sequence_file_fields:
-                logger.info("No sequence file fields defined in schema, returning original DataFrame")
-                # If no sequence file fields defined in schema, return original DataFrame
-                return dataframe
-            
-            # Check if at least one sequence file field has a value for each row, fill with boolean
-            has_sequence_file = dataframe[sequence_file_fields].notna().any(axis=1)
-            
-            # Filter DataFrame to keep only rows with at least one sequence file
-            valid_samples_df = dataframe[has_sequence_file]
-            
-            filtered_count = len(dataframe) - len(valid_samples_df)
-            if filtered_count > 0:
-                logger.info(f"_validate_sequence_files: Filtered out {filtered_count} samples without sequence files")\
-                
-            return valid_samples_df
-            
-        except Exception as exc:
-            raise RuntimeError(f"Error validating sequence files: {str(exc)}")
-        
+        if not self.data_processor:
+            raise ValueError("Data processor not initialized - cannot process samples")
+
+        logger.info("Preparing samples via SampleDataProcessor")
+        existing_ids = set(self.get_existing_identifiers())
+        return self.data_processor.process_samples(dataframe, existing_ids, config)
+
     def coerce_dataframe_types(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
-        Coerce DataFrame column types to match schema definition
-        Only converts columns where types don't already align
-        
-        Args:
-            dataframe: pandas DataFrame to coerce
-            
-        Returns:
-            DataFrame with coerced types
+        Coerce DataFrame types to match schema.
+
+        Delegates to data processor if available.
         """
-        logger.info("Coercing DataFrame types to match schema")
-        
-        if dataframe.empty:
-            return dataframe
-        
-        coerced_df = dataframe.copy()
-        
-        # Create mapping from field name to field type
-        field_type_map = {field.name: field.field_type for field in self.schema}
-        
-        # Map pandas dtypes to corresponding BigQuery types for comparison
-        pandas_to_bq_type_map = {
-            'int64': 'INTEGER',
-            'Int64': 'INTEGER',
-            'float64': 'FLOAT',
-            'bool': 'BOOLEAN',
-            'datetime64[ns]': 'DATETIME',
-            'datetime64[ns, UTC]': 'DATETIME',
-            'object': 'STRING',  # Most string columns will be object type
-            'string': 'STRING'   # Some versions of pandas use string dtype
-        }
-        
-        # Iterate through each column and attempt type conversion only if needed
-        for column in coerced_df.columns:
-            if column in field_type_map:
-                bq_type = field_type_map[column]
-                pandas_dtype = str(coerced_df[column].dtype)
-                
-                # Check if conversion is needed
-                needs_conversion = True
-                
-                # Compare current pandas dtype with expected BigQuery type
-                if pandas_dtype in pandas_to_bq_type_map:
-                    pandas_equivalent_bq_type = pandas_to_bq_type_map[pandas_dtype]
-                    
-                    # Skip conversion if types already align
-                    if (pandas_equivalent_bq_type == bq_type or
-                        (pandas_equivalent_bq_type == 'INTEGER' and bq_type == 'INT64') or
-                        (pandas_equivalent_bq_type == 'FLOAT' and bq_type == 'FLOAT64') or
-                        (pandas_equivalent_bq_type == 'BOOLEAN' and bq_type == 'BOOL') or
-                        (pandas_equivalent_bq_type == 'DATETIME' and bq_type == 'TIMESTAMP')):
-                        needs_conversion = False
-                        logger.debug(f"Column {column} already has compatible type {pandas_dtype}, skipping conversion")
-                
-                if pandas_dtype == 'object': 
-                    # Object types can be mixed, so we may still need conversion
-                    needs_conversion = True
-                
-                # Only attempt conversion if needed
-                if needs_conversion:
-                    try:
-                        if bq_type == 'INTEGER' or bq_type == 'INT64':
-                            # Convert to nullable integer type
-                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
-                            coerced_df[column] = coerced_df[column].astype('Int64')  # pandas nullable integer type
-                        elif bq_type == 'FLOAT' or bq_type == 'FLOAT64':
-                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
-                        elif bq_type == 'BOOLEAN' or bq_type == 'BOOL':
-                            coerced_df[column] = coerced_df[column].map({'true': True, 'false': False})
-                        elif bq_type == 'DATE':
-                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce').dt.date
-                        elif bq_type == 'DATETIME' or bq_type == 'TIMESTAMP':
-                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce')
-                        elif bq_type == 'STRING':
-                            # Convert to string while preserving None as None (not string "None")
-                            # This ensures NULL values in BigQuery instead of the string "None"
-                            coerced_df[column] = coerced_df[column].apply(
-                                lambda x: str(x) if pd.notna(x) else None
-                            )
-                        
-                        logger.debug(f"Converted column {column} from {pandas_dtype} to {bq_type}")
-                    except Exception as e:
-                        # Log error but continue with other columns, will fail downstream if necessary
-                        logger.error(f"FAILED to convert column {column} to {bq_type}: {str(e)}", exc_info=True)
-        
-        return coerced_df
-
-    def prepare_samples_dataframe(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Prepare DataFrame by filtering duplicates and adding system-generated values"""
-        logger.info("Preparing samples; filtering duplicates and adding time tracking")
-
         if self.data_processor:
-            # Use the new SampleDataProcessor for all processing
-            existing_ids = set(self.get_existing_identifiers())
-            return self.data_processor.process_samples(dataframe, existing_ids)
-        else:
-            # Fallback to legacy processing for backward compatibility
-            return self._legacy_prepare_samples_dataframe(dataframe)
-
-    def _legacy_prepare_samples_dataframe(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Legacy processing method for backward compatibility"""
-        dataframe = dataframe.copy()
-        # First we need to map field names from source to BigQuery
-        mapped_df = self._map_field_names(dataframe)
-        # Filter to only include schema-defined columns since this is what will be loaded
-        bigquery_mapped_df = self._filter_columns(mapped_df)
-        # Filter out rows with existing sample identifiers as to not port duplicates
-        filtered_bigquery_mapped_df = self._filter_existing_samples(bigquery_mapped_df)
-
-        if len(filtered_bigquery_mapped_df) == 0:
-            logger.info("No new samples to load after filtering duplicates")
-            return filtered_bigquery_mapped_df
-
-        # Validate that each sample has at least one sequence file
-        validated_sequence_df = self._validate_sequence_files(filtered_bigquery_mapped_df)
-
-        if len(validated_sequence_df) == 0:
-            return validated_sequence_df
-
-        # Then add system values (datetime tracking) for remaining rows
-        system_values = self._generate_system_values(len(validated_sequence_df))
-
-        for field_name, values in system_values.items():
-            validated_sequence_df[field_name] = values
-
-        # Coerce DataFrame types to match schema
-        coerced_df = self.coerce_dataframe_types(validated_sequence_df)
-
-        return coerced_df
-    
-    def get_sample_identifier_field(self) -> Optional[str]:
-        """Get the field name marked as sample_identifier"""
-        if self.data_processor:
-            return self.data_processor.get_sample_identifier_field()
-        else:
-            return next(
-                (
-                    field_name
-                    for field_name, attrs in self.field_attributes.items()
-                    if attrs.get("sample_identifier")
-                ),
-                None,
-            )
-        
-    def get_config_identifier_field(self) -> Optional[str]:
-        """Get the field name marked as sample_identifier"""
-        return next(
-            (
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("config_identifier") or attrs.get("configuration_identifier") or attrs.get("config_id")
-            ),
-            None,
-        )
-        
-    def get_sequence_file_fields(self) -> List[str]:
-        """Get list of field names that are marked as sequence files in the schema"""
-        if self.data_processor:
-            return self.data_processor.get_sequence_file_fields()
-        else:
-            return [
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("sequence_file") is True
-            ]
-
-    def get_sync_fields(self) -> List[str]:
-        """
-        Get fields marked as sync_field in the schema.
-
-        Returns:
-            List of field names that have sync_field: true
-        """
-        # Find fields with sync_field: true
-        sync_fields = [
-            field_name
-            for field_name, attrs in self.field_attributes.items()
-            if attrs.get("sync_field") is True
-        ]
-
-        return sync_fields
-    
-    def apply_configuration_sourced_fields(self, dataframe: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """
-        Apply configuration values to fields in a DataFrame of samples.
-        
-        Args:
-            dataframe: DataFrame containing sample records
-            config: Dictionary containing configuration values
-            
-        Returns:
-            DataFrame with configuration values applied to inheritance fields
-        """
-        if dataframe.empty or not config:
-            return dataframe
-        
-        # Get fields that inherit from configuration
-        config_inheritance_fields = self._get_config_source_fields()
-        
-        if not config_inheritance_fields:
-            return dataframe
-        
-        config_sourced_field_df = dataframe.copy()
-        
-        for field_name, config_field in config_inheritance_fields.items():
-            if config_field in config:
-                # Apply the configuration field value to all rows in the DataFrame
-                config_sourced_field_df[field_name] = config[config_field]
-            else:
-                # Log warning if configuration field not found
-                logger.warning(f"Warning: Configuration field '{config_field}' not found in configuration")
-        
-        return config_sourced_field_df
-    
-    def prepare_samples_with_config(self, dataframe: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """
-        Full preparation of samples with configuration applied.
-        
-        Args:
-            dataframe: DataFrame containing sample data
-            config: Dictionary containing configuration values
-            
-        Returns:
-            DataFrame ready for upload with all validations and transformations applied
-        """
-        
-        if "entity_type" in config:
-            entity_type = config["entity_type"]
-            sample_identifier_field = self.get_sample_identifier_field()
-            
-            if sample_identifier_field and entity_type:
-                
-                # Check if column mappings are defined for the sample_identifier_field
-                # Considering use_field_name as a fallback for renaming, but inherently a column mapping
-                # This allows for flexibility in how the sample identifier is defined
-                sample_identifier_has_column_mappings = (
-                    sample_identifier_field in self.field_attributes and
-                    ("column_mappings" in self.field_attributes[sample_identifier_field] or
-                     self.field_attributes[sample_identifier_field].get("use_field_name", False))
-                )
-
-                if sample_identifier_has_column_mappings:
-                    logger.info(f"Column mappings or use_field_name defined for {sample_identifier_field}, skipping automatic entity_type renaming")
-                else:
-                    entity_type_column = f"entity:{entity_type}_id"
-
-                    if entity_type_column in dataframe.columns:
-                        logger.info(f"Renaming {entity_type_column} to {sample_identifier_field}")
-                        dataframe = dataframe.rename(columns={entity_type_column: sample_identifier_field})
-                    else:
-                        logger.warning(f"Could not find column '{entity_type_column}' for mapping to '{sample_identifier_field}'")
-                    
-        # Apply standard preparation
-        prepared_df = self.prepare_samples_dataframe(dataframe)
-        
-        if prepared_df.empty:
-            return prepared_df
-        
-        # Apply configuration inheritance, if no config identifier field, will return prepared_df
-        return self.apply_configuration_sourced_fields(prepared_df, config)
-        
-    def get_existing_identifiers(self) -> List[str]:
-        """Get all existing sample identifiers from the table"""
-        try:
-            # Find the sample key field from attributes
-            sample_identifier_field = self.get_sample_identifier_field()
-
-            if not sample_identifier_field:
-                raise ValueError("No field marked as sample_identifier in schema")
-
-            sample_identifier_query = f"""
-            SELECT DISTINCT {sample_identifier_field}
-            FROM `{self.table_name}`
-            WHERE {sample_identifier_field} IS NOT NULL
-            AND {sample_identifier_field} != ''
-            ORDER BY {sample_identifier_field}
-            """
-
-            query_job = self.bq_client.query(sample_identifier_query)
-            # Return list of identifiers for ease of use
-            return [getattr(row, sample_identifier_field) for row in query_job.result()]
-
-        except Exception as error:
-            raise RuntimeError(f"Error fetching existing identifiers: {str(error)}")
-
+            return self.data_processor._coerce_dataframe_types(dataframe)
+        return dataframe
 
     def load_dataframe(
         self,
@@ -481,146 +90,99 @@ class BigQuerySampleOperations:
         config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Load DataFrame into BigQuery table using load jobs
+        Load DataFrame into BigQuery table.
 
         Args:
-            dataframe: pandas DataFrame containing the data
-            schema: Optional schema for the table
-            write_disposition: Write append only supported in this operation
+            dataframe: DataFrame to load (should be pre-processed)
+            schema: Optional schema override
+            write_disposition: BigQuery write disposition
+            config: Optional configuration for processing
+
+        Returns:
+            Dictionary with load results
         """
         try:
-            # Skip if DataFrame is empty
             if len(dataframe) == 0:
                 logger.info("No data to load, dataframe is empty")
                 return {"success": True, "loaded": 0, "filtered": 0, "errors": None}
 
+            # Process samples (with config if provided)
+            processed_df = self.prepare_samples_dataframe(dataframe, config)
+
+            if len(processed_df) == 0:
+                logger.info("No samples to load after processing")
+                return {"success": True, "loaded": 0, "filtered": len(dataframe), "errors": None}
+
+            # Setup load job
             job_config = LoadJobConfig()
             job_config.write_disposition = write_disposition
-            logger.info(f"JobConfig created with write_disposition set to: {write_disposition}")
+            job_config.schema = schema or self.schema
 
-            if schema:
-                logger.info("Schema provided")
-
-                # This comes from schema passed to load_dataframe
-                job_config.schema = schema
-            elif self.schema:
-                logger.info("No schema provided, using self's schema")
-
-                # This self.schema is from creation of operations object (example_sample_shema.yaml)
-                job_config.schema = self.schema
-
-            # Prepare DataFrame with filtering and system values
-            initial_count = len(dataframe)
-            logger.info(f"Initial record count: {initial_count}")
-
-            #might want to rename this config and the schema so they arent confused. 
-            if config:
-                prepared_df = self.prepare_samples_with_config(dataframe, config)
-            else:
-                prepared_df = self.prepare_samples_dataframe(dataframe)
-
-            filtered_count = initial_count - len(prepared_df)
-            logger.info(f"Filtered {filtered_count} total records")
-
-            # Skip if all records were filtered
-            if len(prepared_df) == 0:
-                logger.info("No records to load after filtering, all were skipped")
-                return {
-                    "success": True,
-                    "loaded": 0,
-                    "filtered": filtered_count,
-                    "errors": None,
-                }
-
-            load_job = self.bq_client.load_table_from_dataframe(
-                dataframe=prepared_df,
-                destination=self.table_name,
-                job_config=job_config,
-                location=self.location,
+            # Load to BigQuery
+            logger.info(f"Loading {len(processed_df)} samples to BigQuery")
+            job = self.bq_client.load_table_from_dataframe(
+                processed_df, self.table_name, job_config=job_config, location=self.location
             )
+            job.result()  # Wait for completion
 
-            # Wait for job to complete
-            load_job.result()
-            logger.info(f"Loading dataframe to BigQuery complete; job_id: {load_job.job_id}, loaded: {len(prepared_df)}")
+            logger.info(f"Successfully loaded {len(processed_df)} samples")
             return {
                 "success": True,
-                "loaded": len(prepared_df),
-                "filtered": filtered_count,
+                "loaded": len(processed_df),
+                "filtered": len(dataframe) - len(processed_df),
                 "errors": None,
-                "job_id": load_job.job_id,
             }
-            
-        except Exception as exc:
-            logger.exception(f"Error loading DataFrame {str(exc)}")
-            return {"success": False, "errors": str(exc), "loaded": 0}
 
-    def append_dataframe(
-        self, dataframe: pd.DataFrame, schema: Optional[List[SchemaField]] = None
-    ) -> Dict[str, Any]:
-        """Append DataFrame to existing table"""
-        # Helper function to append data to an existing table
-        return self.load_dataframe(dataframe, schema=schema, write_disposition="WRITE_APPEND")
+        except Exception as e:
+            logger.error(f"Error loading DataFrame: {str(e)}")
+            return {"success": False, "loaded": 0, "filtered": 0, "errors": str(e)}
 
-    def get_entity_id_mapping(self) -> Dict[str, str]:
-        """
-        Get a mapping between BigQuery UUIDs and entity identifiers.
+    def append_dataframe(self, dataframe: pd.DataFrame) -> Dict[str, Any]:
+        """Append DataFrame without processing (legacy support)."""
+        return self.load_dataframe(dataframe, write_disposition="WRITE_APPEND", config=None)
 
-        Returns:
-            Dictionary mapping BigQuery entity identifiers to UUIDS
-            {"entity_identifier1": ""uuid1","entity_identifier2": "uuid2", ...}
-        """
-        # Will need to optomize this function for large datasets
+    def get_existing_identifiers(self) -> List[str]:
+        """Query existing sample identifiers from BigQuery."""
+        sample_id_field = self.data_processor.get_sample_identifier_field()
+        if not sample_id_field:
+            logger.warning("No sample identifier field defined")
+            return []
 
-        sample_identifier_field_name = self.get_sample_identifier_field()
+        try:
+            query = f"""
+                SELECT DISTINCT {sample_id_field}
+                FROM `{self.table_name}`
+                WHERE {sample_id_field} IS NOT NULL
+            """
+            result = self.bq_client.query(query).result()
+            return [row[sample_id_field] for row in result]
+        except Exception as e:
+            logger.error(f"Error querying existing identifiers: {e}")
+            return []
 
-        query = f"""
-        SELECT id, {sample_identifier_field_name}
-        FROM `{self.table_name}`
-        """
-        
-        query_job = self.bq_client.query(query)
-        logger.info(f"Querying BigQuery for entity identifier mapping")
-        results = list(query_job.result())
-
-        # Create mapping from BigQuery UUID to entity identifier
-        entity_to_id_mapping = {row.entity_identifier: row.id for row in results}
-
-        return entity_to_id_mapping
-    
     def get_recent_sample_ids(self, config_id: str, limit: int = 1000) -> List[str]:
-        """
-        Get the IDs of the most recently loaded samples for a specific configuration.
-        
-        Args:
-            config_id: Configuration ID
-            limit: Maximum number of sample IDs to return
-            
-        Returns:
-            List of sample IDs
-        """
-        # Get the field to use as the config identifier for identifying samples
-        config_identifier_field = self.get_config_identifier_field()
-        
-        query = f"""
-        SELECT id
-        FROM `{self.table_name}`
-        WHERE {config_identifier_field} = @config_id
-        AND uploaded_at IS NULL
-        ORDER BY created_at DESC
-        LIMIT @limit
-        """
-        
-        query_params = [
-            bigquery.ScalarQueryParameter("config_id", "STRING", config_id),
-            bigquery.ScalarQueryParameter("limit", "INTEGER", limit)
-        ]
-        
-        job_config = bigquery.QueryJobConfig(query_parameters=query_params)
-        
-        query_job = self.bq_client.query(query, job_config=job_config)
-        
-        return [row["id"] for row in query_job]
-    
+        """Get recent sample IDs for a given configuration."""
+        sample_id_field = self.get_sample_identifier_field()
+        config_id_field = self.get_config_identifier_field()
+
+        if not sample_id_field or not config_id_field:
+            logger.warning("Missing required identifier fields")
+            return []
+
+        try:
+            query = f"""
+                SELECT {sample_id_field}
+                FROM `{self.table_name}`
+                WHERE {config_id_field} = '{config_id}'
+                ORDER BY created_at DESC
+                LIMIT {limit}
+            """
+            result = self.bq_client.query(query).result()
+            return [row[sample_id_field] for row in result]
+        except Exception as e:
+            logger.error(f"Error querying recent sample IDs: {e}")
+            return []
+
     def get_samples_by_timeframe(
         self, 
         timeframe: str = "today",
@@ -874,9 +436,9 @@ class BigQuerySampleOperations:
                     for field, value in update_data.items():
                         param_name = f"val_{i}_{field}"
 
-                        # Determine parameter type from schema or value
-                        field_def = next((f for f in self.schema if f.name == field), None)
-                        param_type = parse_field_type(field_def.field_type)
+                        # Get field type from schema
+                        field_def = self.data_processor.schema_definition.get_field(field)
+                        param_type = field_def.field_type if field_def else "STRING"
 
                         params.append(
                             bigquery.ScalarQueryParameter(param_name, param_type, value)
@@ -1081,7 +643,7 @@ class BigQuerySampleOperations:
         """
         try:
             # Get config identifier field
-            config_identifier_field = self.get_config_identifier_field()
+            config_identifier_field = self.data_processor.get_config_identifier_field()
             if not config_identifier_field:
                 logger.error("No config_identifier field defined in sample schema")
                 raise ValueError("No config_identifier field defined in sample schema")
@@ -1234,7 +796,7 @@ class BigQuerySampleOperations:
         """
         try:
             # Get config identifier field
-            config_identifier_field = self.get_config_identifier_field()
+            config_identifier_field = self.data_processor.get_config_identifier_field()
             if not config_identifier_field:
                 raise ValueError("No config_identifier field defined in sample schema")
             
