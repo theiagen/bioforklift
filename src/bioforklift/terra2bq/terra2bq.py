@@ -1439,6 +1439,7 @@ class Terra2BQ:
             "workflowFailureMode": terra_method_config.get(
                 "workflowFailureMode", "NoNewCalls"
             ),
+            "ignoreEmptyOutputs": terra_method_config.get("ignoreEmptyOutputs", False),
             "userComment": f"Automated submission for {config.get(str(prefix_field), 'Terra2BQ')}, at {current_datetime}",
         }
 
