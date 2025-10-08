@@ -12,7 +12,7 @@ from bioforklift.file_transfers import GCSTransferClient
 from bioforklift.terra import Terra
 from bioforklift.data_processing.config_processor import ConfigProcessor
 from bioforklift.data_processing.sample_processor import SampleDataProcessor
-from bioforklift.bigquery.utils import drop_system_value_columns
+from bioforklift.data_processing.utils import drop_system_value_columns
 from bioforklift.terra.models import WorkflowConfig
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.terra2bq.models import (
