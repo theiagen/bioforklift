@@ -2,7 +2,7 @@ import re
 import uuid
 from typing import Optional, Dict, Any, List, Set
 import pandas as pd
-from bioforklift.bigquery.utils import load_schema_from_yaml
+from .utils import load_schema_from_yaml
 from bioforklift.forklift_logging import setup_logger
 from .schema_models import SchemaDefinition, SampleFieldAttributes
 from .schema_converter import convert_to_schema_definition
@@ -393,90 +393,79 @@ class SampleDataProcessor:
 
     def _coerce_dataframe_types(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
-        Coerce DataFrame column types to match schema definition
-        Only converts columns where types don't already align
-        
+        Coerce DataFrame column types to match schema definition.
+        Only converts columns where types don't already align.
+
         Args:
             dataframe: pandas DataFrame to coerce
-            
+
         Returns:
             DataFrame with coerced types
         """
         logger.info("Coercing DataFrame types to match schema")
-        
+
         if dataframe.empty:
             return dataframe
-        
+
         coerced_df = dataframe.copy()
-        
+
         # Create mapping from field name to field type
         field_type_map = {field.name: field.field_type for field in self.schema}
-        
-        # Map pandas dtypes to corresponding BigQuery types for comparison
-        pandas_to_bq_type_map = {
-            'int64': 'INTEGER',
-            'Int64': 'INTEGER',
-            'float64': 'FLOAT',
-            'bool': 'BOOLEAN',
-            'datetime64[ns]': 'DATETIME',
-            'datetime64[ns, UTC]': 'DATETIME',
-            'object': 'STRING',  # Most string columns will be object type
-            'string': 'STRING'   # Some versions of pandas use string dtype
-        }
-        
-        # Iterate through each column and attempt type conversion only if needed
+
+        # Convert each column to match its schema type
+        # This ensures the DataFrame is ready for BigQuery upload
+        # https://pandas-gbq.readthedocs.io/en/latest/writing.html#inferring-the-table-schema
         for column in coerced_df.columns:
-            if column in field_type_map:
-                bq_type = field_type_map[column]
-                pandas_dtype = str(coerced_df[column].dtype)
-                
-                # Check if conversion is needed
-                needs_conversion = True
-                
-                # Compare current pandas dtype with expected BigQuery type
-                if pandas_dtype in pandas_to_bq_type_map:
-                    pandas_equivalent_bq_type = pandas_to_bq_type_map[pandas_dtype]
-                    
-                    # Skip conversion if types already align
-                    if (pandas_equivalent_bq_type == bq_type or
-                        (pandas_equivalent_bq_type == 'INTEGER' and bq_type == 'INT64') or
-                        (pandas_equivalent_bq_type == 'FLOAT' and bq_type == 'FLOAT64') or
-                        (pandas_equivalent_bq_type == 'BOOLEAN' and bq_type == 'BOOL') or
-                        (pandas_equivalent_bq_type == 'DATETIME' and bq_type == 'TIMESTAMP')):
-                        needs_conversion = False
-                        logger.debug(f"Column {column} already has compatible type {pandas_dtype}, skipping conversion")
-                
-                if pandas_dtype == 'object': 
-                    # Object types can be mixed, so we may still need conversion
-                    needs_conversion = True
-                
-                # Only attempt conversion if needed
-                if needs_conversion:
-                    try:
-                        if bq_type == 'INTEGER' or bq_type == 'INT64':
-                            # Convert to nullable integer type
-                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
-                            coerced_df[column] = coerced_df[column].astype('Int64')  # pandas nullable integer type
-                        elif bq_type == 'FLOAT' or bq_type == 'FLOAT64':
-                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
-                        elif bq_type == 'BOOLEAN' or bq_type == 'BOOL':
-                            coerced_df[column] = coerced_df[column].map({'true': True, 'false': False})
-                        elif bq_type == 'DATE':
-                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce').dt.date
-                        elif bq_type == 'DATETIME' or bq_type == 'TIMESTAMP':
-                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce')
-                        elif bq_type == 'STRING':
-                            # Convert to string while preserving None as None (not string "None")
-                            # This ensures NULL values in BigQuery instead of the string "None"
-                            coerced_df[column] = coerced_df[column].apply(
-                                lambda x: str(x) if pd.notna(x) else None
-                            )
-                        
-                        logger.debug(f"Converted column {column} from {pandas_dtype} to {bq_type}")
-                    except Exception as e:
-                        # Log error but continue with other columns, will fail downstream if necessary
-                        logger.error(f"FAILED to convert column {column} to {bq_type}: {str(e)}", exc_info=True)
+            if column not in field_type_map:
+                continue
+
+            bq_type = field_type_map[column]
+            pandas_dtype = str(coerced_df[column].dtype)
+            
+            logger.debug(f"Column '{column}': pandas dtype={pandas_dtype}, schema type={bq_type}")
+
+
+            try:
+                if bq_type in ('INTEGER', 'INT64'):
+                    # Convert to nullable integer type
+                    coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce').astype('Int64')
+
+                elif bq_type in ('FLOAT', 'FLOAT64'):
+                    coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce').astype('float64')
+
+                elif bq_type in ('BOOLEAN', 'BOOL'):
+                    # Handle various boolean representations, stuff can get crazy coming from Terra
+                    # Better safe than sorry
+                    bool_map = {
+                        'true': True, 'True': True, 'TRUE': True, True: True, 1: True, '1': True,
+                        'false': False, 'False': False, 'FALSE': False, False: False, 0: False, '0': False
+                    }
+                    coerced_df[column] = coerced_df[column].map(bool_map).astype(pd.BooleanDtype())
         
+                elif bq_type == 'DATE':
+                    coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce').dt.date
+
+                elif bq_type in ('DATETIME', 'TIMESTAMP'):
+                    coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce')
+                    if bq_type == 'TIMESTAMP':
+                        # Ensure UTC timezone for TIMESTAMP for our system
+                        if coerced_df[column].dt.tz is None:
+                            coerced_df[column] = coerced_df[column].dt.tz_localize('UTC')
+                        else:
+                            coerced_df[column] = coerced_df[column].dt.tz_convert('UTC')
+
+                elif bq_type == 'STRING':
+                    # Convert to string while preserving None as None --> Never string "None"
+                    coerced_df[column] = coerced_df[column].apply(
+                        lambda x: str(x) if pd.notna(x) else None
+                    )
+
+                logger.debug(f"Converted column {column} from {pandas_dtype} to {bq_type}")
+
+            except Exception as exc:
+                # Log error but continue with other columns
+                logger.error(f"Failed to convert column {column} to {bq_type}: {str(exc)}", exc_info=True)
+
         return coerced_df
 
     def _add_missing_schema_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:

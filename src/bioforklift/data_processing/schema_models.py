@@ -1,5 +1,4 @@
-import json
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 import re
 
@@ -137,9 +136,9 @@ class ConfigFieldAttributes(FieldAttributes):
     Adds config-specific validation and processing attributes.
     """
 
-    terra_method_config: json = Field(
-        default=False,
-        description="Field is part of Terra method configuration"
+    terra_method_config: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None,
+        description="Field is part of Terra method configuration (JSON string or dict)"
     )
 
 
