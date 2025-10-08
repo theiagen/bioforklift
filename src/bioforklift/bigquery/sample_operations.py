@@ -4,7 +4,7 @@ import pandas as pd
 from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
-from .utils import infer_bigquery_param_type
+from bioforklift.data_processing.utils import infer_bigquery_param_type
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.data_processing import SampleDataProcessor
 
