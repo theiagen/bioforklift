@@ -1,3 +1,4 @@
+import json
 from typing import Optional, List, Union
 from pydantic import BaseModel, Field, field_validator
 import re
@@ -7,14 +8,11 @@ class FieldAttributes(BaseModel):
     """
     Base model for field attributes in schema definitions.
 
-    This model provides type safety and validation for custom attributes
-    that control data processing behavior.
+    Contains common attributes shared by both sample and config schemas.
     """
 
     # Field identification and classification
     primary_key: bool = Field(default=False, description="Field is a primary key (auto-generated UUID)")
-    sample_identifier: bool = Field(default=False, description="Field uniquely identifies samples")
-    configuration_identifier: bool = Field(default=False, description="Field identifies configurations")
 
     # Data processing attributes
     column_mappings: Optional[List[str]] = Field(
@@ -34,28 +32,6 @@ class FieldAttributes(BaseModel):
     required: bool = Field(
         default=False,
         description="Field is required"
-    )
-
-    # Metadata and synchronization
-    metadata: bool = Field(
-        default=False,
-        description="Field contains metadata"
-    )
-    sync_field: bool = Field(
-        default=False,
-        description="Field should be synchronized across systems"
-    )
-
-    # File and sequence attributes
-    sequence_file: bool = Field(
-        default=False,
-        description="Field contains sequence file path"
-    )
-
-    # Configuration inheritance
-    inherit_from_config: Optional[str] = Field(
-        default=None,
-        description="Configuration field to inherit value from"
     )
 
     # System fields
@@ -97,15 +73,7 @@ class FieldAttributes(BaseModel):
 
     def is_identifier_field(self) -> bool:
         """Check if this field is any type of identifier."""
-        return (
-            self.primary_key or
-            self.sample_identifier or
-            self.configuration_identifier
-        )
-
-    def should_sync(self) -> bool:
-        """Check if this field should be synchronized."""
-        return self.sync_field
+        return self.primary_key
 
     def is_system_field(self) -> bool:
         """Check if this is a system-managed field."""
@@ -119,8 +87,47 @@ class SampleFieldAttributes(FieldAttributes):
     Adds sample-specific validation and processing attributes.
     """
 
-    # Sample-specific attributes can be added here
-    pass
+    # Sample identification
+    sample_identifier: bool = Field(
+        default=False,
+        description="Field uniquely identifies samples"
+    )
+
+    # Metadata and synchronization
+    metadata: bool = Field(
+        default=False,
+        description="Field contains metadata"
+    )
+    sync_field: bool = Field(
+        default=False,
+        description="Field should be synchronized to Terra"
+    )
+
+    # File and sequence attributes
+    sequence_file: bool = Field(
+        default=False,
+        description="Field contains sequence file path"
+    )
+
+    # Configuration inheritance
+    inherit_from_config: Optional[str] = Field(
+        default=None,
+        description="Configuration field to inherit value from"
+    )
+    
+    # Configuration identification for samples
+    configuration_identifier: bool = Field(
+        default=False,
+        description="Field uniquely identifies configurations"
+    )
+
+    def is_identifier_field(self) -> bool:
+        """Check if this field is any type of identifier."""
+        return self.primary_key or self.sample_identifier or self.configuration_identifier
+
+    def should_sync(self) -> bool:
+        """Check if this field should be synchronized to Terra."""
+        return self.sync_field or self.metadata
 
 
 class ConfigFieldAttributes(FieldAttributes):
@@ -130,8 +137,10 @@ class ConfigFieldAttributes(FieldAttributes):
     Adds config-specific validation and processing attributes.
     """
 
-    # Config-specific attributes can be added here
-    pass
+    terra_method_config: json = Field(
+        default=False,
+        description="Field is part of Terra method configuration"
+    )
 
 
 class FieldDefinition(BaseModel):

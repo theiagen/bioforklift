@@ -1,12 +1,10 @@
 import re
 import uuid
-from datetime import datetime
 from typing import Optional, Dict, Any, List, Set
 import pandas as pd
-from google.cloud.bigquery import SchemaField
 from bioforklift.bigquery.utils import load_schema_from_yaml
 from bioforklift.forklift_logging import setup_logger
-from .schema_models import SchemaDefinition
+from .schema_models import SchemaDefinition, SampleFieldAttributes
 from .schema_converter import convert_to_schema_definition
 
 logger = setup_logger(__name__)
@@ -39,7 +37,8 @@ class SampleDataProcessor:
         # Add typed schema definition for type-safe attribute access
         self.schema_definition: SchemaDefinition = convert_to_schema_definition(
             self.schema,
-            self.field_attributes
+            self.field_attributes,
+            SampleFieldAttributes
         )
 
         logger.info(f"SampleDataProcessor initialized with schema: {schema_yaml}")
@@ -534,3 +533,30 @@ class SampleDataProcessor:
             for field_name, attrs in self.field_attributes.items()
             if attrs.get("sync_field")
         ]
+        
+    def get_source_column_for_field(
+      self, 
+      field_name: str, 
+      available_columns: List[str]
+  ) -> Optional[str]:
+      """
+      Find which source column maps to this BigQuery field.
+      
+      Args:
+          field_name: BigQuery field name
+          available_columns: Available source columns (e.g., from Terra)
+      
+      Returns:
+          Source column name that maps to this field, or None
+      """
+      field_def = self.schema_definition.get_field(field_name)
+
+      if not field_def or not field_def.attributes.column_mappings:
+          return None
+
+      # Return first matching column from available columns
+      for source_col in field_def.attributes.column_mappings:
+          if source_col in available_columns:
+              return source_col
+
+      return None

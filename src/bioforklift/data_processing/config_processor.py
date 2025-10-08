@@ -7,7 +7,7 @@ import pandas as pd
 from google.cloud.bigquery import SchemaField
 from bioforklift.bigquery.utils import load_schema_from_yaml
 from bioforklift.forklift_logging import setup_logger
-from .schema_models import SchemaDefinition
+from .schema_models import SchemaDefinition, ConfigFieldAttributes
 from .schema_converter import convert_to_schema_definition
 
 logger = setup_logger(__name__)
@@ -29,7 +29,8 @@ class ConfigProcessor:
         # Add typed schema definition for type-safe attribute access
         self.schema_definition: SchemaDefinition = convert_to_schema_definition(
             self.schema,
-            self.field_attributes
+            self.field_attributes,
+            ConfigFieldAttributes
         )
 
         logger.info(f"ConfigDataProcessor initialized with schema: {schema_yaml}")
