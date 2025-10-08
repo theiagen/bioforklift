@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import pandas as pd
 from google.cloud.bigquery import SchemaField
-from bioforklift.bigquery.utils import load_schema_from_yaml
+from .utils import load_schema_from_yaml
 from bioforklift.forklift_logging import setup_logger
 from .schema_models import SchemaDefinition, ConfigFieldAttributes
 from .schema_converter import convert_to_schema_definition
@@ -241,11 +241,3 @@ class ConfigProcessor:
             ),
             None,
         )
-
-    def get_configuration_identifier_fields(self) -> List[str]:
-        """Get fields marked as configuration_identifier"""
-        return [
-            field_name
-            for field_name, attrs in self.field_attributes.items()
-            if attrs.get("configuration_identifier")
-        ]
