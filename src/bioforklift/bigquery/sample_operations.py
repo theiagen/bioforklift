@@ -49,6 +49,7 @@ class BigQuerySampleOperations:
     def prepare_samples_dataframe(
         self,
         dataframe: pd.DataFrame,
+        unique_ids_by_config: bool = False,
         config: Optional[Dict[str, Any]] = None
     ) -> pd.DataFrame:
         """
@@ -70,7 +71,10 @@ class BigQuerySampleOperations:
 
         # Get existing identifiers, optionally filtered by config_id for processes that might
         # have scenarios where multiple configurations are being processed, but duplicates are only considered for their own config
-        config_id = config.get("id") if config else None
+        if unique_ids_by_config and config and "id" in config:
+            config_id = config["id"]
+        else:
+            config_id = None
         existing_ids = set(self.get_existing_identifiers(config_id=config_id))
 
         return self.data_processor.process_samples(dataframe, existing_ids, config)
@@ -91,6 +95,7 @@ class BigQuerySampleOperations:
         schema: Optional[List[SchemaField]] = None,
         write_disposition: str = "WRITE_APPEND",
         config: Optional[Dict[str, Any]] = None,
+        unique_ids_by_config: bool = False
     ) -> Dict[str, Any]:
         """
         Load DataFrame into BigQuery table.
@@ -110,7 +115,7 @@ class BigQuerySampleOperations:
                 return {"success": True, "loaded": 0, "filtered": 0, "errors": None}
 
             # Process samples through data processor wrapper function
-            processed_df = self.prepare_samples_dataframe(dataframe, config)
+            processed_df = self.prepare_samples_dataframe(dataframe, unique_ids_by_config, config)
 
             if len(processed_df) == 0:
                 logger.info("No samples to load after processing")
