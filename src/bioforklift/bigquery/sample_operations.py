@@ -4,6 +4,7 @@ import pandas as pd
 from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
+from .utils import infer_bigquery_param_type
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.data_processing import SampleDataProcessor
 
@@ -12,10 +13,7 @@ logger = setup_logger(__name__)
 
 class BigQuerySampleOperations:
     """
-    BigQuery API operations for sample tables.
-
-    This class handles pure BigQuery operations (loading, querying, updating).
-    All data processing and validation is delegated to SampleDataProcessor.
+    BigQuery API operations for sample tables and their schemas.
     """
 
     def __init__(
@@ -59,7 +57,7 @@ class BigQuerySampleOperations:
         Delegates all processing to SampleDataProcessor.
 
         Args:
-            dataframe: Raw sample data
+            dataframe: Raw sample data from source
             config: Optional configuration for entity type mapping and field inheritance
 
         Returns:
@@ -69,7 +67,12 @@ class BigQuerySampleOperations:
             raise ValueError("Data processor not initialized - cannot process samples")
 
         logger.info("Preparing samples via SampleDataProcessor")
-        existing_ids = set(self.get_existing_identifiers())
+
+        # Get existing identifiers, optionally filtered by config_id for processes that might
+        # have scenarios where multiple configurations are being processed, but duplicates are only considered for their own config
+        config_id = config.get("id") if config else None
+        existing_ids = set(self.get_existing_identifiers(config_id=config_id))
+
         return self.data_processor.process_samples(dataframe, existing_ids, config)
 
     def coerce_dataframe_types(self, dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -106,7 +109,7 @@ class BigQuerySampleOperations:
                 logger.info("No data to load, dataframe is empty")
                 return {"success": True, "loaded": 0, "filtered": 0, "errors": None}
 
-            # Process samples (with config if provided)
+            # Process samples through data processor wrapper function
             processed_df = self.prepare_samples_dataframe(dataframe, config)
 
             if len(processed_df) == 0:
@@ -114,16 +117,17 @@ class BigQuerySampleOperations:
                 return {"success": True, "loaded": 0, "filtered": len(dataframe), "errors": None}
 
             # Setup load job
-            job_config = LoadJobConfig()
-            job_config.write_disposition = write_disposition
-            job_config.schema = schema or self.schema
+            load_job_config = LoadJobConfig()
+            load_job_config.write_disposition = write_disposition
+            load_job_config.schema = schema or self.schema
 
             # Load to BigQuery
             logger.info(f"Loading {len(processed_df)} samples to BigQuery")
-            job = self.bq_client.load_table_from_dataframe(
-                processed_df, self.table_name, job_config=job_config, location=self.location
+            load_job = self.bq_client.load_table_from_dataframe(
+                processed_df, self.table_name, job_config=load_job_config, location=self.location
             )
-            job.result()  # Wait for completion
+            
+            load_job.result() 
 
             logger.info(f"Successfully loaded {len(processed_df)} samples")
             return {
@@ -133,37 +137,57 @@ class BigQuerySampleOperations:
                 "errors": None,
             }
 
-        except Exception as e:
-            logger.error(f"Error loading DataFrame: {str(e)}")
-            return {"success": False, "loaded": 0, "filtered": 0, "errors": str(e)}
+        except Exception as exc:
+            logger.error(f"Error loading DataFrame: {str(exc)}")
+            return {"success": False, "loaded": 0, "filtered": 0, "errors": str(exc)}
 
     def append_dataframe(self, dataframe: pd.DataFrame) -> Dict[str, Any]:
         """Append DataFrame without processing (legacy support)."""
         return self.load_dataframe(dataframe, write_disposition="WRITE_APPEND", config=None)
 
-    def get_existing_identifiers(self) -> List[str]:
-        """Query existing sample identifiers from BigQuery."""
+    def get_existing_identifiers(self, config_id: Optional[str] = None) -> List[str]:
+        """
+        Query existing sample identifiers from BigQuery.
+
+        Args:
+            config_id: Optional configuration ID to filter samples by
+
+        Returns:
+            List of existing sample identifiers
+        """
         sample_id_field = self.data_processor.get_sample_identifier_field()
         if not sample_id_field:
-            logger.warning("No sample identifier field defined")
-            return []
+            raise ValueError(
+                "No field marked as 'sample_identifier' in schema. "
+                "At least one field must have 'sample_identifier: true' attribute."
+            )
 
         try:
+            # Build query with optional config_id filter
+            where_clauses = [f"{sample_id_field} IS NOT NULL"]
+
+            if config_id:
+                config_id_field = self.data_processor.get_config_identifier_field()
+                if not config_id_field:
+                    logger.warning("No config_identifier field defined in schema, ignoring config_id filter")
+                else:
+                    where_clauses.append(f"{config_id_field} = '{config_id}'")
+
             query = f"""
                 SELECT DISTINCT {sample_id_field}
                 FROM `{self.table_name}`
-                WHERE {sample_id_field} IS NOT NULL
+                WHERE {' AND '.join(where_clauses)}
             """
             result = self.bq_client.query(query).result()
             return [row[sample_id_field] for row in result]
-        except Exception as e:
-            logger.error(f"Error querying existing identifiers: {e}")
+        except Exception as exc:
+            logger.error(f"Error querying existing identifiers: {str(exc)}")
             return []
 
     def get_recent_sample_ids(self, config_id: str, limit: int = 1000) -> List[str]:
         """Get recent sample IDs for a given configuration."""
-        sample_id_field = self.get_sample_identifier_field()
-        config_id_field = self.get_config_identifier_field()
+        sample_id_field = self.data_processor.get_sample_identifier_field()
+        config_id_field = self.data_processor.get_config_identifier_field()
 
         if not sample_id_field or not config_id_field:
             logger.warning("Missing required identifier fields")
@@ -213,10 +237,8 @@ class BigQuerySampleOperations:
             DataFrame containing the samples matching the timefrime criteria
         """
         
-        # This function is a behomoth and a good candidate for refactoring
-        # But need to still figure out the best way to implement a more modular solution
-        # For how to configure when to grab samples to meet different use cases
-        # But trying to be flexible enough to meet ~most use cases
+        # This function is a behomoth of a function, but it is needed to cover the various use cases
+        # and its served its purpose well in the google-workflows implementation
         
         try:
             # Determine date condition based on timeframe using match statement
@@ -305,11 +327,11 @@ class BigQuerySampleOperations:
             """
             
             # Configure and run query
-            bigquery_query_job_config = bigquery.QueryJobConfig()
-            bigquery_query_job_config.query_parameters = params
-            
+            samples_by_timeframe_job_config = bigquery.QueryJobConfig()
+            samples_by_timeframe_job_config.query_parameters = params
+
             query_job = self.bq_client.query(
-                samples_query, job_config=bigquery_query_job_config
+                samples_query, job_config=samples_by_timeframe_job_config
             )
             
             # Convert results to dict
@@ -397,7 +419,7 @@ class BigQuerySampleOperations:
                 all_fields.update(update_data.keys())
 
             # Ensure fields exist in schema
-            schema_fields = self._get_schema_fields()
+            schema_fields = self.data_processor.get_schema_fields()
             invalid_fields = all_fields - set(schema_fields)
             if invalid_fields:
                 logger.exception(f"Fields not in schema: {invalid_fields}")
@@ -453,13 +475,13 @@ class BigQuerySampleOperations:
                 WHERE id IN ({','.join([f'@id_{i}' for i in range(len(batch))])})
                 """
 
-                exectue_job_config = bigquery.QueryJobConfig()
-                exectue_job_config.query_parameters = params
+                execute_update_job_config = bigquery.QueryJobConfig()
+                execute_update_job_config.query_parameters = params
 
                 logger.debug(f"Executing bulk update query for batch {batch_index + 1} with {len(params)} parameters")
 
                 execute_query_job = self.bq_client.query(
-                    update_query, job_config=exectue_job_config
+                    update_query, job_config=execute_update_job_config
                 )
                 execute_query_job.result()
 
@@ -472,7 +494,7 @@ class BigQuerySampleOperations:
                 """
 
                 verify_job = self.bq_client.query(
-                    verification_query, job_config=exectue_job_config
+                    verification_query, job_config=execute_update_job_config
                 )
                 batch_updated_ids = [row.id for row in verify_job.result()]
                 all_updated_ids.extend(batch_updated_ids)
@@ -589,27 +611,17 @@ class BigQuerySampleOperations:
             
             query_params = []
             for name, value in parameters.items():
-                # Determine parameter type based on Python type - basic types for now at least
-                param_type = "STRING"
-                if isinstance(value, int):
-                    param_type = "INT64"
-                elif isinstance(value, float):
-                    param_type = "FLOAT64"
-                elif isinstance(value, bool):
-                    param_type = "BOOL"
-                elif isinstance(value, (datetime, pd.Timestamp)):
-                    param_type = "TIMESTAMP"
-                
+                param_type = infer_bigquery_param_type(value)
                 query_params.append(
                     bigquery.ScalarQueryParameter(name, param_type, value)
                 )
-            
-            job_config = bigquery.QueryJobConfig()
-            job_config.query_parameters = query_params
+
+            custom_query_job_config = bigquery.QueryJobConfig()
+            custom_query_job_config.query_parameters = query_params
 
             logger.debug(f"Executing query with parameters: {query_params}")
 
-            query_job = self.bq_client.query(query, job_config=job_config)
+            query_job = self.bq_client.query(query, job_config=custom_query_job_config)
             results = query_job.result()
             
             # Convert to desired output format
@@ -668,12 +680,12 @@ class BigQuerySampleOperations:
             """
             
             # Configure and execute query
-            job_config = bigquery.QueryJobConfig()
-            job_config.query_parameters = [
+            unique_submissions_job_config = bigquery.QueryJobConfig()
+            unique_submissions_job_config.query_parameters = [
                 bigquery.ScalarQueryParameter("config_id", "STRING", config_id)
             ]
-            
-            query_job = self.bq_client.query(query, job_config=job_config)
+
+            query_job = self.bq_client.query(query, job_config=unique_submissions_job_config)
             results = query_job.result()
             
             # Extract submission IDs
@@ -704,12 +716,12 @@ class BigQuerySampleOperations:
                 return pd.DataFrame()  # Return empty DataFrame if no entity names provided
                 
             # Get config identifier field
-            config_identifier_field = self.get_config_identifier_field()
+            config_identifier_field = self.data_processor.get_config_identifier_field()
             if not config_identifier_field:
                 raise ValueError("No config_identifier field defined in sample schema")
             
             # Get sample identifier field
-            sample_identifier_field = self.get_sample_identifier_field()
+            sample_identifier_field = self.data_processor.get_sample_identifier_field()
             if not sample_identifier_field:
                 raise ValueError("No sample_identifier field defined in sample schema")
             

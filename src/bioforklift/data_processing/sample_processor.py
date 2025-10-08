@@ -67,7 +67,7 @@ class SampleDataProcessor:
             logger.info("Empty DataFrame provided, returning as-is")
             return dataframe
 
-        # Data transformation pipeline
+        # https://medium.com/@amit25173/what-is-pandas-pipe-and-why-should-you-use-it-ec62281f6a15
         processed_df = (
             dataframe
             .pipe(self._apply_entity_type_mapping, config)
@@ -112,9 +112,11 @@ class SampleDataProcessor:
 
         sample_identifier_field = self.get_sample_identifier_field()
         if not sample_identifier_field:
-            return dataframe
+            raise ValueError("No field marked as sample_identifier in schema, sample processing requires sample_identifier marked")
 
-        # Check if column mappings already handle this
+        # Check if column mappings are defined for the sample_identifier_field
+        # Considering use_field_name as a fallback for renaming, but inherently a column mapping
+        # This allows for flexibility in how the sample identifier is define
         if sample_identifier_field in self.field_attributes:
             attrs = self.field_attributes[sample_identifier_field]
             if "column_mappings" in attrs or attrs.get("use_field_name"):
@@ -124,11 +126,11 @@ class SampleDataProcessor:
                 )
                 return dataframe
 
-        # Map entity:entity_type_id to sample_identifier (in place)
+        # Map entity:entity_type_id to sample_identifier
         entity_column = f"entity:{entity_type}_id"
         if entity_column in dataframe.columns:
             logger.info(f"Mapping {entity_column} to {sample_identifier_field}")
-            dataframe.rename(columns={entity_column: sample_identifier_field}, inplace=True)
+            dataframe = dataframe.rename(columns={entity_column: sample_identifier_field})
         else:
             logger.debug(f"Column '{entity_column}' not found for entity type mapping")
 
@@ -173,32 +175,56 @@ class SampleDataProcessor:
         return dataframe
 
     def _map_field_names(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Map source field names to BigQuery field names using column_mappings attributes"""
+        """
+        Map source field names to BigQuery field names using column_mappings attributes.
+
+        When multiple BigQuery fields map to the same Terra source column, the value is
+        copied to all target fields (e.g., sample_id -> both sample_name and specimen_name).
+        """
+        columns_to_copy = {}
+
+        # Build complete mapping of source columns to target fields
         for field_name, attrs in self.field_attributes.items():
             if "column_mappings" in attrs:
                 source_fields = attrs["column_mappings"]
                 if isinstance(source_fields, str):
                     source_fields = [source_fields]
 
-                # Try each possible source field
+                # Find first available source field
                 for source_field in source_fields:
                     if source_field in dataframe.columns:
-                        dataframe.rename(columns={source_field: field_name}, inplace=True)
-                        logger.debug(f"Mapped column '{source_field}' to '{field_name}'")
+                        if source_field not in columns_to_copy:
+                            columns_to_copy[source_field] = []
+                        columns_to_copy[source_field].append(field_name)
+                        logger.debug(f"Mapping '{source_field}' -> '{field_name}'")
                         break
+
+        # Apply the mappings
+        schema_fields = self.get_schema_fields()
+
+        for source_col, target_fields in columns_to_copy.items():
+            for target_field in target_fields:
+                dataframe[target_field] = dataframe[source_col]
+
+            # Only drop the source column if it's NOT in the BigQuery schema
+            if source_col not in schema_fields:
+                dataframe = dataframe.drop(columns=[source_col])
+                logger.debug(f"Dropped source column '{source_col}' (not in schema)")
+            else:
+                logger.debug(f"Keeping source column '{source_col}' (present in schema)")
 
         return self._add_missing_schema_columns(dataframe)
 
     def _filter_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Keep only columns that are defined in the schema"""
-        schema_fields = self._get_schema_fields()
-        extra_columns = set(dataframe.columns) - set(schema_fields)
+        schema_fields = self.get_schema_fields()
+        artifact_columns = set(dataframe.columns) - set(schema_fields)
 
-        if extra_columns:
-            logger.debug(f"Filtering out extra columns: {extra_columns}")
-            dataframe.drop(columns=extra_columns, inplace=True)
+        if artifact_columns:
+            logger.debug(f"Filtering out artifact columns: {artifact_columns}")
+            dataframe = dataframe.drop(columns=artifact_columns)
         else:
-            logger.debug("No extra columns to filter out")
+            logger.debug("No artifact columns to filter out")
 
         return dataframe
 
@@ -208,6 +234,8 @@ class SampleDataProcessor:
         existing_identifiers: Set[str]
     ) -> pd.DataFrame:
         """Remove rows with existing sample identifiers"""
+        
+        # Base case: no existing identifiers provided
         if not existing_identifiers:
             logger.debug("No existing identifiers provided, skipping duplicate filtering")
             return dataframe
@@ -358,22 +386,33 @@ class SampleDataProcessor:
             # Primary key fields get UUIDs
             if attrs.get("primary_key"):
                 system_values[field_name] = [str(uuid.uuid4()) for _ in range(row_count)]
-            # created_at gets current timestamp
+            # created_at gets current datetime
             elif field_name == "created_at":
                 system_values[field_name] = [current_datetime] * row_count
 
         return system_values
 
     def _coerce_dataframe_types(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Coerce DataFrame column types to match schema definition"""
-        logger.debug("Coercing DataFrame types to match schema")
-
+        """
+        Coerce DataFrame column types to match schema definition
+        Only converts columns where types don't already align
+        
+        Args:
+            dataframe: pandas DataFrame to coerce
+            
+        Returns:
+            DataFrame with coerced types
+        """
+        logger.info("Coercing DataFrame types to match schema")
+        
         if dataframe.empty:
             return dataframe
-
+        
+        coerced_df = dataframe.copy()
+        
         # Create mapping from field name to field type
         field_type_map = {field.name: field.field_type for field in self.schema}
-
+        
         # Map pandas dtypes to corresponding BigQuery types for comparison
         pandas_to_bq_type_map = {
             'int64': 'INTEGER',
@@ -382,46 +421,69 @@ class SampleDataProcessor:
             'bool': 'BOOLEAN',
             'datetime64[ns]': 'DATETIME',
             'datetime64[ns, UTC]': 'DATETIME',
-            'object': 'STRING',
-            'string': 'STRING'
+            'object': 'STRING',  # Most string columns will be object type
+            'string': 'STRING'   # Some versions of pandas use string dtype
         }
-
+        
         # Iterate through each column and attempt type conversion only if needed
-        for column in dataframe.columns:
+        for column in coerced_df.columns:
             if column in field_type_map:
                 bq_type = field_type_map[column]
-                pandas_dtype = str(dataframe[column].dtype)
-
+                pandas_dtype = str(coerced_df[column].dtype)
+                
                 # Check if conversion is needed
                 needs_conversion = True
-
+                
+                # Compare current pandas dtype with expected BigQuery type
                 if pandas_dtype in pandas_to_bq_type_map:
                     pandas_equivalent_bq_type = pandas_to_bq_type_map[pandas_dtype]
-                    if pandas_equivalent_bq_type == bq_type:
+                    
+                    # Skip conversion if types already align
+                    if (pandas_equivalent_bq_type == bq_type or
+                        (pandas_equivalent_bq_type == 'INTEGER' and bq_type == 'INT64') or
+                        (pandas_equivalent_bq_type == 'FLOAT' and bq_type == 'FLOAT64') or
+                        (pandas_equivalent_bq_type == 'BOOLEAN' and bq_type == 'BOOL') or
+                        (pandas_equivalent_bq_type == 'DATETIME' and bq_type == 'TIMESTAMP')):
                         needs_conversion = False
-
+                        logger.debug(f"Column {column} already has compatible type {pandas_dtype}, skipping conversion")
+                
+                if pandas_dtype == 'object': 
+                    # Object types can be mixed, so we may still need conversion
+                    needs_conversion = True
+                
+                # Only attempt conversion if needed
                 if needs_conversion:
-                    logger.debug(f"Converting column '{column}' from {pandas_dtype} to {bq_type}")
-
                     try:
-                        if bq_type == "INTEGER":
-                            dataframe[column] = pd.to_numeric(dataframe[column], errors='coerce').astype('Int64')
-                        elif bq_type == "FLOAT":
-                            dataframe[column] = pd.to_numeric(dataframe[column], errors='coerce')
-                        elif bq_type == "BOOLEAN":
-                            dataframe[column] = dataframe[column].astype('boolean')
-                        elif bq_type == "DATETIME":
-                            dataframe[column] = pd.to_datetime(dataframe[column], errors='coerce')
-                        elif bq_type == "STRING":
-                            dataframe[column] = dataframe[column].astype('string')
+                        if bq_type == 'INTEGER' or bq_type == 'INT64':
+                            # Convert to nullable integer type
+                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
+                            coerced_df[column] = coerced_df[column].astype('Int64')  # pandas nullable integer type
+                        elif bq_type == 'FLOAT' or bq_type == 'FLOAT64':
+                            coerced_df[column] = pd.to_numeric(coerced_df[column], errors='coerce')
+                        elif bq_type == 'BOOLEAN' or bq_type == 'BOOL':
+                            coerced_df[column] = coerced_df[column].map({'true': True, 'false': False})
+                        elif bq_type == 'DATE':
+                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce').dt.date
+                        elif bq_type == 'DATETIME' or bq_type == 'TIMESTAMP':
+                            coerced_df[column] = pd.to_datetime(coerced_df[column], errors='coerce')
+                        elif bq_type == 'STRING':
+                            # Convert to string while preserving None as None (not string "None")
+                            # This ensures NULL values in BigQuery instead of the string "None"
+                            coerced_df[column] = coerced_df[column].apply(
+                                lambda x: str(x) if pd.notna(x) else None
+                            )
+                        
+                        logger.debug(f"Converted column {column} from {pandas_dtype} to {bq_type}")
                     except Exception as e:
-                        logger.warning(f"Failed to convert column '{column}' to {bq_type}: {e}")
-
-        return dataframe
+                        # Log error but continue with other columns, will fail downstream if necessary
+                        logger.error(f"FAILED to convert column {column} to {bq_type}: {str(e)}", exc_info=True)
+        
+        return coerced_df
 
     def _add_missing_schema_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
-        """Add any missing schema columns to DataFrame with null values"""
-        schema_fields = self._get_schema_fields()
+        """Add any missing schema columns to DataFrame with null values
+           Where nullable fields are added later on"""
+        schema_fields = self.get_schema_fields()
 
         # Add any missing columns with None/null values
         for field in schema_fields:
@@ -431,7 +493,7 @@ class SampleDataProcessor:
 
         return dataframe
 
-    def _get_schema_fields(self) -> List[str]:
+    def get_schema_fields(self) -> List[str]:
         """Get list of field names defined in the schema"""
         return [field.name for field in self.schema]
 
@@ -445,7 +507,7 @@ class SampleDataProcessor:
     def get_config_identifier_field(self) -> Optional[str]:
         """Get the field marked as config_identifier"""
         for field_name, attrs in self.field_attributes.items():
-            if attrs.get("config_identifier"):
+            if attrs.get("config_identifier") or attrs.get("configuration_identifier") or attrs.get("config_id"):
                 return field_name
         return None
 
@@ -464,3 +526,11 @@ class SampleDataProcessor:
             for field_name, attrs in self.field_attributes.items()
             if attrs.get('inherit_from_config')
         }
+        
+    def get_sync_fields(self) -> List[str]:
+        """Get the field marked as sync_field"""
+        return [
+            field_name
+            for field_name, attrs in self.field_attributes.items()
+            if attrs.get("sync_field")
+        ]

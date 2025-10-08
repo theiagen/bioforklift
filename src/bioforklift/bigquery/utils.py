@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
+from datetime import datetime, date
 import pandas as pd
 import yaml
 from google.cloud.bigquery import SchemaField
@@ -9,6 +10,38 @@ logger = setup_logger(__name__)
 
 # Utils mostly for handling schema and data transformations between BigQuery / yaml / pandas
 # This is a good place to put functions that don't fit into the main BigQueryClient class
+
+
+def infer_bigquery_param_type(value: Any) -> str:
+    """
+    Infer BigQuery parameter type from Python runtime value.
+
+    Used for building parameterized queries with proper type casting.
+
+    Args:
+        value: Python value to infer type from
+
+    Returns:
+        BigQuery parameter type string (e.g., "STRING", "INT64", "BOOL")
+    """
+    # Check boolean before int 
+    if isinstance(value, bool):
+        return "BOOL"
+    elif isinstance(value, int):
+        return "INT64"
+    elif isinstance(value, float):
+        return "FLOAT64"
+    elif isinstance(value, (datetime, pd.Timestamp)):
+        return "DATETIME"
+    elif isinstance(value, date):
+        return "DATE"
+    elif isinstance(value, (list, tuple)):
+        return "ARRAY"
+    elif value is None:
+        return "STRING"
+    else:
+        # Default to STRING for str and other types
+        return "STRING"
 
 
 def parse_field_type(field_type: str) -> str:
