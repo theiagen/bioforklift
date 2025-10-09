@@ -1,6 +1,7 @@
 import re
 import uuid
 from typing import Optional, Dict, Any, List, Set
+from datetime import datetime
 import pandas as pd
 from .utils import load_schema_from_yaml
 from bioforklift.forklift_logging import setup_logger
@@ -77,6 +78,7 @@ class SampleDataProcessor:
             .pipe(self._validate_sequence_files)
             .pipe(self._validate_field_patterns)
             .pipe(self._add_system_values)
+            .pipe(self._process_date_formats)
             .pipe(self._coerce_dataframe_types)
         )
 
@@ -293,17 +295,17 @@ class SampleDataProcessor:
     def _validate_field_patterns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
         Validate DataFrame fields against regex patterns defined in schema.
-        Removes rows where field values don't match their defined patterns.
+        Removes rows where field values don't match their defined accepted_patterns.
         """
         try:
             if dataframe.empty:
                 return dataframe
 
-            # Get fields with pattern attributes
+            # Get fields with accepted_pattern attributes
             pattern_fields = {
-                field_name: attrs.get('pattern')
+                field_name: attrs.get('accepted_pattern')
                 for field_name, attrs in self.field_attributes.items()
-                if 'pattern' in attrs and attrs['pattern']
+                if 'accepted_pattern' in attrs and attrs['accepted_pattern']
             }
 
             if not pattern_fields:
@@ -332,7 +334,7 @@ class SampleDataProcessor:
                         logger.debug(f"No non-null values for pattern field '{field_name}', skipping")
                         continue
 
-                    # Find rows that don't match the pattern
+                    # Find rows that don't match the accepted_pattern - for regex always cast to string
                     invalid_mask = ~field_data.astype(str).str.match(regex, na=False)
                     invalid_indices = field_data[invalid_mask].index
 
@@ -343,7 +345,6 @@ class SampleDataProcessor:
                             for value in invalid_values[:5]
                         ])
 
-                        # Remove invalid rows
                         dataframe = dataframe.drop(index=invalid_indices)
                         logger.warning(f"Removed {len(invalid_indices)} rows with invalid '{field_name}' values")
 
@@ -390,6 +391,169 @@ class SampleDataProcessor:
                 system_values[field_name] = [current_datetime] * row_count
 
         return system_values
+
+    def _process_date_formats(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """
+        Validate and coerce date fields according to their date_format specification.
+
+        This processes fields that have a date_format attribute, validating that values
+        can be parsed as dates and then coercing them to the specified format.
+
+        Args:
+            dataframe: Input DataFrame
+
+        Returns:
+            DataFrame with validated and coerced date values in the specified format
+        """
+        if dataframe.empty:
+            return dataframe
+
+        # Get fields with date_format attributes
+        date_format_fields = {}
+        for field_def in self.schema_definition.fields:
+            if field_def.attributes.date_format:
+                date_format_fields[field_def.name] = field_def.attributes
+
+        if not date_format_fields:
+            logger.debug("No date_format fields defined in schema")
+            return dataframe
+
+        logger.info(f"Processing date formats for fields: {list(date_format_fields.keys())}")
+
+        initial_count = len(dataframe)
+        validation_failures = []
+
+        for field_name, attributes in date_format_fields.items():
+            if field_name not in dataframe.columns:
+                logger.debug(f"Date format field '{field_name}' not present in data, skipping")
+                continue
+
+            date_format = attributes.date_format
+            logger.debug(f"Processing field '{field_name}' with date_format '{date_format}'")
+
+            # Get non-null values for validation and coercion
+            field_data = dataframe[field_name].dropna()
+
+            if field_data.empty:
+                logger.debug(f"No non-null values for date field '{field_name}', skipping")
+                continue
+
+            # Validate, parse, and coerce each value
+            invalid_indices = []
+            coerced_values = {}
+
+            for idx, value in field_data.items():
+                try:
+                    # First validate the value can be parsed
+                    if not attributes.validate_date_value(value):
+                        invalid_indices.append(idx)
+                        validation_failures.append(
+                            f"Field '{field_name}': '{value}' doesn't match date format '{date_format}'"
+                        )
+                        continue
+
+                    # Parse the date value to a datetime object
+                    parsed_date = self._parse_date_value(value, date_format)
+
+                    if parsed_date is None:
+                        invalid_indices.append(idx)
+                        validation_failures.append(
+                            f"Field '{field_name}': '{value}' could not be parsed as date"
+                        )
+                        continue
+
+                    # Coerce to the target format
+                    coerced_value = self._format_date_value(parsed_date, date_format)
+                    coerced_values[idx] = coerced_value
+
+                except Exception as exc:
+                    logger.debug(f"Error processing date value '{value}' for field '{field_name}': {e}")
+                    invalid_indices.append(idx)
+                    validation_failures.append(
+                        f"Field '{field_name}': '{value}' processing error: {str(exc)}"
+                    )
+
+            # Apply coerced values
+            if coerced_values:
+                for idx, coerced_value in coerced_values.items():
+                    dataframe.at[idx, field_name] = coerced_value
+                logger.info(f"Coerced {len(coerced_values)} values for field '{field_name}' to format '{date_format}'")
+
+            # Remove invalid rows
+            if invalid_indices:
+                dataframe = dataframe.drop(index=invalid_indices)
+                logger.warning(
+                    f"Removed {len(invalid_indices)} rows with invalid '{field_name}' "
+                    f"date format (expected: {date_format})"
+                )
+
+        filtered_count = initial_count - len(dataframe)
+        if filtered_count > 0:
+            logger.info(f"Date format validation filtered out {filtered_count} rows")
+            if validation_failures:
+                logger.debug(f"Date format validation failures: {validation_failures[:10]}")
+
+        return dataframe
+
+    def _parse_date_value(self, value: Any, date_format: str) -> Optional[datetime]:
+        """
+        Parse a date value into a datetime object.
+
+        Args:
+            value: The value to parse (string or date-like)
+            date_format: The expected date format
+
+        Returns:
+            Parsed datetime object or None if parsing fails
+        """
+        str_value = str(value)
+
+        try:
+            if date_format in ('ISO 8601', 'ISO8601', 'RFC 3339', 'RFC3339'):
+                # Parse ISO 8601 / RFC 3339 formats
+                return datetime.fromisoformat(str_value.replace('Z', '+00:00'))
+            elif date_format == 'YYYY-MM-DD':
+                return datetime.strptime(str_value, '%Y-%m-%d')
+            elif date_format == 'MM/DD/YYYY':
+                return datetime.strptime(str_value, '%m/%d/%Y')
+            elif date_format == 'DD/MM/YYYY':
+                return datetime.strptime(str_value, '%d/%m/%Y')
+            elif date_format == 'YYYY/MM/DD':
+                return datetime.strptime(str_value, '%Y/%m/%d')
+            else:
+                logger.warning(f"Unsupported date format for parsing: {date_format}")
+                return None
+        except (ValueError, AttributeError):
+            return None
+
+    def _format_date_value(self, dt: datetime, date_format: str) -> str:
+        """
+        Format a datetime object into the specified date format string.
+
+        Args:
+            dt: The datetime object to format
+            date_format: The target date format
+
+        Returns:
+            Formatted date string
+        """
+        if date_format in ('ISO 8601', 'ISO8601', 'RFC 3339', 'RFC3339'):
+            # Return ISO 8601 format
+            return dt.isoformat()
+        elif '%' in date_format:
+            # Custom strftime format
+            return dt.strftime(date_format)
+        elif date_format == 'YYYY-MM-DD':
+            return dt.strftime('%Y-%m-%d')
+        elif date_format == 'MM/DD/YYYY':
+            return dt.strftime('%m/%d/%Y')
+        elif date_format == 'DD/MM/YYYY':
+            return dt.strftime('%d/%m/%Y')
+        elif date_format == 'YYYY/MM/DD':
+            return dt.strftime('%Y/%m/%d')
+        else:
+            # Default to ISO format
+            return dt.isoformat()
 
     def _coerce_dataframe_types(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """

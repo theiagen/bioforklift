@@ -1,6 +1,7 @@
 from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 import re
+from datetime import datetime
 
 
 class FieldAttributes(BaseModel):
@@ -24,7 +25,7 @@ class FieldAttributes(BaseModel):
     )
 
     # Validation attributes
-    pattern: Optional[str] = Field(
+    accepted_pattern: Optional[str] = Field(
         default=None,
         description="Regex pattern for field value validation"
     )
@@ -48,8 +49,12 @@ class FieldAttributes(BaseModel):
         default=False,
         description="Display this field in alerts"
     )
+    date_format: Optional[str] = Field(
+        default=None,
+        description="Date format specification for date/string coercion (e.g., 'ISO 8601')"
+    )
 
-    @field_validator('pattern')
+    @field_validator('accepted_pattern')
     @classmethod
     def validate_pattern(cls, v: Optional[str]) -> Optional[str]:
         """Validate that pattern is a valid regex."""
@@ -69,6 +74,71 @@ class FieldAttributes(BaseModel):
         if isinstance(v, str):
             return [v]
         return v
+
+    @field_validator('date_format')
+    @classmethod
+    def validate_date_format(cls, v: Optional[str]) -> Optional[str]:
+        """Validate that date_format is a recognized format."""
+        if v is None:
+            return None
+
+        # Define supported date format identifiers
+        supported_formats = {
+            'ISO 8601',
+            'ISO8601',
+            'RFC 3339',
+            'RFC3339',
+            'YYYY-MM-DD',
+            'MM/DD/YYYY',
+            'DD/MM/YYYY',
+            'YYYY/MM/DD',
+        }
+
+        # Only exact matches are allowed for now
+        if v in supported_formats in v:
+            return v
+
+        raise ValueError(
+            f"Unsupported date format: {v}. "
+            f"Supported formats: {', '.join(sorted(supported_formats))} "
+        )
+
+    def validate_date_value(self, value: Any) -> bool:
+        """
+        Validate that a value can be parsed as a date according to this field's date_format.
+
+        Returns True if the value is valid for this date format, False otherwise.
+        """
+        if self.date_format is None:
+            return True
+
+        if value is None or value == '':
+            return True
+
+        # Convert to string if not already
+        str_value = str(value)
+
+        try:
+            if self.date_format in ('ISO 8601', 'ISO8601', 'RFC 3339', 'RFC3339'):
+                # Try ISO 8601 / RFC 3339 formats
+                datetime.fromisoformat(str_value.replace('Z', '+00:00'))
+                return True
+            elif self.date_format == 'YYYY-MM-DD':
+                datetime.strptime(str_value, '%Y-%m-%d')
+                return True
+            elif self.date_format == 'MM/DD/YYYY':
+                datetime.strptime(str_value, '%m/%d/%Y')
+                return True
+            elif self.date_format == 'DD/MM/YYYY':
+                datetime.strptime(str_value, '%d/%m/%Y')
+                return True
+            elif self.date_format == 'YYYY/MM/DD':
+                datetime.strptime(str_value, '%Y/%m/%d')
+                return True
+            else:
+                return False
+        except (ValueError, AttributeError):
+            return False
 
     def is_identifier_field(self) -> bool:
         """Check if this field is any type of identifier."""
