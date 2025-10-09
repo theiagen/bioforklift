@@ -18,7 +18,7 @@ class BigQuery:
         project: str,
         dataset: str,
         credentials: Optional[Dict] = None,
-        location: str = "us-central1",
+        location: Optional[str] = "us-central1",
     ):
         """
         Initialize BigQuery interface
