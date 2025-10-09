@@ -12,7 +12,6 @@ from bioforklift.file_transfers import GCSTransferClient
 from bioforklift.terra import Terra
 from bioforklift.data_processing.config_processor import ConfigProcessor
 from bioforklift.data_processing.sample_processor import SampleDataProcessor
-from bioforklift.data_processing.utils import drop_system_value_columns
 from bioforklift.terra.models import WorkflowConfig
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.terra2bq.models import (
@@ -1532,7 +1531,8 @@ class Terra2BQ:
                     uploaded_count=0,
                 )
 
-            upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
+            # Prepare DataFrame for upload by removing system columns
+            upload_df = self.sample_processor.drop_system_columns(samples_df)
             logger.info(f"Prepared {len(upload_df)} samples for upload to Terra")
 
             upload_result = self.upload_to_terra(config, samples_df, upload_df)
@@ -1557,7 +1557,7 @@ class Terra2BQ:
                     uploaded_count=upload_result.uploaded_count,
                 )
 
-            # 3. Get latest sample data after upload
+            # Get latest sample data after upload
             submission_samples = self.get_samples_for_submission(
                 config, set_name=set_name
             )
@@ -1571,7 +1571,7 @@ class Terra2BQ:
                     uploaded_count=upload_result.uploaded_count,
                 )
 
-            # 4. Submit workflow
+            # Submit workflow for the created set
             submission_result = self.submit_workflow(
                 config, set_name, submission_samples
             )

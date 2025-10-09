@@ -527,7 +527,7 @@ class SampleDataProcessor:
       self, 
       field_name: str, 
       available_columns: List[str]
-  ) -> Optional[str]:
+    ) -> Optional[str]:
       """
       Find which source column maps to this BigQuery field.
       
@@ -549,3 +549,35 @@ class SampleDataProcessor:
               return source_col
 
       return None
+
+    def drop_system_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        """
+        Drop columns marked as system_value from DataFrame.
+
+        System value columns are auto-generated (like UUIDs, timestamps) and should
+        be removed before syncing data back to Terra or other external systems.
+
+        Args:
+            dataframe: DataFrame containing the data
+
+        Returns:
+            DataFrame with system_value columns removed
+        """
+        logger.info("Dropping columns marked as system_value from DataFrame")
+
+        # Find columns marked as system_value
+        system_columns = [
+            col
+            for col, attrs in self.field_attributes.items()
+            if attrs.get("system_value") is True
+        ]
+
+        # Remove system_value columns that are present in the dataframe
+        columns_to_drop = [col for col in system_columns if col in dataframe.columns]
+
+        if columns_to_drop:
+            logger.debug(f"Dropping system columns: {columns_to_drop}")
+            return dataframe.drop(columns=columns_to_drop)
+
+        logger.debug("No system columns to drop")
+        return dataframe

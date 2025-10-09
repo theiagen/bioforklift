@@ -1,5 +1,4 @@
-from pathlib import Path
-from typing import Dict, Any, List, Union
+from typing import Dict, Any
 from datetime import datetime, date
 import pandas as pd
 import yaml
@@ -189,56 +188,3 @@ def load_schema_from_yaml(yaml_path: str) -> Dict[str, Any]:
 
     # Return both the schema and custom attributes for downstream use
     return {"schema": schema, "field_attributes": field_attributes}
-
-
-def drop_system_value_columns(data: pd.DataFrame, schema_info: Any) -> pd.DataFrame:
-    """
-    Drop columns marked as system_value from a pandas dataframe
-
-    Args:
-        dataframe: pandas DataFrame containing the data
-        schema_info: Can be one of:
-            - Path to YAML schema file (str)
-            - Full schema dictionary from load_schema_from_yaml
-            - Field attributes dictionary
-
-    Returns:
-        dataframe with system_value columns removed
-    """
-    # Extract field attributes based on input type
-    logger.info("Dropping columns marked as system_value from DataFrame")
-    field_attributes = {}
-
-    if isinstance(schema_info, str | Path):
-        # Assume it's a path to a YAML file - solidfy to Path type in the future
-        schema_result = load_schema_from_yaml(schema_info)
-        field_attributes = schema_result["field_attributes"]
-    elif isinstance(schema_info, dict):
-        if "field_attributes" in schema_info:
-            # Get full schema dictionary from load_schema_from_yaml
-            field_attributes = schema_info["field_attributes"]
-        else:
-            # Assume it's already a field_attributes dictionary - maybe from a previous call
-            field_attributes = schema_info
-    else:
-        logger.error(
-            "schema_info must be a YAML file path, schema dictionary, or field attributes dictionary"
-        )
-        raise TypeError(
-            "schema_info must be a YAML file path, schema dictionary, or field attributes dictionary"
-        )
-
-    # Find columns marked as system_value
-    system_columns = [
-        col
-        for col, attrs in field_attributes.items()
-        if "system_value" in attrs and attrs["system_value"] is True
-    ]
-
-    # Remove system_value columns that are present in the dataframe
-    columns_to_drop = [col for col in system_columns if col in data.columns]
-    if columns_to_drop:
-        return data.drop(columns=columns_to_drop)
-
-    # Return original dataframe if no columns to drop
-    return data
