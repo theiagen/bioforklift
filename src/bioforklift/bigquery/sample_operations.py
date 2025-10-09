@@ -1,5 +1,4 @@
 from typing import Optional, Dict, Any, List, Union
-from datetime import datetime
 import pandas as pd
 from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
