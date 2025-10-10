@@ -1,7 +1,6 @@
 from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 import re
-from datetime import datetime
 
 
 class FieldAttributes(BaseModel):
@@ -82,7 +81,8 @@ class FieldAttributes(BaseModel):
         if v is None:
             return None
 
-        # Define supported date format identifiers
+        # Define supported date format identifiers - can be expanded as needed, but these are knowns
+        # from our lab partners
         supported_formats = {
             'ISO 8601',
             'ISO8601',
@@ -94,51 +94,15 @@ class FieldAttributes(BaseModel):
             'YYYY/MM/DD',
         }
 
-        # Only exact matches are allowed for now
-        if v in supported_formats in v:
+        # Allow either exact match or strftime format strings
+        if v in supported_formats or '%' in v:
             return v
 
         raise ValueError(
             f"Unsupported date format: {v}. "
             f"Supported formats: {', '.join(sorted(supported_formats))} "
+            f"or a valid strftime format string (containing '%')"
         )
-
-    def validate_date_value(self, value: Any) -> bool:
-        """
-        Validate that a value can be parsed as a date according to this field's date_format.
-
-        Returns True if the value is valid for this date format, False otherwise.
-        """
-        if self.date_format is None:
-            return True
-
-        if value is None or value == '':
-            return True
-
-        # Convert to string if not already
-        str_value = str(value)
-
-        try:
-            if self.date_format in ('ISO 8601', 'ISO8601', 'RFC 3339', 'RFC3339'):
-                # Try ISO 8601 / RFC 3339 formats
-                datetime.fromisoformat(str_value.replace('Z', '+00:00'))
-                return True
-            elif self.date_format == 'YYYY-MM-DD':
-                datetime.strptime(str_value, '%Y-%m-%d')
-                return True
-            elif self.date_format == 'MM/DD/YYYY':
-                datetime.strptime(str_value, '%m/%d/%Y')
-                return True
-            elif self.date_format == 'DD/MM/YYYY':
-                datetime.strptime(str_value, '%d/%m/%Y')
-                return True
-            elif self.date_format == 'YYYY/MM/DD':
-                datetime.strptime(str_value, '%Y/%m/%d')
-                return True
-            else:
-                return False
-        except (ValueError, AttributeError):
-            return False
 
     def is_identifier_field(self) -> bool:
         """Check if this field is any type of identifier."""

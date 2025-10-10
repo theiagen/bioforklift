@@ -444,14 +444,6 @@ class SampleDataProcessor:
 
             for idx, value in field_data.items():
                 try:
-                    # First validate the value can be parsed
-                    if not attributes.validate_date_value(value):
-                        invalid_indices.append(idx)
-                        validation_failures.append(
-                            f"Field '{field_name}': '{value}' doesn't match date format '{date_format}'"
-                        )
-                        continue
-
                     # Parse the date value to a datetime object
                     parsed_date = self._parse_date_value(value, date_format)
 
@@ -467,7 +459,7 @@ class SampleDataProcessor:
                     coerced_values[idx] = coerced_value
 
                 except Exception as exc:
-                    logger.debug(f"Error processing date value '{value}' for field '{field_name}': {e}")
+                    logger.debug(f"Error processing date value '{value}' for field '{field_name}': {exc}")
                     invalid_indices.append(idx)
                     validation_failures.append(
                         f"Field '{field_name}': '{value}' processing error: {str(exc)}"
@@ -499,32 +491,63 @@ class SampleDataProcessor:
         """
         Parse a date value into a datetime object.
 
+        This method accepts dates in various input formats and parses them flexibly,
+        regardless of the target date_format. The target format is only used for
+        output formatting in _format_date_value.
+
         Args:
             value: The value to parse (string or date-like)
-            date_format: The expected date format
+            date_format: The target date format (used for context, not strict parsing)
 
         Returns:
             Parsed datetime object or None if parsing fails
         """
-        str_value = str(value)
-
-        try:
-            if date_format in ('ISO 8601', 'ISO8601', 'RFC 3339', 'RFC3339'):
-                # Parse ISO 8601 / RFC 3339 formats
-                return datetime.fromisoformat(str_value.replace('Z', '+00:00'))
-            elif date_format == 'YYYY-MM-DD':
-                return datetime.strptime(str_value, '%Y-%m-%d')
-            elif date_format == 'MM/DD/YYYY':
-                return datetime.strptime(str_value, '%m/%d/%Y')
-            elif date_format == 'DD/MM/YYYY':
-                return datetime.strptime(str_value, '%d/%m/%Y')
-            elif date_format == 'YYYY/MM/DD':
-                return datetime.strptime(str_value, '%Y/%m/%d')
-            else:
-                logger.warning(f"Unsupported date format for parsing: {date_format}")
-                return None
-        except (ValueError, AttributeError):
+        if pd.isna(value) or value == '':
             return None
+
+        str_value = str(value).strip()
+
+        # Try common date formats in order of likelihood
+        date_formats_to_try = [
+            '%Y-%m-%d',           # 2024-01-15
+            '%m/%d/%Y',           # 01/15/2024
+            '%d/%m/%Y',           # 15/01/2024
+            '%Y/%m/%d',           # 2024/01/15
+            '%Y-%m-%d %H:%M:%S',  # 2024-01-15 10:30:45
+            '%m/%d/%Y %H:%M:%S',  # 01/15/2024 10:30:45
+            '%Y-%m-%dT%H:%M:%S',  # ISO format with time
+            '%Y-%m-%dT%H:%M:%SZ', # ISO format with Z
+        ]
+
+        # First, try to parse using the target format if it's a strftime pattern
+        if '%' in date_format:
+            try:
+                return datetime.strptime(str_value, date_format)
+            except ValueError:
+                pass  # Continue to try other formats
+
+        # Try ISO format parsing (handles various ISO 8601 formats)
+        try:
+            return datetime.fromisoformat(str_value.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            pass
+
+        # Try each common format
+        for fmt in date_formats_to_try:
+            try:
+                return datetime.strptime(str_value, fmt)
+            except ValueError:
+                continue
+
+        # Last resort: use pandas flexible date parsing
+        try:
+            parsed = pd.to_datetime(str_value, errors='coerce')
+            if pd.notna(parsed):
+                return parsed.to_pydatetime()
+        except Exception:
+            pass
+
+        return None
 
     def _format_date_value(self, dt: datetime, date_format: str) -> str:
         """
