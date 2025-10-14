@@ -13,17 +13,11 @@ logger = setup_logger(__name__)
 
 class SampleDataProcessor:
     """
-    Handles all data processing operations for sample data.
+    Processor for sample metadata DataFrames based on a defined schema.
 
-    This class is responsible for:
-    - Field mapping and column filtering
-    - Pattern validation
-    - Sequence file validation
-    - System value generation
-    - Type coercion
-    - Duplicate filtering
+    This class provides methods to process sample metadata DataFrames according to the defined schema.
+    It includes functionality for mapping fields, validating data, adding system values, and more.
     """
-
     def __init__(self, schema_yaml: str):
         """
         Initialize the processor with schema information.
@@ -180,7 +174,9 @@ class SampleDataProcessor:
         Map source field names to BigQuery field names using column_mappings attributes.
 
         When multiple BigQuery fields map to the same Terra source column, the value is
-        copied to all target fields (e.g., sample_id -> both sample_name and specimen_name).
+        copied to all target fields.
+        
+        Ex: If both entity:specimen_id and entity:sample_id map to 'sample_id' column.
         """
         columns_to_copy = {}
 
