@@ -71,21 +71,13 @@ class BigQueryConfigOperations:
 
         # Insert into BigQuery
         try:
-            df = pd.DataFrame([processed_config])
-            job_config = LoadJobConfig()
-            job_config.schema = self.schema
-            job_config.write_disposition = "WRITE_APPEND"
-
-            job = self.bq_client.load_table_from_dataframe(
-                df, self.table_name, job_config=job_config, location=self.location
-            )
-            job.result()
+            _ = self.bq_client.insert_rows(self.table_name, [processed_config])
 
             logger.info(f"Created config with ID: {processed_config.get('id')}")
             return processed_config
 
-        except Exception as e:
-            logger.error(f"Error creating config: {e}")
+        except Exception as exc:
+            logger.error(f"Error creating config: {exc}")
             raise
 
     def create_configs_from_directory(
@@ -394,6 +386,7 @@ class BigQueryConfigOperations:
 
             # Convert to DataFrame
             load_df = pd.DataFrame(configs_to_load)
+            load_df.to_csv("debug_configs_to_load.csv", index=False)  # Debug output
 
             # Load to BigQuery
             logger.info(f"Loading {len(load_df)} configurations to BigQuery")
