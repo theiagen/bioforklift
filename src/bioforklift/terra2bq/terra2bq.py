@@ -2407,7 +2407,7 @@ class Terra2BQ:
             total_batches = (total_configs + config_batch_size - 1) // config_batch_size
             in_batch_position = (i % config_batch_size) + 1
 
-            prefix_field = self.config_ops.get_prefix_fields()
+            prefix_field = self.config_processor.get_prefix_field()
             logger.info(
                 f"Processing configuration {current_number}/{total_configs} ({percent_complete:.1f}%) - "
                 f"Batch {current_batch}/{total_batches}, item {in_batch_position}/{min(config_batch_size, total_configs - (current_batch-1)*config_batch_size)}: "

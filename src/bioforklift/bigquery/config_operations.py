@@ -112,8 +112,8 @@ class BigQueryConfigOperations:
             try:
                 config = self.create_config(json_file)
                 created_configs.append(config)
-            except Exception as e:
-                errors.append({"file": str(json_file), "error": str(e)})
+            except Exception as exc:
+                errors.append({"file": str(json_file), "error": str(exc)})
 
         if errors and not created_configs:
             raise RuntimeError(f"All config creations failed. Errors: {errors}")
@@ -148,8 +148,8 @@ class BigQueryConfigOperations:
 
             return result.iloc[0].to_dict()
 
-        except Exception as e:
-            logger.error(f"Error getting config: {e}")
+        except Exception as exc:
+            logger.error(f"Error getting config: {exc}")
             return None
 
     def get_configs(
@@ -342,8 +342,8 @@ class BigQueryConfigOperations:
             logger.info(f"Deleted config: {config_id}")
             return True
 
-        except Exception as e:
-            logger.error(f"Error deleting config: {e}")
+        except Exception as exc:
+            logger.error(f"Error deleting config: {exc}")
             return False
 
     def load_configs_dataframe(

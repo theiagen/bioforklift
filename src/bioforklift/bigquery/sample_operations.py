@@ -306,7 +306,7 @@ class BigQuerySampleOperations:
             params = []
             
             if config_id:
-                config_id_field = self.get_config_identifier_field()
+                config_id_field = self.data_processor.get_config_identifier_field()
                 if config_id_field:
                     where_conditions.append(f"{config_id_field} = @config_id")
                     params.append(
@@ -774,7 +774,7 @@ class BigQuerySampleOperations:
         # Sometimes workflow metadata is not immediately available, so we need to check for incomplete states
         try:
             # Get config identifier field
-            config_identifier_field = self.get_config_identifier_field()
+            config_identifier_field = self.data_processor.get_config_identifier_field()
             if not config_identifier_field:
                 raise ValueError("No config_identifier field defined in sample schema")
             
