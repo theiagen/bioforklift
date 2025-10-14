@@ -65,7 +65,7 @@ if checkout_workflow_status_update:
     print("\n=== Complete ===")
      
 # Set to true to test out sync, added dry run to see what would be updated without actually updating -- Andrew
-checkout_sync = True
+checkout_sync = False
 if checkout_sync:
     # Run sync metadata from Terra back to BigQuery
     print("\n=== Syncing Metadata from Terra ===")
