@@ -19,6 +19,15 @@ if not table_exists:
     print(f"Created new config with ID: {new_config.get('id')}")
 else:
     print("Table already exists")
+    
+samples_table_exists = bq.table_exists("samples")
+if not samples_table_exists:
+    samples_table_create_res = bq.create_table(
+        table_name="samples", schema_yaml="example_sample_schema.yaml"
+    )
+    print(f"Created samples table: {samples_table_create_res}")
+else:
+    print("Samples table already exists")
 
 terra2bq = Terra2BQ(
         bigquery_project="general-theiagen",
@@ -65,7 +74,7 @@ if checkout_workflow_status_update:
     print("\n=== Complete ===")
      
 # Set to true to test out sync, added dry run to see what would be updated without actually updating -- Andrew
-checkout_sync = False
+checkout_sync = True
 if checkout_sync:
     # Run sync metadata from Terra back to BigQuery
     print("\n=== Syncing Metadata from Terra ===")
@@ -77,7 +86,7 @@ if checkout_sync:
 
     # # Then perform the actual update
     print("\nPerforming actual sync...")
-    sync_results = terra2bq.sync_metadata(days_back=60, update_bigquery=True, update_destination=True, overwrite_metadata=True)
+    sync_results = terra2bq.sync_metadata(days_back=60, use_destination_entity=True, update_destination=False)
 
     # Summarize sync results
     print(f"\nSync Summary:")
