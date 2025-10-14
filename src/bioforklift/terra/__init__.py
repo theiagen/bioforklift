@@ -3,6 +3,7 @@ from .client import TerraClient
 from .terra_entities import TerraEntities
 from .terra_submissions import TerraSubmissions
 from .terra_merge import TerraMerge
+from .terra_workflows import TerraWorkflows
 from .exceptions import (
     TerraError,
     TerraAPIError,
@@ -13,7 +14,7 @@ from .exceptions import (
     TerraPermissionError,
     TerraServerError,
 )
-from .models import WorkflowConfig, WorkflowMetadata, SubmissionInfo
+from .models import WorkflowConfig, WorkflowMetadata, SubmissionInfo, WorkspaceMethodConfig, MethodRepoMethod
 
 
 __all__ = [
@@ -21,6 +22,9 @@ __all__ = [
     "TerraClient",
     "TerraEntities",
     "TerraSubmissions",
+    "TerraWorkflows",
+    "WorkspaceMethodConfig",
+    "MethodRepoMethod",
     "WorkflowConfig",
     "TerraMerge",
     "WorkflowMetadata",

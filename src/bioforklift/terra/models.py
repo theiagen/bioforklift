@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
-from typing import Optional
-
+from typing import Optional, Dict, Any
+from typing_extensions import Self
+import json
 
 class WorkflowConfig(BaseModel):
     """Model for Terra workflow submission configuration"""
@@ -38,3 +39,40 @@ class SubmissionInfo(BaseModel):
     entity_name: str
     submission_date: datetime
     status: Optional[str] = None
+
+
+class MethodRepoMethod(BaseModel):
+    """
+    Model for method repository method.
+    """
+    methodUri: Optional[str] = None
+    sourceRepo: Optional[str] = None
+    methodPath: Optional[str] = None
+    methodVersion: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_required_fields(self) -> Self:
+        if self.methodUri is None and not all([self.sourceRepo, self.methodPath, self.methodVersion]):
+            raise ValueError("Either 'methodUri' or all of 'sourceRepo', 'methodPath', and 'methodVersion' must be provided.")
+        return self
+
+
+class WorkspaceMethodConfig(BaseModel):
+    """
+    Model for workspace method configuration.
+    See https://api.firecloud.org/#/Method%20Configurations/getWorkspaceMethodConfig
+    """
+
+    namespace: str
+    name: str
+    rootEntityType: str
+    deleted: bool = False
+    prerequisites: Dict[str, Any] = Field(default_factory=dict)
+    methodRepoMethod: MethodRepoMethod = Field(default_factory=MethodRepoMethod)
+    methodConfigVersion: int = 0
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: dict) -> None:
+        # Automatically JSON-encode all input values for Terra API compatibility
+        self.inputs = {k: json.dumps(v) for k, v in self.inputs.items()}
