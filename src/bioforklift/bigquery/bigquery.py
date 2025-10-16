@@ -81,6 +81,7 @@ class BigQuery:
             client=self.client,
             table_name=table_name,
             sample_schema_yaml=sample_schema_yaml,
+            location=self.location,
         )
 
     def get_config_operations(
@@ -100,4 +101,5 @@ class BigQuery:
             client=self.client,
             table_name=table_name,
             config_schema_yaml=config_schema_yaml,
+            location=self.location,
         )
