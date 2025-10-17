@@ -1,4 +1,4 @@
-from bioforklift.terra import Terra, WorkflowConfig, WorkspaceMethodConfig, MethodRepoMethod
+from bioforklift.terra import Terra, WorkflowConfig, MethodConfig, MethodRepoMethod
 from datetime import datetime
 
 
@@ -11,22 +11,20 @@ terra = Terra(
 
 current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-input_df = terra.entities.download_table("target")
-result = terra.entities.create_entity_set(f"test_example_set_{current_time}", "target", input_df)
+table_name = "target"
+input_df = terra.entities.download_table(table_name)
+result = terra.entities.create_entity_set(f"{table_name}_set_{current_time}", table_name, input_df)
 if result.ok:
     print("Entity set created successfully")
 
-# List of files
-files_to_cat = input_df["kraken_report"].tolist()
-
 # Creating a new workflow method configuration with inputs/outputs defined.
-workspace_method_config = WorkspaceMethodConfig(
+method_config = MethodConfig(
     namespace=terra.client.destination_project,
     name="Test_Bioforklift_Concatenate_Column_Content",
-    rootEntityType=f"target_set",
+    rootEntityType=f"{table_name}_set",
     inputs={
         "concatenate_column_content.concatenated_file_name": "concatenated_kraken_reports.txt",
-        "concatenate_column_content.files_to_cat": files_to_cat,
+        "concatenate_column_content.files_to_cat": f"this.{table_name}s.kraken_report",
     },
     outputs={
         "concatenate_column_content.concatenate_column_content_analysis_date": "this.concatenate_column_content_analysis_date",
@@ -46,21 +44,23 @@ workspace_method_config = WorkspaceMethodConfig(
 # Other example inputs for WorkspaceMethodConfig. Types are automatically converted to correct JSON types:
 # rootEntityType="target_set" # rootEntityType is name of set table
 # inputs={
+#     "example.input_file_array": input_df["kraken_report"].tolist(),
 #     "example.expected_genes": ["OXA"],
 #     "example.downsampling_levels": [10, 20, 30, 40, 50],
 #     "example.boolean_flag": True,
 # }
 
 # Adds or overwrites the method configuration in the Terra workspace
-terra.workflows.overwrite_workspace_method_config(workspace_method_config)
+terra.methods.overwrite_method_config(method_config)
+
+terra.methods.method_config_validate(method_config)
 
 example = {
     "methodConfigurationNamespace": terra.client.destination_project,
-    "methodConfigurationName": workspace_method_config.name,
-    "entityType": "target_set", # entityType is name of set table
-    "entityName": f"test_example_set_{current_time}", # entityName is name of specific row in table
-    "expression": "null", # name of column in set table containing all entities in this.{}s format
-    "useCallCache": False,
+    "methodConfigurationName": method_config.name,
+    "entityType": f"{table_name}_set", # entityType is name of set table
+    "entityName": f"{table_name}_set_{current_time}", # entityName is name of specific row in table
+    "expression": None, # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
     "deleteIntermediateOutputFiles": False,
     "useReferenceDisks": False,
     "memoryRetryMultiplier": 1.0,
