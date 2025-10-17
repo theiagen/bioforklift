@@ -66,6 +66,7 @@ class SampleDataProcessor:
             dataframe
             .pipe(self._apply_entity_type_mapping, config)
             .pipe(self._map_field_names)
+            .pipe(self._add_missing_schema_columns)
             .pipe(self._apply_config_field_inheritance, config)
             .pipe(self._filter_columns)
             .pipe(self._filter_existing_samples, existing_identifiers or set())
@@ -210,7 +211,7 @@ class SampleDataProcessor:
             else:
                 logger.debug(f"Keeping source column '{source_col}' (present in schema)")
 
-        return self._add_missing_schema_columns(dataframe)
+        return dataframe
 
     def _filter_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """Keep only columns that are defined in the schema"""
@@ -269,13 +270,17 @@ class SampleDataProcessor:
         """
         try:
             sequence_file_fields = self.get_sequence_file_fields()
+            
+            logger.info(f"Validating sequence files for fields: {sequence_file_fields}")
 
             if not sequence_file_fields:
                 logger.debug("No sequence file fields defined in schema")
                 return dataframe
 
-            # Check if at least one sequence file field has a value for each row
-            has_sequence_file = dataframe[sequence_file_fields].notna().any(axis=1)
+            # Check if at least one sequence file field has a non-empty value
+            # Replace empty strings with NaN first, then check for non-null values
+            sequence_data = dataframe[sequence_file_fields].replace('', pd.NA)
+            has_sequence_file = sequence_data.notna().any(axis=1)
             valid_samples_df = dataframe[has_sequence_file]
 
             filtered_count = len(dataframe) - len(valid_samples_df)
