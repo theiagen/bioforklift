@@ -3,6 +3,7 @@ import uuid
 from typing import Optional, Dict, Any, List, Set
 from datetime import datetime
 import pandas as pd
+import numpy as np
 from .utils import load_schema_from_yaml
 from bioforklift.forklift_logging import setup_logger
 from .schema_models import SchemaDefinition, SampleFieldAttributes
@@ -578,6 +579,124 @@ class SampleDataProcessor:
         else:
             # Default to ISO format
             return dt.isoformat()
+
+    def _convert_numpy_type(self, value: Any) -> Any:
+        """
+        Convert numpy types to native Python types for JSON serialization.
+
+        Args:
+            value: Value that may contain numpy types
+
+        Returns:
+            Value with numpy types converted to Python native types
+        """
+        if value is None:
+            return None
+
+        if isinstance(value, (np.integer, np.int8, np.int16, np.int32, np.int64)):
+            return int(value)
+
+        if isinstance(value, (np.floating, np.float16, np.float32, np.float64)):
+            return float(value)
+
+        if isinstance(value, np.bool_):
+            return bool(value)
+
+        if isinstance(value, (np.str_, np.bytes_)):
+            return str(value)
+
+        if pd.isna(value):
+            return None
+
+        return value
+
+    def _coerce_value_to_type(self, value: Any, bq_type: str) -> Any:
+        """
+        Coerce a single value to match the expected BigQuery type.
+
+        Args:
+            value: The value to coerce
+            bq_type: The BigQuery field type (e.g., 'STRING', 'INTEGER', etc.)
+
+        Returns:
+            Coerced value ready for BigQuery
+        """
+        # First convert numpy types
+        value = self._convert_numpy_type(value)
+
+        if value is None:
+            return None
+
+        try:
+            if bq_type in ('INTEGER', 'INT64'):
+                # Convert to int, handling floats and numeric strings
+                if value == '' or pd.isna(value):
+                    return None
+                return int(float(value))
+
+            elif bq_type in ('FLOAT', 'FLOAT64'):
+                if value == '' or pd.isna(value):
+                    return None
+                return float(value)
+
+            elif bq_type in ('BOOLEAN', 'BOOL'):
+                if isinstance(value, bool):
+                    return value
+                return bool(value)
+
+            elif bq_type == 'DATE':
+                if isinstance(value, str):
+                    return pd.to_datetime(value).date()
+                return value
+
+            elif bq_type in ('DATETIME', 'TIMESTAMP'):
+                if isinstance(value, str):
+                    dt = pd.to_datetime(value)
+                    if bq_type == 'TIMESTAMP' and dt.tzinfo is None:
+                        # Add UTC timezone for TIMESTAMP fields
+                        dt = dt.tz_localize('UTC')
+                    return dt
+                return value
+
+            elif bq_type == 'STRING':
+                # Convert to string, preserving None
+                return str(value) if value is not None else None
+
+            else:
+                # For unknown types, return as-is
+                return value
+
+        except Exception as exc:
+            logger.warning(f"Failed to coerce value {value} to type {bq_type}: {exc}")
+            return value
+
+    def coerce_dict_types(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Coerce values in a dictionary to match schema field types.
+
+        Converts numpy types to Python natives and applies schema type coercion.
+        This is useful for bulk update operations where data comes as dictionaries
+        rather than DataFrames. Reduces tension with BigQuery type expectations.
+
+        Args:
+            data: Dictionary with field names as keys
+
+        Returns:
+            Dictionary with coerced values
+        """
+        coerced = {}
+
+        for field_name, value in data.items():
+            # Get field definition from schema
+            field_def = self.schema_definition.get_field(field_name)
+
+            if field_def:
+                coerced[field_name] = self._coerce_value_to_type(value, field_def.field_type)
+            else:
+                logger.warning(f"Field '{field_name}' not found in schema for type coercion, returning as is")
+                coerced[field_name] = value
+
+        return coerced
 
     def _coerce_dataframe_types(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
