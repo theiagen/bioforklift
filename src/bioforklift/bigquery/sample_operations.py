@@ -398,7 +398,7 @@ class BigQuerySampleOperations:
                 logger.info("No updates provided")
                 return {"updated_count": 0, "updated_ids": [], "failed_updates": []}
 
-            # Process updates
+            # Process updates and coerce types
             updates_to_process = []
             for update in updates:
                 if "id" not in update:
@@ -410,7 +410,9 @@ class BigQuerySampleOperations:
                     k: v for k, v in update.items() if k != "id" and v is not None
                 }
 
+                # Coerce types using the data processor to handle numpy types and schema types
                 if update_data:
+                    update_data = self.data_processor.coerce_dict_types(update_data)
                     updates_to_process.append((sample_id, update_data))
 
             if not updates_to_process:
