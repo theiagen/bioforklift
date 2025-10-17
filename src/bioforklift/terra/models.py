@@ -57,7 +57,7 @@ class MethodRepoMethod(BaseModel):
         return self
 
 
-class WorkspaceMethodConfig(BaseModel):
+class MethodConfig(BaseModel):
     """
     Model for workspace method configuration.
     See https://api.firecloud.org/#/Method%20Configurations/getWorkspaceMethodConfig
@@ -74,5 +74,9 @@ class WorkspaceMethodConfig(BaseModel):
     outputs: Dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context: dict) -> None:
-        # Automatically JSON-encode all input values for Terra API compatibility
-        self.inputs = {k: json.dumps(v) for k, v in self.inputs.items()}
+        # Automatically JSON-encode input values for Terra API compatibility
+        # Skip values that contain Terra workspace references (this.*)
+        self.inputs = {
+            k: v if isinstance(v, str) and v.startswith("this.") else json.dumps(v)
+            for k, v in self.inputs.items()
+        }
