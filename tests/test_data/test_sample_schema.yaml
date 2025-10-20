@@ -1,0 +1,64 @@
+fields:
+  id:
+    type: string
+    required: true
+    primary_key: true
+    system_value: true
+
+  sample_name:
+    type: string
+    required: false
+
+  sample_id:
+    type: string
+    required: true
+    sample_identifier: true
+
+  config_id:
+    type: string
+    required: false
+    configuration_identifier: true
+
+  created_at:
+    type: datetime
+    required: false
+    system_value: true
+
+  updated_at:
+    type: datetime
+    required: false
+    system_value: true
+
+  uploaded_at:
+    type: datetime
+    required: false
+
+  submitted_at:
+    type: datetime
+    required: false
+
+  terra_submission_id:
+    type: string
+    required: false
+
+  terra_workflow_id:
+    type: string
+    required: false
+
+  workflow_state:
+    type: string
+    required: false
+
+  upload_source:
+    type: string
+    required: false
+
+  fastq_file:
+    type: string
+    required: false
+    sequence_file: true
+
+  workflow_name:
+    type: string
+    required: false
+    inherit_from_config: method_name

@@ -47,18 +47,53 @@ def mock_terra():
     return mock
 
 @pytest.fixture
-def t2bq():
+def sample_schema_path(tmp_path):
+    """Create a temporary sample schema YAML file"""
+    schema_file = tmp_path / "sample_schema.yaml"
+    schema_file.write_text("""fields:
+  sample_id:
+    type: string
+    sample_identifier: true
+  config_id:
+    type: string
+    config_identifier: true
+  entity_name:
+    type: string
+  sync_field_example:
+    type: string
+    sync_field: true
+""")
+    return str(schema_file)
+
+@pytest.fixture
+def config_schema_path(tmp_path):
+    """Create a temporary config schema YAML file"""
+    schema_file = tmp_path / "config_schema.yaml"
+    schema_file.write_text("fields:\n  id:\n    type: string\n    configuration_identifier: true\n")
+    return str(schema_file)
+
+@pytest.fixture
+def t2bq(sample_schema_path, config_schema_path):
     """Create a basic Terra2BQ instance with mocked dependencies"""
-    instance = Terra2BQ(
-        bigquery_project="test-project",
-        bigquery_dataset="test-dataset"
-    )
-    
-    instance.samples_ops = MagicMock()
-    instance.config_ops = MagicMock()
-    instance.terra = MagicMock()
-    
-    return instance
+    with patch("bioforklift.data_processing.utils.load_schema_from_yaml") as mock_load:
+        # Mock the schema loading to return minimal schemas
+        mock_load.return_value = {
+            "schema": [],
+            "field_attributes": {}
+        }
+
+        instance = Terra2BQ(
+            bigquery_project="test-project",
+            bigquery_dataset="test-dataset",
+            samples_schema_yaml=sample_schema_path,
+            configs_schema_yaml=config_schema_path
+        )
+
+        instance.samples_ops = MagicMock()
+        instance.config_ops = MagicMock()
+        instance.terra = MagicMock()
+
+        return instance
 
 @pytest.fixture
 def sample_config():
@@ -104,49 +139,64 @@ def sample_df():
     })
 
 # Test initialization
-def test_init_with_required_params():
+def test_init_with_required_params(sample_schema_path, config_schema_path):
     """Test initialization with only required parameters"""
-    t2bq = Terra2BQ(
-        bigquery_project="test-project",
-        bigquery_dataset="test-dataset"
-    )
-    
-    assert t2bq.bigquery is not None
-    assert t2bq.lookup_timeframe == "today"
-    assert t2bq.samples_table == "samples"
-    assert t2bq.configs_table == "configs"
-    assert t2bq.project_timezone == "UTC"
+    with patch("bioforklift.data_processing.utils.load_schema_from_yaml") as mock_load:
+        mock_load.return_value = {"schema": [], "field_attributes": {}}
 
-def test_init_with_custom_params():
-    """Test initialization with custom parameters"""
-    t2bq = Terra2BQ(
-        bigquery_project="test-project",
-        bigquery_dataset="test-dataset",
-        lookup_timeframe="custom",
-        lookup_days_back=7,
-        samples_table="custom_samples",
-        configs_table="custom_configs",
-        source_workspace="test-workspace",
-        source_project="test-project",
-        source_datatable="test_entity",
-        project_timezone="America/New_York"
-    )
-    
-    assert t2bq.lookup_timeframe == "custom"
-    assert t2bq.lookup_days_back == 7
-    assert t2bq.samples_table == "custom_samples"
-    assert t2bq.configs_table == "custom_configs"
-    assert t2bq.source_workspace == "test-workspace"
-    assert t2bq.source_project == "test-project"
-    assert t2bq.source_datatable == "test_entity"
-    assert t2bq.project_timezone == "America/New_York"
-
-def test_init_with_custom_timeframe_validation():
-    """Test that custom timeframe requires days_back or hours_back"""
-    with pytest.raises(ValueError, match="Custom lookup timeframe requires lookup_days_back or lookup_hours_back"):
-        Terra2BQ(
+        t2bq = Terra2BQ(
             bigquery_project="test-project",
             bigquery_dataset="test-dataset",
+            samples_schema_yaml=sample_schema_path,
+            configs_schema_yaml=config_schema_path
+        )
+
+        assert t2bq.bigquery is not None
+        assert t2bq.lookup_timeframe == "today"
+        assert t2bq.samples_table == "samples"
+        assert t2bq.configs_table == "configs"
+        assert t2bq.project_timezone == "UTC"
+
+def test_init_with_custom_params(sample_schema_path, config_schema_path):
+    """Test initialization with custom parameters"""
+    with patch("bioforklift.data_processing.utils.load_schema_from_yaml") as mock_load:
+        mock_load.return_value = {"schema": [], "field_attributes": {}}
+
+        t2bq = Terra2BQ(
+            bigquery_project="test-project",
+            bigquery_dataset="test-dataset",
+            lookup_timeframe="custom",
+            lookup_days_back=7,
+            samples_table="custom_samples",
+            configs_table="custom_configs",
+            source_workspace="test-workspace",
+            source_project="test-project",
+            source_datatable="test_entity",
+            project_timezone="America/New_York",
+            samples_schema_yaml=sample_schema_path,
+            configs_schema_yaml=config_schema_path
+        )
+
+        assert t2bq.lookup_timeframe == "custom"
+        assert t2bq.lookup_days_back == 7
+        assert t2bq.samples_table == "custom_samples"
+        assert t2bq.configs_table == "custom_configs"
+        assert t2bq.source_workspace == "test-workspace"
+        assert t2bq.source_project == "test-project"
+        assert t2bq.source_datatable == "test_entity"
+        assert t2bq.project_timezone == "America/New_York"
+
+def test_init_with_custom_timeframe_validation(sample_schema_path, config_schema_path):
+    """Test that custom timeframe requires days_back or hours_back"""
+    with patch("bioforklift.data_processing.utils.load_schema_from_yaml") as mock_load:
+        mock_load.return_value = {"schema": [], "field_attributes": {}}
+
+        with pytest.raises(ValueError, match="Custom lookup timeframe requires lookup_days_back or lookup_hours_back"):
+            Terra2BQ(
+                bigquery_project="test-project",
+                bigquery_dataset="test-dataset",
+                samples_schema_yaml=sample_schema_path,
+                configs_schema_yaml=config_schema_path,
             lookup_timeframe="custom"
         )
 
@@ -157,24 +207,22 @@ def test_initialize_operations(mock_bigquery_class, tmp_path):
     samples_schema = tmp_path / "samples_schema.yaml"
     configs_schema = tmp_path / "configs_schema.yaml"
     
-    samples_schema.write_text("""
-        fields:
-        id:
-            type: string
-            required: true
-        entity_name:
-            type: string
-            required: true
-        """)
+    samples_schema.write_text("""fields:
+  id:
+    type: string
+    required: true
+  entity_name:
+    type: string
+    required: true
+""")
 
-    configs_schema.write_text("""
-        fields:
-        id:
-            type: string
-            required: true
-        prefix_field:
-            type: string
-        """)
+    configs_schema.write_text("""fields:
+  id:
+    type: string
+    required: true
+  prefix_field:
+    type: string
+""")
             
     # Configure the mock BigQuery class before creating Terra2BQ
     mock_bigquery_instance = mock_bigquery_class.return_value
@@ -456,32 +504,31 @@ def test_process_upload_and_submit_success(t2bq, sample_config):
         sample_df   # Second call - get samples for submission
     ]
     
-    # Mock drop_system_value_columns function
-    with patch("bioforklift.terra2bq.terra2bq.drop_system_value_columns") as mock_drop:
-        mock_drop.return_value = pd.DataFrame({
-            "entity_name": ["entity1", "entity2", "entity3"],
-            "attr1": [1, 2, 3]
-        })
-        
-        # Mock upload_to_terra
-        t2bq.upload_to_terra = MagicMock(return_value=UploadResult(
-            status=OperationStatus.SUCCESS,
-            config_id=sample_config["id"],
-            set_name="test_set_20230101",
-            uploaded_count=3
-        ))
-        
-        # Mock submit_workflow
-        t2bq.submit_workflow = MagicMock(return_value=SubmissionResult(
-            status=OperationStatus.SUCCESS,
-            config_id=sample_config["id"],
-            submission_id="test-submission-id",
-            workflow_count=3
-        ))
-        
-        # Now let's upload and submit
-        result = t2bq.process_upload_and_submit(sample_config)
-    
+    # Mock drop_system_columns method on sample_processor
+    t2bq.sample_processor.drop_system_columns = MagicMock(return_value=pd.DataFrame({
+        "entity_name": ["entity1", "entity2", "entity3"],
+        "attr1": [1, 2, 3]
+    }))
+
+    # Mock upload_to_terra
+    t2bq.upload_to_terra = MagicMock(return_value=UploadResult(
+        status=OperationStatus.SUCCESS,
+        config_id=sample_config["id"],
+        set_name="test_set_20230101",
+        uploaded_count=3
+    ))
+
+    # Mock submit_workflow
+    t2bq.submit_workflow = MagicMock(return_value=SubmissionResult(
+        status=OperationStatus.SUCCESS,
+        config_id=sample_config["id"],
+        submission_id="test-submission-id",
+        workflow_count=3
+    ))
+
+    # Now let's upload and submit
+    result = t2bq.process_upload_and_submit(sample_config)
+
     # Check result for success
     assert isinstance(result, ConfigProcessingResult)
     assert result.status == OperationStatus.SUCCESS
@@ -490,10 +537,10 @@ def test_process_upload_and_submit_success(t2bq, sample_config):
     assert result.submission_id == "test-submission-id"
     assert result.uploaded_count == 3
     assert result.workflow_count == 3
-    
+
     # Check that components were called correctly
     t2bq.samples_ops.get_samples_by_timeframe.assert_called()
-    mock_drop.assert_called_once()
+    t2bq.sample_processor.drop_system_columns.assert_called_once()
     t2bq.upload_to_terra.assert_called_once()
     t2bq.submit_workflow.assert_called_once()
     
@@ -530,10 +577,11 @@ def test_process_configuration_success(t2bq, sample_config):
     
     # Check that both methods were called with the right arguments
     t2bq.download_from_terra_to_bigquery.assert_called_once_with(
-    sample_config, 
-    None,
-    None,
-    True
+        config=sample_config,
+        destination_bucket=None,
+        page_size=None,
+        preserve_path_structure=True,
+        unique_ids_by_config=False
     )
     t2bq.process_upload_and_submit.assert_called_once_with(sample_config)
 
