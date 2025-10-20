@@ -112,10 +112,10 @@ class Terra2BQ:
             raise ValueError(
                 "Custom lookup timeframe requires lookup_days_back or lookup_hours_back"
             )
-            
-        # Initialize sample processor and config processor
-        self.config_processor = ConfigProcessor(configs_schema_yaml)
-        self.sample_processor = SampleDataProcessor(samples_schema_yaml)
+
+        # Initialize sample processor and config processor if schemas provided
+        self.config_processor = ConfigProcessor(configs_schema_yaml) if configs_schema_yaml else None
+        self.sample_processor = SampleDataProcessor(samples_schema_yaml) if samples_schema_yaml else None
 
         # Store table names and schema paths
         self.samples_table = samples_table
