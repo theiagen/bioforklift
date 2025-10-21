@@ -1151,7 +1151,7 @@ class Terra2BQ:
                 sys.exit(1)
 
         # Load data into BigQuery
-        logger.info(f"Loading {len(terra_df)} rows into BigQuery")
+        logger.info(f"Checking {len(terra_df)} rows before loading new data into BigQuery")
         bq_load_result = self.samples_ops.load_dataframe(
             dataframe=terra_df, config=config, unique_ids_by_config=unique_ids_by_config
         )
