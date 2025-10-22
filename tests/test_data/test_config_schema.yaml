@@ -40,3 +40,8 @@ fields:
   terra_source_project:
     type: string
     required: false
+
+  single_datatable:
+    type: boolean
+    required: false
+    single_datatable: true
