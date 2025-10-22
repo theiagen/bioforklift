@@ -1084,7 +1084,8 @@ class Terra2BQ:
             self.setup_terra_client(config)
 
         # Check for when the source and destination datatables are the same
-        is_single_datatable = config.get("single_datatable", False)
+        single_datatable_field = self.config_processor.get_single_datatable_field() if self.config_processor else None
+        is_single_datatable = config.get(single_datatable_field, False) if single_datatable_field else config.get("single_datatable", False)
 
         # Get entity type from config
         entity_type = config.get("entity_type", self.source_datatable)
