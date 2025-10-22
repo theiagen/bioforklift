@@ -45,6 +45,8 @@ class Terra2BQ:
         self,
         bigquery_project: str,
         bigquery_dataset: str,
+        samples_schema_yaml: Path,
+        configs_schema_yaml: Path,
         bigquery_location: str = "us-central1",
         google_credentials_json: Optional[Path] = None,
         samples_table: str = "samples",
@@ -52,8 +54,6 @@ class Terra2BQ:
         lookup_timeframe: str = "today",
         lookup_days_back: Optional[int] = None,
         lookup_hours_back: Optional[int] = None,
-        samples_schema_yaml: Optional[Path] = None,
-        configs_schema_yaml: Optional[Path] = None,
         source_workspace: Optional[str] = None,
         source_project: Optional[str] = None,
         source_datatable: Optional[str] = None,
@@ -113,9 +113,9 @@ class Terra2BQ:
                 "Custom lookup timeframe requires lookup_days_back or lookup_hours_back"
             )
 
-        # Initialize sample processor and config processor if schemas provided
-        self.config_processor = ConfigProcessor(configs_schema_yaml) if configs_schema_yaml else None
-        self.sample_processor = SampleDataProcessor(samples_schema_yaml) if samples_schema_yaml else None
+        # Initialize sample processor and config processor
+        self.config_processor = ConfigProcessor(configs_schema_yaml)
+        self.sample_processor = SampleDataProcessor(samples_schema_yaml)
 
         # Store table names and schema paths
         self.samples_table = samples_table
@@ -997,11 +997,6 @@ class Terra2BQ:
             List of active configuration dictionaries
         """
 
-        if not self.config_ops:
-            raise ValueError(
-                "Config operations not initialized. Make sure configs_schema_yaml is provided."
-            )
-
         configs = self.config_ops.get_configs(
             active_only=True, entity_type=entity_type, skip_transferred=skip_transferred
         )
@@ -1074,18 +1069,14 @@ class Terra2BQ:
             DownloadResult with load results and status
         """
         
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
             self.setup_terra_client(config)
 
         # Check for when the source and destination datatables are the same
-        single_datatable_field = self.config_processor.get_single_datatable_field() if self.config_processor else None
-        is_single_datatable = config.get(single_datatable_field, False) if single_datatable_field else config.get("single_datatable", False)
+        single_datatable_field = self.config_processor.get_single_datatable_field()
+        is_single_datatable = config.get(single_datatable_field, False) if single_datatable_field else False
 
         # Get entity type from config
         entity_type = config.get("entity_type", self.source_datatable)
@@ -1201,10 +1192,6 @@ class Terra2BQ:
             Dictionary with upload results including set name
         """
 
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
@@ -1315,10 +1302,6 @@ class Terra2BQ:
             DataFrame with samples ready for submission
         """
 
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # If a specific config_id is not provided, try to get it from the config
         if not config_id and config:
@@ -1366,10 +1349,6 @@ class Terra2BQ:
             Dictionary with submission results
         """
 
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
@@ -2061,8 +2040,6 @@ class Terra2BQ:
 
         self.initialize_operations()
 
-        if not self.samples_ops:
-            raise ValueError("Sample operations not initialized")
 
         # Get active configurations
         configs = self.get_active_configs()
@@ -2372,8 +2349,6 @@ class Terra2BQ:
 
         self.initialize_operations()
 
-        if not self.samples_ops:
-            raise ValueError("Sample operations not initialized")
 
         # Get active configurations
         configs = self.get_active_configs()

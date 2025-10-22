@@ -274,19 +274,24 @@ def test_setup_terra_client(mock_terra_class, sample_config, t2bq):
     )
 
 @patch("bioforklift.terra2bq.terra2bq.Terra")
-def test_setup_terra_client_with_instance_values(mock_terra_class, sample_config):
+def test_setup_terra_client_with_instance_values(mock_terra_class, sample_config, sample_schema_path, config_schema_path):
     """Test that instance values take precedence over config values"""
-    t2bq = Terra2BQ(
-        bigquery_project="test-project",
-        bigquery_dataset="test-dataset",
-        source_workspace="instance-workspace",
-        source_project="instance-project",
-        destination_workspace="instance-dest-workspace",
-        destination_project="instance-dest-project"
-    )
-    
+    with patch("bioforklift.data_processing.utils.load_schema_from_yaml") as mock_load:
+        mock_load.return_value = {"schema": [], "field_attributes": {}}
+
+        t2bq = Terra2BQ(
+            bigquery_project="test-project",
+            bigquery_dataset="test-dataset",
+            samples_schema_yaml=sample_schema_path,
+            configs_schema_yaml=config_schema_path,
+            source_workspace="instance-workspace",
+            source_project="instance-project",
+            destination_workspace="instance-dest-workspace",
+            destination_project="instance-dest-project"
+        )
+
     t2bq.setup_terra_client(sample_config)
-    
+
     # Assert Terra client initialized with instance parameters
     mock_terra_class.assert_called_once_with(
         source_workspace="instance-workspace",
@@ -296,22 +301,27 @@ def test_setup_terra_client_with_instance_values(mock_terra_class, sample_config
         credentials=None
     )
 
-def test_setup_terra_client_missing_source():
+def test_setup_terra_client_missing_source(sample_schema_path, config_schema_path):
     """Test error when source workspace/project not provided"""
-    t2bq = Terra2BQ(
-        bigquery_project="test-project",
-        bigquery_dataset="test-dataset"
-    )
-    
+    with patch("bioforklift.data_processing.utils.load_schema_from_yaml") as mock_load:
+        mock_load.return_value = {"schema": [], "field_attributes": {}}
+
+        t2bq = Terra2BQ(
+            bigquery_project="test-project",
+            bigquery_dataset="test-dataset",
+            samples_schema_yaml=sample_schema_path,
+            configs_schema_yaml=config_schema_path
+        )
+
     # Config missing source workspace
     config = {"id": "test-config"}
-    
+
     with pytest.raises(ValueError, match="No source workspace provided"):
         t2bq.setup_terra_client(config)
-    
+
     # Config with workspace but missing project
     config = {"id": "test-config", "terra_source_workspace": "workspace"}
-    
+
     with pytest.raises(ValueError, match="No source project provided"):
         t2bq.setup_terra_client(config)
 
@@ -333,17 +343,6 @@ def test_get_active_configs_with_entity_type(t2bq):
     
     assert configs == [{"id": "config1"}]
     t2bq.config_ops.get_configs.assert_called_once_with(active_only=True, entity_type="test_entity",  skip_transferred=False)
-
-def test_get_active_configs_no_config_ops():
-    """Test error when config_ops not initialized"""
-    t2bq = Terra2BQ(
-        bigquery_project="test-project",
-        bigquery_dataset="test-dataset"
-    )
-    
-    # No config_ops initialized
-    with pytest.raises(ValueError, match="Config operations not initialized"):
-        t2bq.get_active_configs()
 
 # Test download_from_terra_to_bigquery
 def test_download_from_terra_to_bigquery_success(t2bq, sample_config):
