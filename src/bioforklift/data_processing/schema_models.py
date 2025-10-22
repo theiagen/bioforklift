@@ -174,6 +174,10 @@ class ConfigFieldAttributes(FieldAttributes):
         default=None,
         description="Field is part of Terra method configuration (JSON string or dict)"
     )
+    single_datatable: bool = Field(
+        default=False,
+        description="Indicates if source and destination datatables are the same (skips upload step)"
+    )
 
 
 class FieldDefinition(BaseModel):

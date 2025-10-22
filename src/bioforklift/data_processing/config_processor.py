@@ -241,3 +241,14 @@ class ConfigProcessor:
             ),
             None,
         )
+
+    def get_single_datatable_field(self) -> Optional[str]:
+        """Get the field name that is marked with single_datatable=True"""
+        return next(
+            (
+                field_name
+                for field_name, attrs in self.field_attributes.items()
+                if attrs.get("single_datatable")
+            ),
+            None,
+        )
