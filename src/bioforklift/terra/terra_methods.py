@@ -16,9 +16,11 @@ class TerraMethods:
     def __init__(self, client: TerraClient):
         self.client = client
 
+
     def get_method_config(
         self,
         config_name: str,
+        use_destination: bool = False,
     ) -> Dict[str, Any]:
         """
         Get a workspace method configuration by name.
@@ -29,17 +31,20 @@ class TerraMethods:
         Returns:
             Dict containing the method configuration details
         """
-        logger.info(f"Fetching workspace method configuration: {config_name}")
+        client_project = self.client.destination_project if use_destination else self.client.source_project
+
+        logger.info(f"Fetching workspace method configuration: {config_name} from project: {client_project}")
         response = self.client.get(
-          f"method_configs/{self.client.destination_project}/{config_name}",
-          use_destination=True,
+          f"method_configs/{client_project}/{config_name}",
+          use_destination=use_destination,
         )
         return response.json()
 
 
     def overwrite_method_config(
         self,
-        config: MethodConfig
+        config: MethodConfig,
+        use_destination: bool = True,
     ) -> Dict[str, Any]:
         """
         Add or overwrite a new workspace method configuration. AKA create a new workflow in Terra with inputs/outputs defined.
@@ -50,18 +55,20 @@ class TerraMethods:
         Returns:
             Dict containing the created method configuration details
         """
+        client_project = self.client.destination_project if use_destination else self.client.source_project
 
-        logger.info(f"Uploading workspace method configuration: {config.name}")
+        logger.info(f"Uploading workspace method configuration: {config.name} to project: {client_project}")
         return self.client.put(
-            f"method_configs/{self.client.destination_project}/{config.name}",
+            f"method_configs/{client_project}/{config.name}",
             data=config.model_dump(exclude_none=True),
-            use_destination=True,
+            use_destination=use_destination,
         ).json()
 
 
     def method_config_validate(
       self,
-      config: MethodConfig
+      config: MethodConfig,
+      use_destination: bool = True,
     ) -> Dict[str, Any]:
         """
         Validate a workspace method configuration.
@@ -72,10 +79,12 @@ class TerraMethods:
         Returns:
             Dict containing the validation results
         """
-        logger.info(f"Validating workspace method configuration: {config.name}")
+        client_project = self.client.destination_project if use_destination else self.client.source_project
+
+        logger.info(f"Validating workspace method configuration: {config.name} from project: {client_project}")
         response = self.client.get(
-            f"method_configs/{self.client.destination_project}/{config.name}/validate",
-            use_destination=True,
+            f"method_configs/{client_project}/{config.name}/validate",
+            use_destination=use_destination,
         ).json()
 
         # Check for invalid inputs/outputs and raise error if found
