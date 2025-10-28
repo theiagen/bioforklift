@@ -209,11 +209,3 @@ class TestSampleDataProcessor:
 
         assert len(result) == 0
         assert result.equals(empty_df)
-
-    @pytest.mark.skip(reason="Invalid regex handling needs refactoring - currently stored in field_attributes dict before Pydantic validation")
-    def test_invalid_regex_pattern(self, sample_schema_yaml):
-        """Test handling of invalid regex patterns"""
-        # TODO: This test needs to be updated once invalid regex pattern handling is refactored
-        # Currently, invalid patterns in YAML are stored in field_attributes dict before
-        # Pydantic validation, so they still get used during _validate_field_patterns
-        pass

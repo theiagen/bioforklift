@@ -106,12 +106,6 @@ class TestConfigProcessor:
         display_field = config_processor.get_alerts_display_field()
         assert display_field == "description"
 
-    @pytest.mark.skip(reason="Method get_configuration_identifier_fields doesn't exist on ConfigProcessor")
-    def test_get_configuration_identifier_fields(self, config_processor):
-        """Test getting configuration identifier fields"""
-        identifier_fields = config_processor.get_configuration_identifier_fields()
-        assert "workflow_config" in identifier_fields
-
     def test_prepare_config_for_insert(self, config_processor, sample_config):
         """Test preparing a single config for insertion"""
         prepared_config = config_processor.prepare_config_for_insert(sample_config)
