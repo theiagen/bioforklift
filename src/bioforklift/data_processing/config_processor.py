@@ -243,12 +243,5 @@ class ConfigProcessor:
         )
 
     def get_single_datatable_field(self) -> Optional[str]:
-        """Get the field name that is marked with single_datatable=True"""
-        return next(
-            (
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("single_datatable")
-            ),
-            None,
-        )
+        """Get the field name 'single_datatable' if it exists in the schema"""
+        return "single_datatable" if "single_datatable" in self.field_attributes else None

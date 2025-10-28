@@ -364,9 +364,9 @@ class Terra2BQ:
             UploadResult with backfilled count and status
         """
 
-        newly_loaded_ids_without_upload = self.samples_ops.get_recent_sample_ids(
+        newly_loaded_ids_without_upload = self.samples_ops.get_recent_sample_uuids(
             config_id=config.get("id"),
-            limit=bq_load_result.get("loaded", 0),
+            limit=bq_load_result.get("loaded", 0)
         )
 
         if not newly_loaded_ids_without_upload:
@@ -835,6 +835,9 @@ class Terra2BQ:
 
         # Get samples that were marked as uploaded but not submitted
         samples_df = self.get_samples_for_submission(config)
+        logger.info(
+            f"Found {len(samples_df)} samples marked as uploaded but not yet submitted"
+        )
 
         if samples_df.empty:
             return SubmissionResult(
@@ -1147,6 +1150,9 @@ class Terra2BQ:
         bq_load_result = self.samples_ops.load_dataframe(
             dataframe=terra_df, config=config, unique_ids_by_config=unique_ids_by_config
         )
+        
+        logger.info(f"Loaded data into BigQuery: {bq_load_result.get('loaded', 0)} rows loaded, "
+                    f"{bq_load_result.get('filtered', 0)} rows filtered out")
 
         if not bq_load_result.get("success"):
             logger.error(
@@ -1620,6 +1626,8 @@ class Terra2BQ:
             is_single_datatable = config_copy.get("single_datatable", False)
 
             if is_single_datatable:
+                logger.info("Value for is_single_datatable is {}".format(is_single_datatable))
+                logger.info(config_copy)
                 logger.info(
                     f"Processing same-datatable configuration {config_copy.get('id')}"
                 )

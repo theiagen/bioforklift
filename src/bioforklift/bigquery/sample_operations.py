@@ -188,28 +188,39 @@ class BigQuerySampleOperations:
             logger.error(f"Error querying existing identifiers: {str(exc)}")
             return []
 
-    def get_recent_sample_ids(self, config_id: str, limit: int = 1000) -> List[str]:
-        """Get recent sample IDs for a given configuration."""
-        sample_id_field = self.data_processor.get_sample_identifier_field()
-        config_id_field = self.data_processor.get_config_identifier_field()
+    def get_recent_sample_uuids(self, config_id: str, limit: int = 1000) -> List[str]:
+        """
+        Get the UUIDs of the most recently loaded samples for a specific configuration.
 
-        if not sample_id_field or not config_id_field:
-            logger.warning("Missing required identifier fields")
-            return []
-
-        try:
-            query = f"""
-                SELECT {sample_id_field}
-                FROM `{self.table_name}`
-                WHERE {config_id_field} = '{config_id}'
-                ORDER BY created_at DESC
-                LIMIT {limit}
-            """
-            result = self.bq_client.query(query).result()
-            return [row[sample_id_field] for row in result]
-        except Exception as e:
-            logger.error(f"Error querying recent sample IDs: {e}")
-            return []
+        Args:
+            config_id: Configuration ID
+            limit: Maximum number of sample UUIDs to return
+            
+        Returns:
+            List of sample UUIDs
+        """
+        # Get the field to use as the config identifier for identifying samples
+        config_identifier_field = self.data_processor.get_config_identifier_field()
+        
+        query = f"""
+        SELECT id
+        FROM `{self.table_name}`
+        WHERE {config_identifier_field} = @config_id
+        AND uploaded_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT @limit
+        """
+        
+        query_params = [
+            bigquery.ScalarQueryParameter("config_id", "STRING", config_id),
+            bigquery.ScalarQueryParameter("limit", "INTEGER", limit)
+        ]
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+        
+        query_job = self.bq_client.query(query, job_config=job_config)
+        
+        return [row["id"] for row in query_job]
 
     def get_samples_by_timeframe(
         self, 
