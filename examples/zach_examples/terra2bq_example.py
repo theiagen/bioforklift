@@ -1,24 +1,5 @@
-import os
 from pathlib import Path
 from bioforklift.terra2bq import Terra2BQ
-from bioforklift.bigquery import BigQuery
-from bioforklift.alerting import SlackAlert, SlackNotifier, TerraSummary
-
-bq = BigQuery(project="general-theiagen", dataset="automation_test")
-
-# Create table, commented out after first run
-table_exists = bq.table_exists("zach_configs")
-if not table_exists:
-    table_create_res = bq.create_table(
-        table_name="zach_configs", schema_yaml="example_config_schema.yaml"
-    )
-    config_ops = bq.get_config_operations(
-        table_name="zach_configs", config_schema_yaml="example_config_schema.yaml"
-    )
-    new_config = config_ops.create_config("example_configs/test_config.json")
-    print(f"Created new config with ID: {new_config.get('id')}")
-else:
-    print("Table already exists")
 
 terra2bq = Terra2BQ(
         bigquery_project="general-theiagen",

@@ -20,7 +20,7 @@ else:
 samples_table_exists = bq.table_exists("zach_samples")
 if not samples_table_exists:
     samples_table_create_res = bq.create_table(
-        table_name="zach_samples", schema_yaml="zach_samples_schema.yaml"
+        table_name="zach_samples", schema_yaml="example_sample_schema.yaml"
     )
     print(f"Created samples table: {samples_table_create_res}")
 else:
