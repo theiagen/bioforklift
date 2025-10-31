@@ -6,17 +6,11 @@ fields:
     primary_key: true  # This field will be auto-populated with UUID
     system_value: true
   
-  entity_identifier:
+  specimen_id:
     type: string
     required: true
-    column_mappings: ["entity:data_id"]
-    description: External entity identifier
-
-  basespace_collection_id:
-    type: string
-    description: Basespace collection ID
-    use_field_name: true
     sample_identifier: true
+    description: External specimen identifier
 
   config_id:
     type: string
