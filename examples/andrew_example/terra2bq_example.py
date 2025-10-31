@@ -7,13 +7,13 @@ from bioforklift.alerting import SlackAlert, SlackNotifier, TerraSummary
 bq = BigQuery(project="general-theiagen", dataset="automation_test")
 
 # Create table, commented out after first run
-table_exists = bq.table_exists("theron_configs")
+table_exists = bq.table_exists("andrew_configs")
 if not table_exists:
     table_create_res = bq.create_table(
-        table_name="theron_configs", schema_yaml="example_config_schema.yaml"
+        table_name="andrew_configs", schema_yaml="example_config_schema.yaml"
     )
     config_ops = bq.get_config_operations(
-        table_name="theron_configs", config_schema_yaml="example_config_schema.yaml"
+        table_name="andrew_configs", config_schema_yaml="example_config_schema.yaml"
     )
     new_config = config_ops.create_config("example_configs/test_config.json")
     print(f"Created new config with ID: {new_config.get('id')}")
@@ -23,8 +23,8 @@ else:
 terra2bq = Terra2BQ(
         bigquery_project="general-theiagen",
         bigquery_dataset="automation_test",
-        samples_table="theron_samples",
-        configs_table="theron_configs",
+        samples_table="andrew_samples",
+        configs_table="andrew_configs",
         samples_schema_yaml=Path("example_sample_schema.yaml"),
         configs_schema_yaml=Path("example_config_schema.yaml"),
         project_timezone="America/Los_Angeles",
