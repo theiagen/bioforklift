@@ -28,6 +28,15 @@ The Terra module provides classes for:
 - **TerraEntities**: Operations for Terra data entities
 - **TerraSubmissions**: Operations for Terra workflow submissions
 
+### Data Processing
+
+The Data Processing module provides classes for:
+
+- **SampleDataProcessor**: Processes sample metadata DataFrames with schema-based validation
+- **ConfigProcessor**: Processes configuration data for BigQuery insertion
+- **Schema Models**: Typed models for field attributes and schema definitions (FieldAttributes, SampleFieldAttributes, ConfigFieldAttributes, FieldDefinition, SchemaDefinition)
+- **Schema Converters**: Functions for converting between schema formats and types
+
 ### Terra2BQ
 
 The Terra2BQ integration layer:
@@ -35,6 +44,7 @@ The Terra2BQ integration layer:
 - Coordinates data flow between Terra and BigQuery
 - Manages configurations for different data processing pipelines
 - Tracks workflow status and metadata
+- Uses data processing classes for validation and transformation
 
 ### Alerting
 
@@ -87,18 +97,44 @@ bioforklift operations are often time-based:
 
 These are high-level data flows that are available in bioforklift:
 
-### Adding Data to BigQuery
+### Adding Data to BigQuery with Processing
 
-Terra Data Table → Terra Entities → BigQuery Sample Operations → BigQuery Table
+Terra Data Table → Terra Entities → **SampleDataProcessor** → BigQuery Sample Operations → BigQuery Table
+
+**Data Processing Steps:**
+1. **Schema Validation**: Fields validated against schema patterns and requirements
+2. **Field Mapping**: Terra column names mapped to BigQuery schema fields
+3. **Type Coercion**: Data types converted to match BigQuery schema
+4. **System Values**: UUIDs and timestamps automatically generated
+5. **Deduplication**: Existing samples filtered out based on identifiers
+
+### Configuration Processing
+
+Configuration Files/Data → **ConfigProcessor** → BigQuery Config Operations → BigQuery Table
+
+**Processing Steps:**
+1. **JSON Serialization**: Complex objects serialized for BigQuery storage
+2. **System Values**: Primary keys and timestamps generated
+3. **Validation**: Required fields and data types validated
 
 ### Data Upload and Workflow Submission
 
-BigQuery Table → BigQuery Sample Operations → Terra Entities → Terra Submission → Terra Workflow
+BigQuery Table → BigQuery Sample Operations → **Data Processing** → Terra Entities → Terra Submission → Terra Workflow
+
+**Processing Steps:**
+1. **System Column Removal**: Auto-generated fields excluded from Terra upload
+2. **Field Mapping**: BigQuery fields mapped back to Terra column names
+3. **Type Conversion**: Data prepared for Terra API format
 
 ### Updating Workflow Status
 
-Terra Submissions → Terra Workflow Status → BigQuery Sample Updates
+Terra Submissions → Terra Workflow Status → **Type Coercion** → BigQuery Sample Updates
 
 ### Synchronizing Metadata
 
-Terra Data → BigQuery Updates → Terra Destination Updates
+Terra Data → **SampleDataProcessor** → BigQuery Updates → **Data Processing** → Terra Destination Updates
+
+**Sync Processing:**
+1. **Field Filtering**: Only `sync_field` marked fields synchronized
+2. **Date Formatting**: Dates validated and formatted consistently
+3. **Bidirectional Updates**: Changes propagated to both BigQuery and Terra
