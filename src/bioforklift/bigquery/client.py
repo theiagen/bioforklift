@@ -2,7 +2,7 @@ import io
 import json
 from typing import Optional, Dict, Any, List
 from google.cloud import bigquery
-from .utils import load_schema_from_yaml
+from bioforklift.data_processing.utils import load_schema_from_yaml
 from google.api_core import exceptions
 from bioforklift.forklift_logging import setup_logger
 
@@ -23,12 +23,14 @@ class BigQueryClient:
         self.dataset = dataset
         self.location = location
 
-        # Initialize the actual client
+        # Initialize the actual client with location
         if credentials:
             credentials_json = json.loads(credentials)
-            self.client = bigquery.Client.from_service_account_info(credentials_json)
+            self.client = bigquery.Client.from_service_account_info(
+                credentials_json, location=location
+            )
         else:
-            self.client = bigquery.Client()
+            self.client = bigquery.Client(location=location)
 
     def __getattr__(self, name):
         """Pass through any unimplemented methods to the underlying client"""
@@ -53,10 +55,10 @@ class BigQueryClient:
         schema_info = load_schema_from_yaml(schema_yaml)
         schema = schema_info["schema"]
 
-        # Create table reference
+        # Create table reference with location
         table_id = f"{self.project}.{self.dataset}.{table_name}"
         table = bigquery.Table(table_id, schema=schema)
-        logger.info(f"BigQuery table created: {table_id}")
+        logger.info(f"BigQuery table reference created: {table_id}")
 
         try:
             # Check if table exists
@@ -66,14 +68,15 @@ class BigQueryClient:
                 logger.error(f"Table {table_id} already exists")
                 raise ValueError(f"Table {table_id} already exists")
 
+            logger.info(f"Table {table_id} already exists")
             return {
                 "table": existing_table,
                 "field_attributes": schema_info["field_attributes"],
             }
 
         except exceptions.NotFound:
-            # Table doesn't exist, create it
-            logger.info(f"Creating new table: {table_id}")
+            # Table doesn't exist, create it with location from client
+            logger.info(f"Creating new table: {table_id} in location: {self.location}")
             created_table = self.client.create_table(table)
             return {
                 "table": created_table,
@@ -99,7 +102,7 @@ class BigQueryClient:
             table_obj = self.client.get_table(table)
 
             logger.info("Configuring row insert job config")
-            # Configure load job
+            # Configure load job with location
             job_config = bigquery.LoadJobConfig(
                 source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
                 schema=table_obj.schema,
@@ -112,7 +115,8 @@ class BigQueryClient:
             data = "\n".join(json_rows).encode("utf-8")
 
             # Create and run load job
-            logger.info("Running row insert job")
+            # Location is inherited from self.client which was initialized with location
+            logger.info(f"Running row insert job with location: {self.location}")
             load_job = self.client.load_table_from_file(
                 io.BytesIO(data), table, job_config=job_config
             )

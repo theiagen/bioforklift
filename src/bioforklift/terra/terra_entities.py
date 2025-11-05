@@ -103,7 +103,7 @@ class TerraEntities:
             max_retries=max_retries,
         )
         logger.info(
-            f"Downloaded {entity_type} table from Terra with response; {response}"
+            f"Downloaded {entity_type} table from Terra workspace {self.client.destination_workspace if use_destination else self.client.source_workspace}"
         )
         return stream_terra_table(
             response, destination=destination, chunk_size=chunk_size

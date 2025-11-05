@@ -35,6 +35,78 @@ fields:
     description: Read 2 sequence
     sequence_file: true
 
+  assembly_length_unambiguous:
+      type: integer
+      description: Length of unambiguous assembly
+      metadata: true
+      sync_field: true
+
+  assembly_mean_coverage:
+    type: float
+    description: Mean coverage of the assembly
+    metadata: true
+    sync_field: true
+  
+  gisaid_accession:
+    type: string
+    description: GISAID accession number
+    metadata: true
+    sync_field: true
+  
+  nextclade_aa_dels:
+    type: string
+    description: Amino acid deletions identified by Nextclade
+    metadata: true
+    sync_field: true
+  
+  nextclade_aa_subs:
+    type: string
+    description: Amino acid substitutions identified by Nextclade
+    metadata: true
+    sync_field: true
+  
+  nextclade_clade:
+    type: string
+    description: Clade assigned by Nextclade
+    metadata: true
+    sync_field: true
+
+  nextclade_version:
+    type: string
+    description: Version of Nextclade used
+    metadata: true
+    sync_field: true
+  
+  number_N:
+    type: string
+    description: Number of 'N' bases in the assembly
+    metadata: true
+    sync_field: true
+
+  pango_lineage:
+    type: string
+    description: Pango lineage assigned to the sample
+    metadata: true
+    sync_field: true
+  
+  pangolin_versions:
+    type: string
+    description: Versions of Pangolin used
+    metadata: true
+    sync_field: true
+  
+  percent_reference_coverage:
+    type: string
+    description: Percent coverage of the reference genome
+    metadata: true
+    sync_field: true
+
+  vadr_num_alerts:
+    type: string
+    description: Number of alerts identified by VADR
+    metadata: true
+    sync_field: true
+  
   upload_date:
     type: string
     description: Date of sample collection

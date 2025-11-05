@@ -125,22 +125,25 @@ def sample_rows():
 
 
 @pytest.fixture
-def bq_operations(mock_bq_client, test_schema, test_field_attributes):
+def bq_operations(mock_bq_client, test_schema, test_field_attributes, tmp_path):
     """Create a BigQuerySampleOperations instance with mock client."""
-    with patch("bioforklift.bigquery.utils.load_schema_from_yaml") as mock_load_schema:
+    # Create a real temp YAML file for the schema
+    schema_file = tmp_path / "test_schema.yaml"
+    schema_file.write_text("fields:\n  sample_id:\n    type: string\n")
+
+    with patch("bioforklift.data_processing.utils.load_schema_from_yaml") as mock_load_schema:
         mock_load_schema.return_value = {
             "schema": test_schema,
             "field_attributes": test_field_attributes,
         }
 
         operations = BigQuerySampleOperations(
-            client=mock_bq_client, table_name="test_samples_timeframe"
+            client=mock_bq_client,
+            table_name="test_samples_timeframe",
+            sample_schema_yaml=str(schema_file)
         )
 
-        # Override attributes directly
-        operations.field_attributes = test_field_attributes
-        operations.schema = test_schema
-        return operations
+        yield operations
 
 
 def setup_query_mock(mock_bq_client, sample_rows, query_matcher=None):
