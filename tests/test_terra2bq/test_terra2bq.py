@@ -653,16 +653,16 @@ def test_sync_metadata_for_config_success(t2bq, sample_config):
     t2bq._get_target_entity_from_config = MagicMock(return_value="sample")
     
     result = t2bq.sync_metadata_for_config(sample_config, days_back=7, update_bigquery=True, update_destination=True)
-    
+
     # Check result
     assert isinstance(result, MetadataSyncResult)
     assert result.status == OperationStatus.SUCCESS
     assert result.config_id == sample_config["id"]
     assert result.bq_updated_count == 3
-    assert result.destination_updated_count == 3  
-    
+    assert result.destination_updated_count == 3
+
     # Verify the methods were called with the correct parameters
-    t2bq._get_terra_data.assert_called_once_with(sample_config["entity_type"], use_destination=False)
+    t2bq._get_terra_data.assert_called_once_with(sample_config["entity_type"], use_destination=False, page_size=None)
     t2bq._update_bigquery_with_terra_metadata.assert_called_once()
     t2bq._update_terra_with_synced_metadata.assert_called_once()  
 

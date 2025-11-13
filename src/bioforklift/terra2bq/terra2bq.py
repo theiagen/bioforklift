@@ -175,13 +175,14 @@ class Terra2BQ:
 
         return target_entity_clean
 
-    def _get_terra_data(self, entity_type: str, use_destination: bool = False) -> DataResult:
+    def _get_terra_data(self, entity_type: str, use_destination: bool = False, page_size: Optional[int] = None) -> DataResult:
         """
         Download data from Terra for a specific entity type.
 
         Args:
             entity_type: Terra entity type
             use_destination: Whether to use destination workspace/project
+            page_size: Number of rows to fetch per page from Terra (for large tables)
 
         Returns:
             DataResult with download results and data
@@ -189,7 +190,7 @@ class Terra2BQ:
         try:
             workspace_info = "destination" if use_destination else "source"
             logger.info(f"Downloading data from Terra entity type: {entity_type} (using {workspace_info})")
-            terra_df = self.terra.entities.download_table(entity_type, use_destination=use_destination)
+            terra_df = self.terra.entities.download_table(entity_type, use_destination=use_destination, page_size=page_size)
 
             if terra_df.empty:
                 logger.info(f"No data found in Terra table: {entity_type}")
@@ -1825,6 +1826,7 @@ class Terra2BQ:
         config: Dict[str, Any],
         days_back: int,
         overwrite_metadata: bool = False,
+        page_size: Optional[int] = None,
         update_bigquery: bool = True,
         update_destination: bool = True,
         use_destination_entity: bool = False,
@@ -1837,6 +1839,7 @@ class Terra2BQ:
             config: Configuration dictionary
             days_back: Number of days to look back for samples
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
+            page_size: Number of rows to fetch per page from Terra (for large tables)
             update_bigquery: Whether to update BigQuery with Terra metadata
             update_destination: Whether to update destination Terra datatable
             use_destination_entity: Whether to use the destination entity type from the configuration
@@ -1932,7 +1935,7 @@ class Terra2BQ:
             )
 
         # Get results from helper functions
-        terra_data_result = self._get_terra_data(entity_type, use_destination=use_destination_entity)
+        terra_data_result = self._get_terra_data(entity_type, use_destination=use_destination_entity, page_size=page_size)
         logger.debug(
             f"Retrieved {len(terra_data_result.data)} samples from Terra for entity type {entity_type}"
         )
@@ -2002,6 +2005,7 @@ class Terra2BQ:
         self,
         days_back: int = 30,
         overwrite_metadata: bool = False,
+        page_size: Optional[int] = None,
         update_bigquery: bool = True,
         update_destination: bool = True,
         use_destination_entity: bool = False,
@@ -2015,6 +2019,7 @@ class Terra2BQ:
         Args:
             days_back: Number of days to look back for samples
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
+            page_size: Number of rows to fetch per page from Terra (for large tables)
             update_bigquery: Whether to update BigQuery with Terra metadata (set to False for dry run)
             update_destination: Whether to update destination Terra datatable (set to False for dry run)
             use_destination_entity: Whether to use the destination entity type from the configuration
@@ -2110,6 +2115,7 @@ class Terra2BQ:
                     config=config,
                     days_back=days_back,
                     overwrite_metadata=overwrite_metadata,
+                    page_size=page_size,
                     update_bigquery=update_bigquery,
                     update_destination=update_destination,
                     use_destination_entity=use_destination_entity,
