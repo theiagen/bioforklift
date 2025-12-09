@@ -652,7 +652,7 @@ def test_sync_metadata_for_config_success(t2bq, sample_config):
     ))
     t2bq._get_target_entity_from_config = MagicMock(return_value="sample")
     
-    result = t2bq.sync_metadata_for_config(sample_config, days_back=7, update_bigquery=True, update_destination=True)
+    result = t2bq.sync_metadata_for_config(sample_config, days_back=7, sync_fields=["attr1"], update_bigquery=True, update_destination=True)
 
     # Check result
     assert isinstance(result, MetadataSyncResult)
@@ -662,7 +662,7 @@ def test_sync_metadata_for_config_success(t2bq, sample_config):
     assert result.destination_updated_count == 3
 
     # Verify the methods were called with the correct parameters
-    t2bq._get_terra_data.assert_called_once_with(sample_config["entity_type"], use_destination=False, page_size=None)
+    t2bq._get_terra_data.assert_called_once_with(entity_type=sample_config["entity_type"], use_destination=False, page_size=None)
     t2bq._update_bigquery_with_terra_metadata.assert_called_once()
     t2bq._update_terra_with_synced_metadata.assert_called_once()  
 
@@ -712,6 +712,7 @@ def test_sync_metadata_for_config_invalid_parameter_combination(t2bq):
     result = t2bq.sync_metadata_for_config(
         config=config,
         days_back=7,
+        sync_fields=["field1"],
         update_bigquery=True,
         update_destination=True,
         use_destination_entity=True
@@ -763,6 +764,7 @@ def test_sync_metadata_for_config_calls_get_target_entity_with_use_destination_e
     result = t2bq.sync_metadata_for_config(
         config=config,
         days_back=7,
+        sync_fields=["field1", "field2"],
         update_bigquery=True,
         update_destination=False,
         use_destination_entity=True
@@ -798,6 +800,7 @@ def test_sync_metadata_for_config_calls_get_target_entity_with_use_destination_e
     result = t2bq.sync_metadata_for_config(
         config=config,
         days_back=7,
+        sync_fields=["field1", "field2"],
         update_bigquery=True,
         update_destination=True,
         use_destination_entity=False

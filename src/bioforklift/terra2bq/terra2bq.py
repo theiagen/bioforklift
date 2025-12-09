@@ -718,7 +718,7 @@ class Terra2BQ:
                 try:
                     # Get workflow metadata
                     workflows = self.terra.submissions.get_workflows_by_submission(
-                        submission_id
+                        submission_id=submission_id, use_destination=True
                     )
 
                     # Find matching workflow
@@ -1825,6 +1825,7 @@ class Terra2BQ:
         self,
         config: Dict[str, Any],
         days_back: int,
+        sync_fields: List[str],
         overwrite_metadata: bool = False,
         page_size: Optional[int] = None,
         update_bigquery: bool = True,
@@ -1838,6 +1839,7 @@ class Terra2BQ:
         Args:
             config: Configuration dictionary
             days_back: Number of days to look back for samples
+            sync_fields: List of metadata fields to sync between Terra and BigQuery
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
             page_size: Number of rows to fetch per page from Terra (for large tables)
             update_bigquery: Whether to update BigQuery with Terra metadata
@@ -1935,7 +1937,7 @@ class Terra2BQ:
             )
 
         # Get results from helper functions
-        terra_data_result = self._get_terra_data(entity_type, use_destination=use_destination_entity, page_size=page_size)
+        terra_data_result = self._get_terra_data(entity_type=entity_type, use_destination=use_destination_entity, page_size=page_size)
         logger.debug(
             f"Retrieved {len(terra_data_result.data)} samples from Terra for entity type {entity_type}"
         )
@@ -1949,7 +1951,6 @@ class Terra2BQ:
             )
 
         terra_df = terra_data_result.data
-        sync_fields = self.sample_processor.get_sync_fields()
         sample_identifier_field = self.sample_processor.get_sample_identifier_field()
 
         if not sample_identifier_field:
@@ -2012,6 +2013,7 @@ class Terra2BQ:
         batch_size: int = 1,
         update_batch_size: int = 300,
         cooldown_seconds: int = 1,
+        sync_fields: Optional[List[str]] = None,
     ) -> MetadataSyncResult:
         """
         Sync metadata between Terra data tables and BigQuery, and update destination Terra datatable.
@@ -2026,6 +2028,7 @@ class Terra2BQ:
             batch_size: Number of configurations to process in a batch before cooldown
             update_batch_size: Number of samples to process in a batch for each configuration for bigquery udpates
             cooldown_seconds: Seconds to wait between batches
+            sync_fields: Optional list of metadata fields to sync; if None, will fetch from sample schema
 
         Returns:
             {
@@ -2067,7 +2070,12 @@ class Terra2BQ:
             )
 
         # Get the fields that should be synced
-        sync_fields = self.sample_processor.get_sync_fields()
+        if sync_fields is None:
+            logger.info(f"Fetching sync fields from sample schema")
+            sync_fields = self.sample_processor.get_sync_fields()
+        else:
+            logger.info(f"Using provided sync fields: {sync_fields}")
+        
         if not sync_fields:
             logger.info("No sync fields defined in the sample schema")
             return MetadataSyncResult(
@@ -2114,6 +2122,7 @@ class Terra2BQ:
                 result = self.sync_metadata_for_config(
                     config=config,
                     days_back=days_back,
+                    sync_fields=sync_fields,
                     overwrite_metadata=overwrite_metadata,
                     page_size=page_size,
                     update_bigquery=update_bigquery,
