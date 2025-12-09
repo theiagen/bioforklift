@@ -718,7 +718,7 @@ class Terra2BQ:
                 try:
                     # Get workflow metadata
                     workflows = self.terra.submissions.get_workflows_by_submission(
-                        submission_id
+                        submission_id=submission_id, use_destination=True
                     )
 
                     # Find matching workflow
