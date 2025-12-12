@@ -202,7 +202,7 @@ class TerraSummary:
             for config_id, group in samples_df.groupby(config_id_field):
                 config = None
                 if self.terra2bq.config_processor:
-                    config = self.terra2bq.config_processor.get_config(config_id)
+                    config = self.terra2bq.config_ops.get_config(config_id)
 
                 if config_name_column:
                     config_name = config[config_name_column]
