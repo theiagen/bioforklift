@@ -27,6 +27,7 @@ The Terra module provides classes for:
 - **TerraClient**: Base client for Terra API interactions
 - **TerraEntities**: Operations for Terra data entities
 - **TerraSubmissions**: Operations for Terra workflow submissions
+- **TerraToTerraTransfer**: Transfer samples between Terra workspaces with deduplication
 
 ### Data Processing
 
@@ -138,3 +139,27 @@ Terra Data → **SampleDataProcessor** → BigQuery Updates → **Data Processin
 1. **Field Filtering**: Only `sync_field` marked fields synchronized
 2. **Date Formatting**: Dates validated and formatted consistently
 3. **Bidirectional Updates**: Changes propagated to both BigQuery and Terra
+
+### Terra-to-Terra Data Promotion
+
+Source Terra Workspace → **TerraToTerraTransfer** → Destination Terra Workspace → **Terra2BQ** → BigQuery
+
+This flow supports "data promotion" workflows where analyzed samples move from a working workspace to a production workspace:
+
+1. **Deduplication**: Only new samples (not already in destination) are transferred
+2. **Schema-less Transfer**: All columns from source are preserved in destination
+3. **BigQuery Sync**: Transferred samples can then be synced to BigQuery with a curated schema
+
+```python
+from bioforklift.terra import TerraToTerraTransfer, TransferStatus
+from bioforklift.terra2bq import Terra2BQ
+
+# Step 1: Transfer to destination workspace
+transfer = TerraToTerraTransfer.from_config("terra_transfer_config.yaml")
+result = transfer.transfer()
+
+# Step 2: Sync to BigQuery
+if result.status == TransferStatus.SUCCESS:
+    terra2bq = Terra2BQ(...)
+    terra2bq.download_from_terra_to_bigquery()
+```

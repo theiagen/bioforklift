@@ -1,0 +1,13 @@
+source:
+  workspace_namespace: "source-billing-project"
+  workspace_name: "analysis-workspace"
+  table_name: "sample"
+
+destination:
+  workspace_namespace: "dest-billing-project"
+  workspace_name: "production-workspace"
+  table_name: "sample"
+
+transfer:
+  identifier_column: "basespace_collection_id"
+  batch_size: 500
