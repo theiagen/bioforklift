@@ -27,9 +27,9 @@ class TestTerraToTerraTransfer:
 
         assert transfer.source_table_name == "analyzed_sample"
         assert transfer.destination_table_name == "sample"
-        # Defaults to {table_name}_id
-        assert transfer.source_identifier_column == "analyzed_sample_id"
-        assert transfer.destination_identifier_column == "sample_id"
+        # Defaults to entity:{table_name}_id
+        assert transfer.source_identifier_column == "entity:analyzed_sample_id"
+        assert transfer.destination_identifier_column == "entity:sample_id"
         assert transfer.batch_size == 500  # default
 
     def test_init_with_custom_identifiers(self, mock_terra_client):
