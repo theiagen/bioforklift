@@ -17,33 +17,49 @@ def mock_terra_client():
 
 
 class TestTerraToTerraTransfer:
-    def test_init(self, mock_terra_client):
-        """Test TerraToTerraTransfer initialization"""
+    def test_init_with_defaults(self, mock_terra_client):
+        """Test TerraToTerraTransfer initialization with default identifier columns"""
         transfer = TerraToTerraTransfer(
             client=mock_terra_client,
-            table_name="sample",
-            identifier_column="sample_id"
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
         )
 
-        assert transfer.table_name == "sample"
-        assert transfer.identifier_column == "sample_id"
+        assert transfer.source_table_name == "analyzed_sample"
+        assert transfer.destination_table_name == "sample"
+        # Defaults to {table_name}_id
+        assert transfer.source_identifier_column == "analyzed_sample_id"
+        assert transfer.destination_identifier_column == "sample_id"
         assert transfer.batch_size == 500  # default
+
+    def test_init_with_custom_identifiers(self, mock_terra_client):
+        """Test TerraToTerraTransfer initialization with custom identifier columns"""
+        transfer = TerraToTerraTransfer(
+            client=mock_terra_client,
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
+            source_identifier_column="custom_source_id",
+            destination_identifier_column="custom_dest_id",
+        )
+
+        assert transfer.source_identifier_column == "custom_source_id"
+        assert transfer.destination_identifier_column == "custom_dest_id"
 
     def test_get_new_sample_ids_all_new(self, mock_terra_client):
         """Test finding new samples when destination is empty"""
         transfer = TerraToTerraTransfer(
             client=mock_terra_client,
-            table_name="sample",
-            identifier_column="sample_id"
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
         )
 
-        # Mock source data
+        # Mock source data with source table's ID column
         source_df = pd.DataFrame({
-            "entity:sample_id": ["s1", "s2", "s3"],
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
             "value": ["a", "b", "c"]
         })
 
-        # Mock empty destination
+        # Mock empty destination with destination table's ID column
         dest_df = pd.DataFrame(columns=["entity:sample_id", "value"])
 
         # Mock the entities.download_table method
@@ -57,13 +73,13 @@ class TestTerraToTerraTransfer:
         """Test finding new samples when some already exist in destination"""
         transfer = TerraToTerraTransfer(
             client=mock_terra_client,
-            table_name="sample",
-            identifier_column="sample_id"
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
         )
 
         # Mock source data
         source_df = pd.DataFrame({
-            "entity:sample_id": ["s1", "s2", "s3"],
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
             "value": ["a", "b", "c"]
         })
 
@@ -83,12 +99,12 @@ class TestTerraToTerraTransfer:
         """Test when all samples already exist in destination"""
         transfer = TerraToTerraTransfer(
             client=mock_terra_client,
-            table_name="sample",
-            identifier_column="sample_id"
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
         )
 
         source_df = pd.DataFrame({
-            "entity:sample_id": ["s1", "s2"],
+            "entity:analyzed_sample_id": ["s1", "s2"],
             "value": ["a", "b"]
         })
 
@@ -107,13 +123,13 @@ class TestTerraToTerraTransfer:
         """Test successful transfer of new samples"""
         transfer = TerraToTerraTransfer(
             client=mock_terra_client,
-            table_name="sample",
-            identifier_column="sample_id"
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
         )
 
         # Mock source data (full table with all columns)
         source_df = pd.DataFrame({
-            "entity:sample_id": ["s1", "s2", "s3"],
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
             "col1": ["a", "b", "c"],
             "col2": [1, 2, 3]
         })
@@ -125,7 +141,7 @@ class TestTerraToTerraTransfer:
         transfer.entities.download_table = Mock(return_value=source_df)
 
         # Mock upload_entities
-        transfer.entities.upload_entities = Mock(return_value=source_df)
+        transfer.entities.upload_entities = Mock()
 
         result = transfer.transfer()
 
@@ -133,12 +149,18 @@ class TestTerraToTerraTransfer:
         assert set(result.transferred_ids) == {"s2", "s3"}
         assert result.transferred_count == 2
 
+        # Verify upload was called with renamed column
+        upload_call = transfer.entities.upload_entities.call_args
+        uploaded_df = upload_call.kwargs["data"]
+        assert "entity:sample_id" in uploaded_df.columns
+        assert "entity:analyzed_sample_id" not in uploaded_df.columns
+
     def test_transfer_no_new_samples(self, mock_terra_client):
         """Test transfer when no new samples exist"""
         transfer = TerraToTerraTransfer(
             client=mock_terra_client,
-            table_name="sample",
-            identifier_column="sample_id"
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
         )
 
         transfer.get_new_sample_ids = Mock(return_value=set())
@@ -152,8 +174,8 @@ class TestTerraToTerraTransfer:
         """Test transfer when source table is empty"""
         transfer = TerraToTerraTransfer(
             client=mock_terra_client,
-            table_name="sample",
-            identifier_column="sample_id"
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
         )
 
         # Empty source
@@ -162,35 +184,6 @@ class TestTerraToTerraTransfer:
         result = transfer.transfer()
 
         assert result.status == TransferStatus.NO_NEW_SAMPLES
-
-    def test_from_config(self, tmp_path):
-        """Test creating TerraToTerraTransfer from YAML config"""
-        # Create temp config file
-        config_content = """
-source:
-  workspace_namespace: "source-billing-project"
-  workspace_name: "source-workspace"
-  table_name: "sample"
-
-destination:
-  workspace_namespace: "dest-billing-project"
-  workspace_name: "dest-workspace"
-  table_name: "sample"
-
-transfer:
-  identifier_column: "sample_id"
-  batch_size: 250
-"""
-        config_path = tmp_path / "config.yaml"
-        config_path.write_text(config_content)
-
-        transfer = TerraToTerraTransfer.from_config(str(config_path))
-
-        assert transfer.table_name == "sample"
-        assert transfer.identifier_column == "sample_id"
-        assert transfer.batch_size == 250
-        assert transfer.client.source_workspace == "source-workspace"
-        assert transfer.client.destination_workspace == "dest-workspace"
 
 
 class TestTerraModuleExports:

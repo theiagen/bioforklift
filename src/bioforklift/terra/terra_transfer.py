@@ -1,11 +1,14 @@
-from typing import Set
-from pathlib import Path
+from typing import Optional, Set
 import pandas as pd
-import yaml
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.terra.client import TerraClient
 from bioforklift.terra.terra_entities import TerraEntities
 from bioforklift.terra.models import TransferResult, TransferStatus
+from bioforklift.terra.exceptions import (
+    TerraTransferSourceError,
+    TerraTransferUploadError,
+    TerraNotFoundError,
+)
 
 logger = setup_logger(__name__)
 
@@ -16,8 +19,10 @@ class TerraToTerraTransfer:
     def __init__(
         self,
         client: TerraClient,
-        table_name: str,
-        identifier_column: str,
+        source_table_name: str,
+        destination_table_name: str,
+        source_identifier_column: Optional[str] = None,
+        destination_identifier_column: Optional[str] = None,
         batch_size: int = 500,
     ):
         """
@@ -25,53 +30,21 @@ class TerraToTerraTransfer:
 
         Args:
             client: TerraClient configured with source and destination workspaces
-            table_name: Name of the entity table to transfer
-            identifier_column: Column used to identify unique samples for deduplication
+            source_table_name: Name of the entity table in the source workspace
+            destination_table_name: Name of the entity table in the destination workspace
+            source_identifier_column: Column used to identify samples in source table.
+                Defaults to {source_table_name}_id (Terra convention).
+            destination_identifier_column: Column used to identify samples in destination table.
+                Defaults to {destination_table_name}_id (Terra convention).
             batch_size: Number of entities per upload batch (default 500)
         """
         self.client = client
         self.entities = TerraEntities(client)
-        self.table_name = table_name
-        self.identifier_column = identifier_column
+        self.source_table_name = source_table_name
+        self.destination_table_name = destination_table_name
+        self.source_identifier_column = source_identifier_column or f"entity:{source_table_name}_id"
+        self.destination_identifier_column = destination_identifier_column or f"entity:{destination_table_name}_id"
         self.batch_size = batch_size
-
-    @classmethod
-    def from_config(cls, config_path: str) -> "TerraToTerraTransfer":
-        """
-        Create TerraToTerraTransfer from a YAML config file.
-
-        Args:
-            config_path: Path to YAML configuration file
-
-        Returns:
-            Configured TerraToTerraTransfer instance
-        """
-        config_path = Path(config_path)
-
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-
-        source = config['source']
-        destination = config['destination']
-        transfer_config = config.get('transfer', {})
-
-        # Create TerraClient with source and destination
-        client = TerraClient(
-            source_workspace=source['workspace_name'],
-            source_project=source['workspace_namespace'],
-            destination_workspace=destination['workspace_name'],
-            destination_project=destination['workspace_namespace'],
-        )
-
-        # Use source table_name, fallback to destination if different
-        table_name = source.get('table_name', destination.get('table_name', 'sample'))
-
-        return cls(
-            client=client,
-            table_name=table_name,
-            identifier_column=transfer_config.get('identifier_column', 'sample_id'),
-            batch_size=transfer_config.get('batch_size', 500),
-        )
 
     def get_new_sample_ids(self) -> Set[str]:
         """
@@ -79,33 +52,53 @@ class TerraToTerraTransfer:
 
         Returns:
             Set of sample IDs that exist in source but not in destination
+
+        Raises:
+            TerraTransferSourceError: If source table cannot be accessed or identifier column is missing
         """
+
         # Download source table (only identifier column needed for comparison)
-        id_col = f"entity:{self.identifier_column}"
-
         logger.info(f"Fetching sample IDs from source workspace")
-        source_df = self.entities.download_table(
-            entity_type=self.table_name,
-            attributes=[self.identifier_column],
-            use_destination=False
-        )
+        try:
+            source_df = self.entities.download_table(
+                entity_type=self.source_table_name,
+                attributes=[self.source_identifier_column],
+                use_destination=False
+            )
+        except TerraNotFoundError as e:
+            raise TerraTransferSourceError(
+                f"Source table '{self.source_table_name}' not found in workspace "
+                f"'{self.client.source_project}/{self.client.source_workspace}'"
+            ) from e
+        except Exception as e:
+            raise TerraTransferSourceError(
+                f"Failed to access source table '{self.source_table_name}': {e}"
+            ) from e
 
+        if self.source_identifier_column not in source_df.columns:
+            raise TerraTransferSourceError(
+                f"Identifier column '{self.source_identifier_column}' not found in source table. "
+                f"Available columns: {list(source_df.columns)}"
+            )
+
+        # Download destination table (may not exist yet)
         logger.info(f"Fetching sample IDs from destination workspace")
         try:
             dest_df = self.entities.download_table(
-                entity_type=self.table_name,
-                attributes=[self.identifier_column],
+                entity_type=self.destination_table_name,
+                attributes=[self.destination_identifier_column],
                 use_destination=True
             )
+        except TerraNotFoundError:
+            logger.info(f"Destination table '{self.destination_table_name}' not found, treating as empty")
+            dest_df = pd.DataFrame(columns=[self.destination_identifier_column])
         except Exception as e:
-            # Destination table might not exist yet
-            logger.info(f"Destination table not found or empty, treating as empty: {e}")
-            dest_df = pd.DataFrame(columns=[id_col])
+            logger.warning(f"Could not access destination table, treating as empty: {e}")
+            dest_df = pd.DataFrame(columns=[self.destination_identifier_column])
 
         # Extract IDs
-        source_ids = set(source_df[id_col].dropna().astype(str).tolist()) if id_col in source_df.columns else set()
-        dest_ids = set(dest_df[id_col].dropna().astype(str).tolist()) if id_col in dest_df.columns else set()
-
+        source_ids = set(source_df[self.source_identifier_column].dropna().astype(str).tolist())
+        dest_ids = set(dest_df[self.destination_identifier_column].dropna().astype(str).tolist()) if self.destination_identifier_column in dest_df.columns else set()
         new_ids = source_ids - dest_ids
 
         logger.info(f"Found {len(source_ids)} samples in source, {len(dest_ids)} in destination, {len(new_ids)} new")
@@ -118,6 +111,10 @@ class TerraToTerraTransfer:
 
         Returns:
             TransferResult with status and details of the transfer
+
+        Raises:
+            TerraTransferSourceError: If source table cannot be accessed
+            TerraTransferUploadError: If upload to destination fails
         """
         # Find samples to transfer
         new_ids = self.get_new_sample_ids()
@@ -132,38 +129,41 @@ class TerraToTerraTransfer:
         logger.info(f"Transferring {len(new_ids)} new samples")
 
         # Download full source data (all columns)
-        source_df = self.entities.download_table(
-            entity_type=self.table_name,
-            use_destination=False
-        )
+        try:
+            source_df = self.entities.download_table(
+                entity_type=self.source_table_name,
+                use_destination=False
+            )
+        except Exception as e:
+            raise TerraTransferSourceError(
+                f"Failed to download full source data: {e}"
+            ) from e
 
         # Filter to only new samples
-        id_col = f"entity:{self.identifier_column}"
-        samples_to_transfer = source_df[source_df[id_col].isin(new_ids)].copy()
+        samples_to_transfer = source_df[source_df[self.source_identifier_column].isin(new_ids)].copy()
 
         logger.info(f"Filtered to {len(samples_to_transfer)} samples for transfer")
 
-        transferred_ids = []
-        failed_ids = []
+        # Rename source ID column to destination ID column for upload
+        samples_to_transfer = samples_to_transfer.rename(columns={self.source_identifier_column: self.destination_identifier_column})
 
         # Upload to destination
         try:
             self.entities.upload_entities(
                 data=samples_to_transfer,
-                target=self.table_name,
-                entity_identifier_column=id_col,
+                target=self.destination_table_name,
+                entity_identifier_column=self.destination_identifier_column,
                 use_destination=True
             )
-            transferred_ids = samples_to_transfer[id_col].tolist()
-            logger.info(f"Successfully transferred {len(transferred_ids)} samples")
         except Exception as e:
-            logger.error(f"Failed to transfer samples: {e}")
-            failed_ids = list(new_ids)
-            return TransferResult(
-                status=TransferStatus.ERROR,
-                failed_ids=failed_ids,
-                message=f"Transfer failed: {str(e)}"
-            )
+            logger.error(f"Failed to upload samples to destination: {e}")
+            raise TerraTransferUploadError(
+                f"Failed to upload {len(samples_to_transfer)} samples to destination "
+                f"'{self.client.destination_project}/{self.client.destination_workspace}': {e}"
+            ) from e
+
+        transferred_ids = samples_to_transfer[self.destination_identifier_column].tolist()
+        logger.info(f"Successfully transferred {len(transferred_ids)} samples")
 
         return TransferResult(
             status=TransferStatus.SUCCESS,
