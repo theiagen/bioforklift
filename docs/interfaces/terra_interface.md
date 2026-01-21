@@ -612,8 +612,10 @@ Transfer entities between Terra workspaces with automatic deduplication. This cl
 ```python
 TerraToTerraTransfer(
     client: TerraClient,
-    table_name: str,
-    identifier_column: str,
+    source_table_name: str,
+    destination_table_name: str,
+    source_identifier_column: Optional[str] = None,
+    destination_identifier_column: Optional[str] = None,
     batch_size: int = 500
 )
 ```
@@ -621,36 +623,11 @@ TerraToTerraTransfer(
 #### Parameters
 
 - **client** (TerraClient): TerraClient configured with source and destination workspaces
-- **table_name** (str): Name of the entity table to transfer
-- **identifier_column** (str): Column used to identify unique samples for deduplication
+- **source_table_name** (str): Name of the entity table in the source workspace
+- **destination_table_name** (str): Name of the entity table in the destination workspace
+- **source_identifier_column** (str, optional): Column used to identify samples in source table. Defaults to `{source_table_name}_id` (Terra convention).
+- **destination_identifier_column** (str, optional): Column used to identify samples in destination table. Defaults to `{destination_table_name}_id` (Terra convention).
 - **batch_size** (int): Number of entities per upload batch (default 500)
-
-### Class Method: `from_config`
-
-Create a TerraToTerraTransfer instance from a YAML configuration file.
-
-```python
-@classmethod
-def from_config(cls, config_path: str) -> "TerraToTerraTransfer"
-```
-
-#### Configuration File Format
-
-```yaml
-source:
-  workspace_namespace: "source-billing-project"
-  workspace_name: "analysis-workspace"
-  table_name: "sample"
-
-destination:
-  workspace_namespace: "dest-billing-project"
-  workspace_name: "production-workspace"
-  table_name: "sample"
-
-transfer:
-  identifier_column: "sample_id"
-  batch_size: 500
-```
 
 ### Method: `get_new_sample_ids`
 
@@ -675,10 +652,22 @@ def transfer(self) -> TransferResult
 ### Example Usage
 
 ```python
-from bioforklift.terra import TerraToTerraTransfer, TransferStatus
+from bioforklift.terra import TerraToTerraTransfer, TerraClient, TransferStatus
 
-# Load from config
-transfer = TerraToTerraTransfer.from_config("terra_transfer_config.yaml")
+# Create client with source and destination workspaces
+client = TerraClient(
+    source_workspace="analysis-workspace",
+    source_project="source-billing-project",
+    destination_workspace="production-workspace",
+    destination_project="dest-billing-project",
+)
+
+# Create transfer instance (identifier columns default to {table_name}_id)
+transfer = TerraToTerraTransfer(
+    client=client,
+    source_table_name="analyzed_sample",
+    destination_table_name="sample",
+)
 
 # Execute transfer
 result = transfer.transfer()

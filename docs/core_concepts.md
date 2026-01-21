@@ -151,11 +151,21 @@ This flow supports "data promotion" workflows where analyzed samples move from a
 3. **BigQuery Sync**: Transferred samples can then be synced to BigQuery with a curated schema
 
 ```python
-from bioforklift.terra import TerraToTerraTransfer, TransferStatus
+from bioforklift.terra import TerraToTerraTransfer, TerraClient, TransferStatus
 from bioforklift.terra2bq import Terra2BQ
 
-# Step 1: Transfer to destination workspace
-transfer = TerraToTerraTransfer.from_config("terra_transfer_config.yaml")
+# Step 1: Create client and transfer to destination workspace
+client = TerraClient(
+    source_workspace="analysis-workspace",
+    source_project="source-billing-project",
+    destination_workspace="production-workspace",
+    destination_project="dest-billing-project",
+)
+transfer = TerraToTerraTransfer(
+    client=client,
+    source_table_name="analyzed_sample",
+    destination_table_name="sample",
+)  # identifier columns default to {table_name}_id
 result = transfer.transfer()
 
 # Step 2: Sync to BigQuery
