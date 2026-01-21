@@ -13,6 +13,9 @@ from .exceptions import (
     TerraNotFoundError,
     TerraPermissionError,
     TerraServerError,
+    TerraTransferError,
+    TerraTransferSourceError,
+    TerraTransferUploadError,
 )
 from .models import (
     WorkflowConfig,
@@ -43,4 +46,7 @@ __all__ = [
     "TerraNotFoundError",
     "TerraPermissionError",
     "TerraServerError",
+    "TerraTransferError",
+    "TerraTransferSourceError",
+    "TerraTransferUploadError",
 ]
