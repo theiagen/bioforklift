@@ -18,9 +18,12 @@ This module enables programmatic access to Terra's APIs, allowing you to manage 
 - [TerraClient](#class-terraclient)
 - [TerraEntities](#class-terraentities)
 - [TerraSubmissions](#class-terrasubmissions)
+- [TerraToTerraTransfer](#class-terratoterra-transfer)
 - [WorkflowConfig](#class-workflowconfig)
 - [WorkflowMetadata](#class-workflowmetadata)
 - [SubmissionInfo](#class-submissioninfo)
+- [TransferResult](#class-transferresult)
+- [TransferStatus](#class-transferstatus)
 
 ### Exception Classes
 
@@ -597,6 +600,117 @@ Model for submission information.
 - **entity_name** (str): Name of the submitted entity
 - **submission_date** (datetime): Date when the submission was created
 - **status** (Optional[str]): Current status of the submission
+
+---
+
+## Class: `TerraToTerraTransfer`
+
+Transfer entities between Terra workspaces with automatic deduplication. This class enables "data promotion" workflows where analyzed samples are moved from a working workspace to a production workspace.
+
+### Constructor
+
+```python
+TerraToTerraTransfer(
+    client: TerraClient,
+    source_table_name: str,
+    destination_table_name: str,
+    source_identifier_column: Optional[str] = None,
+    destination_identifier_column: Optional[str] = None,
+    batch_size: int = 500
+)
+```
+
+#### Parameters
+
+- **client** (TerraClient): TerraClient configured with source and destination workspaces
+- **source_table_name** (str): Name of the entity table in the source workspace
+- **destination_table_name** (str): Name of the entity table in the destination workspace
+- **source_identifier_column** (str, optional): Column used to identify samples in source table. Defaults to `{source_table_name}_id` (Terra convention).
+- **destination_identifier_column** (str, optional): Column used to identify samples in destination table. Defaults to `{destination_table_name}_id` (Terra convention).
+- **batch_size** (int): Number of entities per upload batch (default 500)
+
+### Method: `get_new_sample_ids`
+
+Compare source and destination tables to find sample IDs that need to be transferred.
+
+```python
+def get_new_sample_ids(self) -> Set[str]
+```
+
+**Returns**: Set of sample IDs that exist in source but not in destination.
+
+### Method: `transfer`
+
+Execute the transfer from source to destination workspace.
+
+```python
+def transfer(self) -> TransferResult
+```
+
+**Returns**: TransferResult with status and details of the transfer.
+
+### Example Usage
+
+```python
+from bioforklift.terra import TerraToTerraTransfer, TerraClient, TransferStatus
+
+# Create client with source and destination workspaces
+client = TerraClient(
+    source_workspace="analysis-workspace",
+    source_project="source-billing-project",
+    destination_workspace="production-workspace",
+    destination_project="dest-billing-project",
+)
+
+# Create transfer instance (identifier columns default to {table_name}_id)
+transfer = TerraToTerraTransfer(
+    client=client,
+    source_table_name="analyzed_sample",
+    destination_table_name="sample",
+)
+
+# Execute transfer
+result = transfer.transfer()
+
+if result.status == TransferStatus.SUCCESS:
+    print(f"Transferred {result.transferred_count} samples")
+    print(f"Sample IDs: {result.transferred_ids}")
+elif result.status == TransferStatus.NO_NEW_SAMPLES:
+    print("No new samples to transfer")
+```
+
+---
+
+## Class: `TransferResult`
+
+Model for sample transfer operation results.
+
+### Attributes
+
+- **status** (TransferStatus): Status of the transfer operation
+- **transferred_ids** (List[str]): List of successfully transferred sample IDs
+- **skipped_ids** (List[str]): List of sample IDs that were skipped
+- **failed_ids** (List[str]): List of sample IDs that failed to transfer
+- **message** (Optional[str]): Optional message with additional details
+
+### Computed Properties
+
+- **transferred_count** (int): Number of successfully transferred samples
+- **skipped_count** (int): Number of skipped samples
+- **failed_count** (int): Number of failed samples
+
+---
+
+## Class: `TransferStatus`
+
+Enum for transfer operation status codes.
+
+### Values
+
+- **SUCCESS**: Transfer completed successfully
+- **NO_NEW_SAMPLES**: No new samples to transfer (all already exist in destination)
+- **ERROR**: Transfer failed with an error
+- **PARTIAL_SUCCESS**: Some samples transferred, some failed
 
 ---
 
