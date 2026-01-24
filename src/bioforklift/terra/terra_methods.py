@@ -23,7 +23,7 @@ class TerraMethods:
         use_destination: bool = False,
     ) -> Dict[str, Any]:
         """
-        Get a workspace method configuration by name.
+        Get a workspace method configuration by name. By default pulls from source workspace.
 
         Args:
             config_name: Name of the method configuration to retrieve
@@ -48,6 +48,7 @@ class TerraMethods:
     ) -> Dict[str, Any]:
         """
         Add or overwrite a new workspace method configuration. AKA create a new workflow in Terra with inputs/outputs defined.
+        By default pulls from destination workspace.
 
         Args:
             config: MethodConfig containing all configuration details

@@ -52,6 +52,7 @@ class MethodRepoMethod(BaseModel):
 
     @model_validator(mode="after")
     def check_required_fields(self) -> Self:
+        # Note: having all four fields is perfectly valid, but not required
         if self.methodUri is None and not all([self.sourceRepo, self.methodPath, self.methodVersion]):
             raise ValueError("Either 'methodUri' or all of 'sourceRepo', 'methodPath', and 'methodVersion' must be provided.")
         return self
@@ -73,6 +74,7 @@ class MethodConfig(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Dict[str, Any] = Field(default_factory=dict)
 
+    # Pydandic model method runs right after initialization
     def model_post_init(self, __context: dict) -> None:
         # Automatically JSON-encode input values for Terra API compatibility
         # Skip values that contain Terra workspace references (this.*)
