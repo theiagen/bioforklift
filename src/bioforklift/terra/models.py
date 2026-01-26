@@ -1,16 +1,9 @@
-<<<<<<< HEAD
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, computed_field
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, List, Any
 from typing_extensions import Self
-import json
-=======
-from pydantic import BaseModel, Field, computed_field
-from datetime import datetime
-from typing import Optional, List
 from enum import Enum
-
->>>>>>> origin/main
+import json
 
 class WorkflowConfig(BaseModel):
     """Model for Terra workflow submission configuration"""
