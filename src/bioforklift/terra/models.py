@@ -83,6 +83,8 @@ class MethodConfig(BaseModel):
             k: v if isinstance(v, str) and v.startswith("this.") else json.dumps(v)
             for k, v in self.inputs.items()
         }
+
+
 class TransferStatus(str, Enum):
     """Status codes for sample transfer operations"""
 
