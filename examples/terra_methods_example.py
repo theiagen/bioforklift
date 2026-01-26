@@ -62,6 +62,7 @@ example = {
     "memoryRetryMultiplier": 1.0,
     "workflowFailureMode": "NoNewCalls",
     "userComment": "Test example",
+    "ignoreEmptyOutputs": False,
 }
 
 # # # Workflow operations

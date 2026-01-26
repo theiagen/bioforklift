@@ -72,8 +72,8 @@ class TerraMethods:
       use_destination: bool = True,
     ) -> Dict[str, Any]:
         """
-        Validate a workspace method configuration.
-
+        Validate a workspace method configuration. Note that this can only validate existing configurations in the workspace.
+        Meaning you must first call `overwrite_method_config` before validating a new configuration.
         Args:
             config: MethodConfig containing all configuration details
 

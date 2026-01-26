@@ -61,11 +61,13 @@ example = {
     "entityType": f"{table_name}_set", # entityType is name of set table
     "entityName": f"{table_name}_set_{current_time}", # entityName is name of specific row in table
     "expression": None, # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
+    "useCallCache": False,
     "deleteIntermediateOutputFiles": False,
     "useReferenceDisks": False,
     "memoryRetryMultiplier": 1.0,
     "workflowFailureMode": "NoNewCalls",
     "userComment": "Test example",
+    "ignoreEmptyOutputs": False,
 }
 
 # # # Workflow operations
