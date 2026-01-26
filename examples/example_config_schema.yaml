@@ -140,5 +140,4 @@ fields:
   updated_at:
       type: datetime
       description: Record update timestamp
-      updated_datetime: true 
       system_value: true

@@ -10,7 +10,8 @@ import pytz
 from bioforklift.bigquery import BigQuery
 from bioforklift.file_transfers import GCSTransferClient
 from bioforklift.terra import Terra
-from bioforklift.bigquery.utils import drop_system_value_columns
+from bioforklift.data_processing.config_processor import ConfigProcessor
+from bioforklift.data_processing.sample_processor import SampleDataProcessor
 from bioforklift.terra.models import WorkflowConfig
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.terra2bq.models import (
@@ -21,7 +22,6 @@ from bioforklift.terra2bq.models import (
     UploadResult,
     DownloadResult,
     SubmissionResult,
-    ProcessAllConfigsResult,
     OperationStatus
 )
 
@@ -45,6 +45,8 @@ class Terra2BQ:
         self,
         bigquery_project: str,
         bigquery_dataset: str,
+        samples_schema_yaml: Path,
+        configs_schema_yaml: Path,
         bigquery_location: str = "us-central1",
         google_credentials_json: Optional[Path] = None,
         samples_table: str = "samples",
@@ -52,8 +54,6 @@ class Terra2BQ:
         lookup_timeframe: str = "today",
         lookup_days_back: Optional[int] = None,
         lookup_hours_back: Optional[int] = None,
-        samples_schema_yaml: Optional[Path] = None,
-        configs_schema_yaml: Optional[Path] = None,
         source_workspace: Optional[str] = None,
         source_project: Optional[str] = None,
         source_datatable: Optional[str] = None,
@@ -113,6 +113,10 @@ class Terra2BQ:
                 "Custom lookup timeframe requires lookup_days_back or lookup_hours_back"
             )
 
+        # Initialize sample processor and config processor
+        self.config_processor = ConfigProcessor(configs_schema_yaml)
+        self.sample_processor = SampleDataProcessor(samples_schema_yaml)
+
         # Store table names and schema paths
         self.samples_table = samples_table
         self.configs_table = configs_table
@@ -171,13 +175,14 @@ class Terra2BQ:
 
         return target_entity_clean
 
-    def _get_terra_data(self, entity_type: str, use_destination: bool = False) -> DataResult:
+    def _get_terra_data(self, entity_type: str, use_destination: bool = False, page_size: Optional[int] = None) -> DataResult:
         """
         Download data from Terra for a specific entity type.
 
         Args:
             entity_type: Terra entity type
             use_destination: Whether to use destination workspace/project
+            page_size: Number of rows to fetch per page from Terra (for large tables)
 
         Returns:
             DataResult with download results and data
@@ -185,7 +190,7 @@ class Terra2BQ:
         try:
             workspace_info = "destination" if use_destination else "source"
             logger.info(f"Downloading data from Terra entity type: {entity_type} (using {workspace_info})")
-            terra_df = self.terra.entities.download_table(entity_type, use_destination=use_destination)
+            terra_df = self.terra.entities.download_table(entity_type, use_destination=use_destination, page_size=page_size)
 
             if terra_df.empty:
                 logger.info(f"No data found in Terra table: {entity_type}")
@@ -333,39 +338,18 @@ class Terra2BQ:
         )
 
     def _get_terra_field_name(
-        self, field_to_sync: str, terra_row: pd.Series
+      self, field_to_sync: str, terra_row: pd.Series
     ) -> Optional[str]:
-        """
-        Get the corresponding field name in Terra for a field in BigQuery.
-
-        Args:
-            field_to_sync: Field name in BigQuery
-            terra_row: Row from Terra data
-
-        Returns:
-            Field name in Terra, or None if not found
-        """
+        """Get the corresponding Terra field name for a BigQuery field."""
         # First try exact match
         if field_to_sync in terra_row:
             return field_to_sync
 
-        # Try to find a matching column based on field_attributes.column_mappings
-        for col_name in terra_row.index:
-            if (
-                field_to_sync in self.samples_ops.field_attributes
-                and "column_mappings"
-                in self.samples_ops.field_attributes[field_to_sync]
-            ):
-                mappings = self.samples_ops.field_attributes[field_to_sync][
-                    "column_mappings"
-                ]
-                if isinstance(mappings, str):
-                    mappings = [mappings]
-
-                if col_name in mappings:
-                    return col_name
-
-        return None
+        # Processor now handles the mapping logic
+        return self.sample_processor.get_source_column_for_field(
+            field_name=field_to_sync,
+            available_columns=terra_row.index.tolist()
+        )
 
     def _retroactively_mark_samples_as_uploaded(
         self, config: Dict[str, Any], bq_load_result: Dict[str, Any]
@@ -381,9 +365,9 @@ class Terra2BQ:
             UploadResult with backfilled count and status
         """
 
-        newly_loaded_ids_without_upload = self.samples_ops.get_recent_sample_ids(
+        newly_loaded_ids_without_upload = self.samples_ops.get_recent_sample_uuids(
             config_id=config.get("id"),
-            limit=bq_load_result.get("loaded", 0),
+            limit=bq_load_result.get("loaded", 0)
         )
 
         if not newly_loaded_ids_without_upload:
@@ -400,7 +384,7 @@ class Terra2BQ:
             pytz.timezone(self.project_timezone)
         ).strftime("%Y%m%d_%H%M%S")
 
-        prefix_field = self.config_ops.get_prefix_fields()
+        prefix_field = self.config_processor.get_prefix_field()
         set_name = f"{config.get(prefix_field)}_{current_project_time}"
 
         updates = [
@@ -568,7 +552,7 @@ class Terra2BQ:
                 )
 
             # Create updates for samples
-            sample_id_field = self.samples_ops.get_sample_identifier_field()
+            sample_id_field = self.sample_processor.get_sample_identifier_field()
             batch_updates = []
             workflow_states = {}
 
@@ -734,7 +718,7 @@ class Terra2BQ:
                 try:
                     # Get workflow metadata
                     workflows = self.terra.submissions.get_workflows_by_submission(
-                        submission_id
+                        submission_id=submission_id, use_destination=True
                     )
 
                     # Find matching workflow
@@ -783,8 +767,7 @@ class Terra2BQ:
 
                 if update_result.failed_updates:
                     failed_updates.extend(update_result.failed_updates)
-
-            # Return results
+                    
             return {
                 "status": "success" if state_updates else "no_updates",
                 "updated_count": len(state_updates),
@@ -853,6 +836,9 @@ class Terra2BQ:
 
         # Get samples that were marked as uploaded but not submitted
         samples_df = self.get_samples_for_submission(config)
+        logger.info(
+            f"Found {len(samples_df)} samples marked as uploaded but not yet submitted"
+        )
 
         if samples_df.empty:
             return SubmissionResult(
@@ -866,7 +852,7 @@ class Terra2BQ:
             target_entity = self._get_target_entity_from_config(config)
 
             # Get sample identifiers
-            sample_identifier_field = self.samples_ops.get_sample_identifier_field()
+            sample_identifier_field = self.sample_processor.get_sample_identifier_field()
 
             # Group samples by their upload_source value
             # This handles the case where multiple batches might be processed together
@@ -1015,11 +1001,6 @@ class Terra2BQ:
             List of active configuration dictionaries
         """
 
-        if not self.config_ops:
-            raise ValueError(
-                "Config operations not initialized. Make sure configs_schema_yaml is provided."
-            )
-
         configs = self.config_ops.get_configs(
             active_only=True, entity_type=entity_type, skip_transferred=skip_transferred
         )
@@ -1046,8 +1027,8 @@ class Terra2BQ:
         Returns:
             DataFrame with updated file paths
         """
-        # Get sequence file fields from sample operations
-        sequence_file_fields = self.samples_ops.get_sequence_file_fields()
+        # Get sequence file fields from sample processor
+        sequence_file_fields = self.sample_processor.get_sequence_file_fields()
 
         if not sequence_file_fields:
             logger.info("No sequence file fields defined in schema, skipping transfer")
@@ -1077,6 +1058,7 @@ class Terra2BQ:
         destination_bucket: Optional[str] = None,
         page_size: Optional[int] = None,
         preserve_path_structure: bool = False,
+        unique_ids_by_config: bool = False,
     ) -> DownloadResult:
         """
         Pull data from source Terra table and load it into BigQuery.
@@ -1086,21 +1068,19 @@ class Terra2BQ:
             destination_bucket: Optional GCS bucket for transferring sequence files
             page_size: Number of rows to fetch per page from Terra (for large tables)
             preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
+            unique_ids_by_config: Whether to enforce unique sample IDs per configuration
         Returns:
             DownloadResult with load results and status
         """
         
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
             self.setup_terra_client(config)
 
         # Check for when the source and destination datatables are the same
-        is_single_datatable = config.get("single_datatable", False)
+        single_datatable_field = self.config_processor.get_single_datatable_field()
+        is_single_datatable = config.get(single_datatable_field, False) if single_datatable_field else False
 
         # Get entity type from config
         entity_type = config.get("entity_type", self.source_datatable)
@@ -1167,10 +1147,13 @@ class Terra2BQ:
                 sys.exit(1)
 
         # Load data into BigQuery
-        logger.info(f"Loading {len(terra_df)} rows into BigQuery")
+        logger.info(f"Checking {len(terra_df)} rows before loading new data into BigQuery")
         bq_load_result = self.samples_ops.load_dataframe(
-            dataframe=terra_df, config=config
+            dataframe=terra_df, config=config, unique_ids_by_config=unique_ids_by_config
         )
+        
+        logger.info(f"Loaded data into BigQuery: {bq_load_result.get('loaded', 0)} rows loaded, "
+                    f"{bq_load_result.get('filtered', 0)} rows filtered out")
 
         if not bq_load_result.get("success"):
             logger.error(
@@ -1216,10 +1199,6 @@ class Terra2BQ:
             Dictionary with upload results including set name
         """
 
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
@@ -1234,7 +1213,7 @@ class Terra2BQ:
         )
 
         # Get identifier field for the samples to know which field to transorm to target entity
-        sample_identifier_field = self.samples_ops.get_sample_identifier_field()
+        sample_identifier_field = self.sample_processor.get_sample_identifier_field()
         logger.debug(f"Sample identifier field: {sample_identifier_field}")
         try:
             uploaded_df = self.terra.entities.upload_entities(
@@ -1264,7 +1243,7 @@ class Terra2BQ:
         current_project_time = project_datetime.strftime("%Y%m%d_%H%M%S")
 
         # Create set name using the formatted datetime in project timezone
-        prefix_field = self.config_ops.get_prefix_fields()
+        prefix_field = self.config_processor.get_prefix_field()
         set_name = f"{config.get(prefix_field)}_{current_project_time}"
 
         logger.info(f"Creating entity set in Terra: {set_name}")
@@ -1330,10 +1309,6 @@ class Terra2BQ:
             DataFrame with samples ready for submission
         """
 
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # If a specific config_id is not provided, try to get it from the config
         if not config_id and config:
@@ -1381,10 +1356,6 @@ class Terra2BQ:
             Dictionary with submission results
         """
 
-        if not self.samples_ops:
-            raise ValueError(
-                "Sample operations not initialized. Make sure samples_schema_yaml is provided"
-            )
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
@@ -1393,7 +1364,7 @@ class Terra2BQ:
         # Get workflow configuration details from config
         terra_method_config = config.get("terra_method_config", {})
 
-        prefix_field = self.config_ops.get_prefix_fields()
+        prefix_field = self.config_processor.get_prefix_field()
 
         current_datetime = datetime.now(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
         # Make backwards compatible
@@ -1439,6 +1410,7 @@ class Terra2BQ:
             "workflowFailureMode": terra_method_config.get(
                 "workflowFailureMode", "NoNewCalls"
             ),
+            "ignoreEmptyOutputs": terra_method_config.get("ignoreEmptyOutputs", False),
             "userComment": f"Automated submission for {config.get(str(prefix_field), 'Terra2BQ')}, at {current_datetime}",
         }
 
@@ -1546,7 +1518,8 @@ class Terra2BQ:
                     uploaded_count=0,
                 )
 
-            upload_df = drop_system_value_columns(samples_df, self.samples_schema_yaml)
+            # Prepare DataFrame for upload by removing system columns
+            upload_df = self.sample_processor.drop_system_columns(samples_df)
             logger.info(f"Prepared {len(upload_df)} samples for upload to Terra")
 
             upload_result = self.upload_to_terra(config, samples_df, upload_df)
@@ -1571,7 +1544,7 @@ class Terra2BQ:
                     uploaded_count=upload_result.uploaded_count,
                 )
 
-            # 3. Get latest sample data after upload
+            # Get latest sample data after upload
             submission_samples = self.get_samples_for_submission(
                 config, set_name=set_name
             )
@@ -1585,7 +1558,7 @@ class Terra2BQ:
                     uploaded_count=upload_result.uploaded_count,
                 )
 
-            # 4. Submit workflow
+            # Submit workflow for the created set
             submission_result = self.submit_workflow(
                 config, set_name, submission_samples
             )
@@ -1619,6 +1592,7 @@ class Terra2BQ:
         page_size: Optional[int] = None,
         preserve_path_structure: bool = False,
         skip_transferred: bool = False,
+        unique_ids_by_config: bool = False,
     ) -> ConfigProcessingResult:
         """
         Process a single configuration to download data from Terra, Upload to BigQuery,
@@ -1635,7 +1609,11 @@ class Terra2BQ:
 
             # Process in stages with clean state transitions
             download_result = self.download_from_terra_to_bigquery(
-                config_copy, destination_bucket, page_size, preserve_path_structure
+                config=config_copy, 
+                destination_bucket=destination_bucket, 
+                page_size=page_size, 
+                preserve_path_structure=preserve_path_structure, 
+                unique_ids_by_config=unique_ids_by_config
             )
             if download_result.status != OperationStatus.SUCCESS:
                 return ConfigProcessingResult(
@@ -1649,6 +1627,8 @@ class Terra2BQ:
             is_single_datatable = config_copy.get("single_datatable", False)
 
             if is_single_datatable:
+                logger.info("Value for is_single_datatable is {}".format(is_single_datatable))
+                logger.info(config_copy)
                 logger.info(
                     f"Processing same-datatable configuration {config_copy.get('id')}"
                 )
@@ -1705,6 +1685,7 @@ class Terra2BQ:
         page_size: Optional[int] = None,
         preserve_path_structure: bool = False,
         skip_transferred: bool = False,
+        unique_ids_by_config: bool = False
     ) -> List[ConfigProcessingResult]:
         """
         Process all active configurations with progress tracking and batch processing.
@@ -1717,7 +1698,7 @@ class Terra2BQ:
             page_size: Number of rows to fetch per page from Terra (for large tables)
             preserve_path_structure: Whether to preserve the original path structure (if destination_bucket is provided)
             skip_transferred: Whether to skip configurations that have already been transferred (for transient configs)
-
+            unique_ids_by_config: Whether to enforce unique sample IDs per configuration ONLY and not entire database
         Returns:
             List of results for each configuration processed
         """
@@ -1755,7 +1736,7 @@ class Terra2BQ:
             total_batches = (total_configs + batch_size - 1) // batch_size
             in_batch_position = (i % batch_size) + 1
 
-            prefix_field = self.config_ops.get_prefix_fields()
+            prefix_field = self.config_processor.get_prefix_field()
             logger.info(
                 f"Processing configuration {current_number}/{total_configs} ({percent_complete:.1f}%) - "
                 f"Batch {current_batch}/{total_batches}, item {in_batch_position}/{min(batch_size, total_configs - (current_batch-1)*batch_size)}: "
@@ -1767,11 +1748,12 @@ class Terra2BQ:
                 self.terra = None
 
                 result = self.process_configuration(
-                    config,
-                    destination_bucket,
-                    page_size,
-                    preserve_path_structure,
-                    skip_transferred,
+                    config=config,
+                    destination_bucket=destination_bucket,
+                    page_size=page_size,
+                    preserve_path_structure=preserve_path_structure,
+                    skip_transferred=skip_transferred,
+                    unique_ids_by_config=unique_ids_by_config
                 )
                 results.append(result)
 
@@ -1843,7 +1825,9 @@ class Terra2BQ:
         self,
         config: Dict[str, Any],
         days_back: int,
+        sync_fields: List[str],
         overwrite_metadata: bool = False,
+        page_size: Optional[int] = None,
         update_bigquery: bool = True,
         update_destination: bool = True,
         use_destination_entity: bool = False,
@@ -1855,7 +1839,9 @@ class Terra2BQ:
         Args:
             config: Configuration dictionary
             days_back: Number of days to look back for samples
+            sync_fields: List of metadata fields to sync between Terra and BigQuery
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
+            page_size: Number of rows to fetch per page from Terra (for large tables)
             update_bigquery: Whether to update BigQuery with Terra metadata
             update_destination: Whether to update destination Terra datatable
             use_destination_entity: Whether to use the destination entity type from the configuration
@@ -1906,7 +1892,7 @@ class Terra2BQ:
             )
 
         # Get the field to use as the config identifier for identifying samples
-        config_identifier_field = self.samples_ops.get_config_identifier_field()
+        config_identifier_field = self.sample_processor.get_config_identifier_field()
         if not config_identifier_field:
             logger.warning(
                 f"No config_identifier field defined in sample schema, skipping config {config_id}"
@@ -1951,7 +1937,7 @@ class Terra2BQ:
             )
 
         # Get results from helper functions
-        terra_data_result = self._get_terra_data(entity_type, use_destination=use_destination_entity)
+        terra_data_result = self._get_terra_data(entity_type=entity_type, use_destination=use_destination_entity, page_size=page_size)
         logger.debug(
             f"Retrieved {len(terra_data_result.data)} samples from Terra for entity type {entity_type}"
         )
@@ -1965,8 +1951,7 @@ class Terra2BQ:
             )
 
         terra_df = terra_data_result.data
-        sync_fields = self.samples_ops.get_sync_fields()
-        sample_identifier_field = self.samples_ops.get_sample_identifier_field()
+        sample_identifier_field = self.sample_processor.get_sample_identifier_field()
 
         if not sample_identifier_field:
             return MetadataSyncResult(
@@ -2021,12 +2006,14 @@ class Terra2BQ:
         self,
         days_back: int = 30,
         overwrite_metadata: bool = False,
+        page_size: Optional[int] = None,
         update_bigquery: bool = True,
         update_destination: bool = True,
         use_destination_entity: bool = False,
         batch_size: int = 1,
         update_batch_size: int = 300,
         cooldown_seconds: int = 1,
+        sync_fields: Optional[List[str]] = None,
     ) -> MetadataSyncResult:
         """
         Sync metadata between Terra data tables and BigQuery, and update destination Terra datatable.
@@ -2034,12 +2021,14 @@ class Terra2BQ:
         Args:
             days_back: Number of days to look back for samples
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
+            page_size: Number of rows to fetch per page from Terra (for large tables)
             update_bigquery: Whether to update BigQuery with Terra metadata (set to False for dry run)
             update_destination: Whether to update destination Terra datatable (set to False for dry run)
             use_destination_entity: Whether to use the destination entity type from the configuration
             batch_size: Number of configurations to process in a batch before cooldown
             update_batch_size: Number of samples to process in a batch for each configuration for bigquery udpates
             cooldown_seconds: Seconds to wait between batches
+            sync_fields: Optional list of metadata fields to sync; if None, will fetch from sample schema
 
         Returns:
             {
@@ -2067,8 +2056,6 @@ class Terra2BQ:
 
         self.initialize_operations()
 
-        if not self.samples_ops:
-            raise ValueError("Sample operations not initialized")
 
         # Get active configurations
         configs = self.get_active_configs()
@@ -2083,7 +2070,12 @@ class Terra2BQ:
             )
 
         # Get the fields that should be synced
-        sync_fields = self.samples_ops.get_sync_fields()
+        if sync_fields is None:
+            logger.info(f"Fetching sync fields from sample schema")
+            sync_fields = self.sample_processor.get_sync_fields()
+        else:
+            logger.info(f"Using provided sync fields: {sync_fields}")
+        
         if not sync_fields:
             logger.info("No sync fields defined in the sample schema")
             return MetadataSyncResult(
@@ -2114,7 +2106,7 @@ class Terra2BQ:
             total_batches = (total_configs + batch_size - 1) // batch_size
             in_batch_position = (i % batch_size) + 1
 
-            prefix_field = self.config_ops.get_prefix_fields()
+            prefix_field = self.config_processor.get_prefix_field()
             logger.info(
                 f"Processing configuration {current_number}/{total_configs} ({percent_complete:.1f}%) - "
                 f"Batch {current_batch}/{total_batches}, item {in_batch_position}/{min(batch_size, total_configs - (current_batch-1)*batch_size)}: "
@@ -2130,7 +2122,9 @@ class Terra2BQ:
                 result = self.sync_metadata_for_config(
                     config=config,
                     days_back=days_back,
+                    sync_fields=sync_fields,
                     overwrite_metadata=overwrite_metadata,
+                    page_size=page_size,
                     update_bigquery=update_bigquery,
                     update_destination=update_destination,
                     use_destination_entity=use_destination_entity,
@@ -2234,7 +2228,7 @@ class Terra2BQ:
         config_id = config.get("id")
 
         # Get config identifier field
-        config_identifier_field = self.samples_ops.get_config_identifier_field()
+        config_identifier_field = self.sample_processor.get_config_identifier_field()
         if not config_identifier_field:
             logger.warning(
                 f"No config_identifier field defined in sample schema, skipping config {config_id}"
@@ -2248,7 +2242,7 @@ class Terra2BQ:
                 failed_updates=[],
             )
 
-        prefix_field = self.config_ops.get_prefix_fields()
+        prefix_field = self.config_processor.get_prefix_field()
         logger.info(
             f"Processing workflow updates for configuration {config.get(prefix_field)} ({config_id})"
         )
@@ -2378,8 +2372,6 @@ class Terra2BQ:
 
         self.initialize_operations()
 
-        if not self.samples_ops:
-            raise ValueError("Sample operations not initialized")
 
         # Get active configurations
         configs = self.get_active_configs()
@@ -2414,7 +2406,7 @@ class Terra2BQ:
             total_batches = (total_configs + config_batch_size - 1) // config_batch_size
             in_batch_position = (i % config_batch_size) + 1
 
-            prefix_field = self.config_ops.get_prefix_fields()
+            prefix_field = self.config_processor.get_prefix_field()
             logger.info(
                 f"Processing configuration {current_number}/{total_configs} ({percent_complete:.1f}%) - "
                 f"Batch {current_batch}/{total_batches}, item {in_batch_position}/{min(config_batch_size, total_configs - (current_batch-1)*config_batch_size)}: "

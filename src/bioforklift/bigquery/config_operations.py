@@ -1,20 +1,17 @@
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
-import uuid
-import json
 import pandas as pd
+import json
 from google.cloud import bigquery
 from google.cloud.bigquery import SchemaField, LoadJobConfig
 from .client import BigQueryClient
-from .utils import load_schema_from_yaml, parse_field_type
 from bioforklift.forklift_logging import setup_logger
+from bioforklift.data_processing import ConfigProcessor
 
 logger = setup_logger(__name__)
 
 
 class BigQueryConfigOperations:
-    """Operations for BigQuery tables containing configuration data"""
 
     def __init__(
         self,
@@ -24,130 +21,70 @@ class BigQueryConfigOperations:
         config_schema: Optional[List[SchemaField]] = None,
         location: str = "us-central1",
     ):
+        """
+        Initialize BigQuery config operations.
+
+        Args:
+            client: BigQuery client instance
+            table_name: Name of the configs table
+            config_schema_yaml: Path to YAML schema file (required for data processing)
+            config_schema: Optional schema override (legacy support)
+            location: BigQuery location
+        """
         self.bq_client = client
         self.table_name = f"{client.project}.{client.dataset}.{table_name}"
         self.location = location
 
-        # Load schema from yaml if provided, otherwise use schema parameter
-        self.field_attributes = {}
+        # Initialize data processor - required for full functionality
         if config_schema_yaml:
-            schema_info = load_schema_from_yaml(config_schema_yaml)
-            self.schema = schema_info["schema"]
-            self.field_attributes = schema_info["field_attributes"]
+            self.data_processor = ConfigProcessor(config_schema_yaml)
+            self.schema = self.data_processor.schema
+            self.field_attributes = self.data_processor.field_attributes
+            logger.info(f"Initialized with ConfigProcessor: {config_schema_yaml}")
         else:
-            self.schema = config_schema
-
-    def _get_schema_fields(self) -> List[str]:
-        """Get list of field names defined in the schema"""
-        return [field.name for field in self.schema]
-
-    def _prepare_config_for_insert(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare a configuration for insertion"""
-        # Create a copy to avoid modifying the original
-        config = config_data.copy()
-
-        # Generate uuid if not provided and required by schema
-        if "id" not in config:
-            for field_name, attrs in self.field_attributes.items():
-                if attrs.get("primary_key") and field_name not in config:
-                    config[field_name] = str(uuid.uuid4())
-
-        # Set created_at datetime if not provided
-        for field_name, attrs in self.field_attributes.items():
-            if field_name == "created_at" and field_name not in config:
-                config[field_name] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Serialize JSON fields based on schema types
-        for field in self.schema:
-            field_name = field.name
-            # Check if this is a JSON field based on field type
-            if field.field_type.upper() == "JSON" and field_name in config:
-                # If the field value is a dict or list, serialize it to JSON string
-                if isinstance(config[field_name], (dict, list)):
-                    config[field_name] = json.dumps(config[field_name])
-
-            # Also check if any field is defined as an object type in field_attributes
-            # This is a backup approach in case the schema doesn't directly use JSON type
-            elif field_name in self.field_attributes:
-                attrs = self.field_attributes[field_name]
-                if attrs.get("type", "").lower() == "object" and field_name in config:
-                    if isinstance(config[field_name], (dict, list)):
-                        config[field_name] = json.dumps(config[field_name])
-
-        return config
-
-    def get_prefix_fields(self) -> str:
-        """
-        Get the field name that is marked with use_as_prefix=True
-
-        Returns:
-            String with the name of the field to be used as prefix
-        """
-        return next(
-            (
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("use_as_prefix")
-            ),
-            None,
-        )
-
-    def get_alerts_display_field(self) -> str:
-        """
-        Get the field name that is marked with display_for_alerts=True
-
-        Returns:
-            String with the name of the field to be used as display for alerts
-        """
-        return next(
-            (
-                field_name
-                for field_name, attrs in self.field_attributes.items()
-                if attrs.get("display_for_alerts")
-            ),
-            None,
-        )
+            raise ValueError("Either config_schema_yaml or config_schema must be provided")
 
     def create_config(
         self, config_data: Union[Dict[str, Any], str, Path]
     ) -> Dict[str, Any]:
         """
-        Create a new configuration
+        Create a new configuration in BigQuery.
 
         Args:
-            config_data: Either a dictionary with configuration data or a path to a JSON file
+            config_data: Configuration dict, JSON string, or path to JSON file
 
         Returns:
-            Dictionary with created configuration including ID (uuid)
+            Created configuration dictionary
         """
-        # Load from JSON file if a string or Path is provided
+        # Load config from file if path provided
         if isinstance(config_data, (str, Path)):
-            path = Path(config_data) if isinstance(config_data, str) else config_data
-            try:
-                with path.open("r") as config_file:
-                    config_data = json.load(config_file)
-            except Exception as e:
-                raise ValueError(f"Error loading JSON file {path}: {str(e)}")
+            config_path = Path(config_data)
+            if not config_path.exists():
+                raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        if not isinstance(config_data, dict):
-            raise TypeError("config_data must be a dictionary or a path to a JSON file")
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        else:
+            config = config_data.copy()
 
-        # Prepare config for insertion
-        config = self._prepare_config_for_insert(config_data)
+        processed_config = self.data_processor.prepare_config_for_insert(config)
 
-        # Insert the config
-        errors = self.bq_client.insert_rows(self.table_name, [config])
+        # Insert into BigQuery
+        try:
+            _ = self.bq_client.insert_rows(self.table_name, [processed_config])
 
-        if errors:
-            raise RuntimeError(f"Error inserting configuration: {errors}")
+            logger.info(f"Created config with ID: {processed_config.get('id')}")
+            return processed_config
 
-        return config
+        except Exception as exc:
+            logger.error(f"Error creating config: {exc}")
+            raise
 
     def create_configs_from_directory(
         self, directory_path: Union[str, Path], pattern: str = "*.json"
     ) -> List[Dict[str, Any]]:
         """
-        Create multiple configurations from JSON files in a directory
+        Create multiple configurations from JSON files in a directory.
 
         Args:
             directory_path: Path to directory containing JSON configuration files
@@ -156,17 +93,14 @@ class BigQueryConfigOperations:
         Returns:
             List of created configurations
         """
-        # Convert to Path if string is provided
-        directory = (
-            Path(directory_path) if isinstance(directory_path, str) else directory_path
-        )
+        directory = Path(directory_path) if isinstance(directory_path, str) else directory_path
 
         if not directory.is_dir():
             raise ValueError(f"Directory not found: {directory}")
 
-        # Find all matching JSON files
         json_files = list(directory.glob(pattern))
         logger.info(f"Found {len(json_files)} JSON files in {directory}")
+
         if not json_files:
             logger.warning("No JSON files found")
             return []
@@ -174,57 +108,49 @@ class BigQueryConfigOperations:
         created_configs = []
         errors = []
 
-        # Process each file
         for json_file in json_files:
             try:
                 config = self.create_config(json_file)
                 created_configs.append(config)
-            except Exception as e:
-                errors.append({"file": str(json_file), "error": str(e)})
+            except Exception as exc:
+                errors.append({"file": str(json_file), "error": str(exc)})
 
         if errors and not created_configs:
-            raise RuntimeError(f"Failed to create any configurations: {errors}")
+            raise RuntimeError(f"All config creations failed. Errors: {errors}")
+        elif errors:
+            logger.warning(f"Some configs failed to create: {errors}")
 
-        # Convert to loggign if there are errors
-        if errors:
-            logger.error(
-                f"Warning: {len(errors)} out of {len(json_files)} configurations failed to load"
-            )
-            for error in errors:
-                logger.error(f"  - {error['file']}: {error['error']}")
-
+        logger.info(f"Successfully created {len(created_configs)} configs")
         return created_configs
 
     def get_config(self, config_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get a single configuration by ID
+        Get a single configuration by ID.
 
         Args:
-            config_id: ID of the configuration
+            config_id: Configuration ID
 
         Returns:
             Configuration dictionary or None if not found
         """
-        query = f"""
-        SELECT *
-        FROM `{self.table_name}`
-        WHERE id = @id
-        """
+        try:
+            query = f"""
+                SELECT *
+                FROM `{self.table_name}`
+                WHERE id = '{config_id}'
+                LIMIT 1
+            """
+            result = self.bq_client.query(query).to_dataframe()
 
-        job_config = bigquery.QueryJobConfig()
-        job_config.query_parameters = [
-            bigquery.ScalarQueryParameter("id", "STRING", config_id)
-        ]
+            if result.empty:
+                logger.warning(f"Config not found: {config_id}")
+                return None
 
-        logger.info(f"Getting config with ID: {config_id}")
-        query_job = self.bq_client.query(query, job_config=job_config)
-        results = list(query_job.result())
+            return result.iloc[0].to_dict()
 
-        if not results:
-            logger.warning(f"Config with ID {config_id} not found")
+        except Exception as exc:
+            logger.error(f"Error getting config: {exc}")
             return None
-
-        return dict(results[0])
 
     def get_configs(
         self,
@@ -275,7 +201,7 @@ class BigQueryConfigOperations:
         job_config.query_parameters = params
 
         query_job = self.bq_client.query(query, job_config=job_config)
-        return [dict(row) for row in query_job.result()]
+        return [dict(row) for row in query_job.result()] if query_job.result() else []
 
     def update_config(
         self, config_id: str, update_data: Dict[str, Any]
@@ -296,7 +222,9 @@ class BigQueryConfigOperations:
             return self.get_config(config_id)
 
         # Ensure fields exist in schema
-        schema_fields = self._get_schema_fields()
+        
+        schema_fields = self.data_processor.get_schema_fields()
+
         invalid_fields = set(update_data.keys()) - set(schema_fields)
         if invalid_fields:
             raise ValueError(f"Fields not in schema: {invalid_fields}")
@@ -318,9 +246,9 @@ class BigQueryConfigOperations:
             if field not in ["id", "created_at"]:
                 update_statements.append(f"{field} = @{field}")
 
-                # Get field type from schema
-                field_def = next((f for f in self.schema if f.name == field), None)
-                param_type = parse_field_type(field_def.field_type)
+                
+                field_def = self.data_processor.schema_definition.get_field(field)
+                param_type = field_def.field_type if field_def else "STRING"
 
                 params.append(bigquery.ScalarQueryParameter(field, param_type, value))
 
@@ -344,6 +272,7 @@ class BigQueryConfigOperations:
 
         # Return updated config
         return self.get_config(config_id)
+
 
     def mark_configs_as_transferred(
         self, config_ids: Union[str, List[str]]
@@ -395,28 +324,27 @@ class BigQueryConfigOperations:
 
     def delete_config(self, config_id: str) -> bool:
         """
-        Delete a configuration
+        Delete a configuration.
 
         Args:
-            config_id: ID of the configuration to delete
+            config_id: Configuration ID
 
         Returns:
-            True if deleted successfully
+            True if successful, False otherwise
         """
-        query = f"""
-        DELETE FROM `{self.table_name}`
-        WHERE id = @id
-        """
+        try:
+            query = f"""
+                DELETE FROM `{self.table_name}`
+                WHERE id = '{config_id}'
+            """
 
-        job_config = bigquery.QueryJobConfig()
-        job_config.query_parameters = [
-            bigquery.ScalarQueryParameter("id", "STRING", config_id)
-        ]
+            self.bq_client.query(query).result()
+            logger.info(f"Deleted config: {config_id}")
+            return True
 
-        query_job = self.bq_client.query(query, job_config=job_config)
-        query_job.result()
-
-        return True
+        except Exception as exc:
+            logger.error(f"Error deleting config: {exc}")
+            return False
 
     def load_configs_dataframe(
         self,
@@ -444,7 +372,7 @@ class BigQueryConfigOperations:
             configs_to_load = []
             for _, row in dataframe.iterrows():
                 config_data = row.to_dict()
-                prepared_config = self._prepare_config_for_insert(config_data)
+                prepared_config = self.data_processor.prepare_config_for_insert(config_data)
                 configs_to_load.append(prepared_config)
 
             # Setup load job
@@ -458,6 +386,7 @@ class BigQueryConfigOperations:
 
             # Convert to DataFrame
             load_df = pd.DataFrame(configs_to_load)
+            load_df.to_csv("debug_configs_to_load.csv", index=False)  # Debug output
 
             # Load to BigQuery
             logger.info(f"Loading {len(load_df)} configurations to BigQuery")
@@ -499,11 +428,9 @@ class BigQueryConfigOperations:
             conditions.append(f"{field} = @val_{i}")
 
             # Get field type from schema
-            field_def = next((f for f in self.schema if f.name == field), None)
-            param_type = (
-                parse_field_type(field_def.field_type) if field_def else "STRING"
-            )
-
+            field_def = self.data_processor.schema_definition.get_field(field)
+            param_type = field_def.field_type if field_def else "STRING"
+            
             params.append(bigquery.ScalarQueryParameter(f"val_{i}", param_type, value))
 
         # Add condition to only update active configs - once deactivated, they should not be updated again

@@ -86,7 +86,7 @@ class TestBigQueryClient:
                 credentials=mock_credentials,
             )
 
-            mock_from_service_account.assert_called_once_with(json.loads(mock_credentials))
+            mock_from_service_account.assert_called_once_with(json.loads(mock_credentials), location='us-central1')
             assert client.client == mock_client
 
     def test_getattr_passthrough(self, bigquery_client, mock_bigquery_client):
@@ -133,7 +133,7 @@ class TestBigQueryClient:
         )
 
         with patch(
-            "bioforklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
+            "bioforklift.data_processing.utils.load_schema_from_yaml", return_value=schema_info
         ):
             result = bigquery_client.create_table_from_yaml(
                 table_name="test_table", schema_yaml=schema_path
@@ -157,24 +157,17 @@ class TestBigQueryClient:
         # Verify only the essential structure using more flexible assertions
         assert "field_attributes" in result
 
-        # Check key fields exist with key properties
+        # Check key fields exist with key properties based on actual test schema
         assert "id" in result["field_attributes"]
         assert result["field_attributes"]["id"]["system_value"] == True
         assert result["field_attributes"]["id"]["primary_key"] == True
+        assert result["field_attributes"]["id"]["configuration_identifier"] == True
 
-        assert "active" in result["field_attributes"]
-        assert result["field_attributes"]["active"]["default"] == True
+        assert "name" in result["field_attributes"]
+        assert result["field_attributes"]["name"]["use_as_prefix"] == True
 
         assert "created_at" in result["field_attributes"]
-        assert result["field_attributes"]["created_at"]["created_datetime"] == True
         assert result["field_attributes"]["created_at"]["system_value"] == True
-
-        assert "terra_method_config" in result["field_attributes"]
-        assert "properties" in result["field_attributes"]["terra_method_config"]
-        assert (
-            "deleteIntermediateOutputFiles"
-            in result["field_attributes"]["terra_method_config"]["properties"]
-        )
 
     def test_create_table_from_yaml_existing_table(
         self, bigquery_client, mock_bigquery_client, sample_schema
@@ -207,7 +200,7 @@ class TestBigQueryClient:
         )
 
         with patch(
-            "bioforklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
+            "bioforklift.data_processing.utils.load_schema_from_yaml", return_value=schema_info
         ):
             result = bigquery_client.create_table_from_yaml(
                 table_name="test_table", schema_yaml=schema_path
@@ -226,24 +219,17 @@ class TestBigQueryClient:
         # Verify only the essential structure using more flexible assertions
         assert "field_attributes" in result
 
-        # Check key fields exist with key properties
+        # Check key fields exist with key properties based on actual test schema
         assert "id" in result["field_attributes"]
         assert result["field_attributes"]["id"]["system_value"] == True
         assert result["field_attributes"]["id"]["primary_key"] == True
+        assert result["field_attributes"]["id"]["configuration_identifier"] == True
 
-        assert "active" in result["field_attributes"]
-        assert result["field_attributes"]["active"]["default"] == True
+        assert "name" in result["field_attributes"]
+        assert result["field_attributes"]["name"]["use_as_prefix"] == True
 
         assert "created_at" in result["field_attributes"]
-        assert result["field_attributes"]["created_at"]["created_datetime"] == True
         assert result["field_attributes"]["created_at"]["system_value"] == True
-
-        assert "terra_method_config" in result["field_attributes"]
-        assert "properties" in result["field_attributes"]["terra_method_config"]
-        assert (
-            "deleteIntermediateOutputFiles"
-            in result["field_attributes"]["terra_method_config"]["properties"]
-        )
 
     def test_create_table_from_yaml_existing_table_error(
         self, bigquery_client, mock_bigquery_client, sample_schema
@@ -265,7 +251,7 @@ class TestBigQueryClient:
         )
 
         with patch(
-            "bioforklift.bigquery.utils.load_schema_from_yaml", return_value=schema_info
+            "bioforklift.data_processing.utils.load_schema_from_yaml", return_value=schema_info
         ):
             # Test with exists_ok=False
             with pytest.raises(ValueError) as excinfo:

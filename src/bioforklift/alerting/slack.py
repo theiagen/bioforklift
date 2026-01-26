@@ -173,7 +173,7 @@ class TerraSummary:
         # Group by entity type
         by_entity_type = []
         sample_identifier_field = (
-            self.terra2bq.samples_ops.get_sample_identifier_field()
+            self.terra2bq.sample_processor.get_sample_identifier_field()
         )
 
         if "entity_type" in samples_df.columns:
@@ -194,14 +194,14 @@ class TerraSummary:
                 )
 
         # Group by configuration
-        config_id_field = self.terra2bq.samples_ops.get_config_identifier_field()
-        display_name_field = self.terra2bq.config_ops.get_alerts_display_field()
+        config_id_field = self.terra2bq.sample_processor.get_config_identifier_field()
+        display_name_field = self.terra2bq.config_processor.get_alerts_display_field()
 
         by_config = []
         if config_id_field and config_id_field in samples_df.columns:
             for config_id, group in samples_df.groupby(config_id_field):
                 config = None
-                if self.terra2bq.config_ops:
+                if self.terra2bq.config_processor:
                     config = self.terra2bq.config_ops.get_config(config_id)
 
                 if config_name_column:
@@ -264,8 +264,8 @@ class TerraSummary:
         submitted_count = samples_df["submitted_at"].notna().sum()
 
         # Group by configuration
-        config_id_field = self.terra2bq.samples_ops.get_config_identifier_field()
-        display_name_field = self.terra2bq.config_ops.get_alerts_display_field()
+        config_id_field = self.terra2bq.sample_processor.get_config_identifier_field()
+        display_name_field = self.terra2bq.config_processor.get_alerts_display_field()
 
         by_config = []
         if config_id_field and config_id_field in samples_df.columns:
@@ -302,59 +302,6 @@ class TerraSummary:
             "date": datetime.now().strftime("%Y-%m-%d"),
         }
 
-    def generate_workflow_summary(self, days_back: int = 7) -> Dict[str, Any]:
-        """
-        Generate a summary of workflow states
-
-        Args:
-            days_back: Number of days to look back
-
-        Returns:
-            Dictionary with workflow summary information
-        """
-        if not self.terra2bq.config_ops:
-            return {
-                "error": "Config operations not initialized",
-                "date": datetime.now().strftime("%Y-%m-%d"),
-            }
-
-        configs = self.terra2bq.get_active_configs()
-
-        workflow_summary = {
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "days_back": days_back,
-            "config_summaries": [],
-        }
-
-        total_states = {}
-
-        for config in configs:
-            try:
-                config_id = config.get("id")
-                state_summary = self.terra2bq.samples_ops.get_workflow_state_summary(
-                    config_id
-                )
-
-                # Aggregate totals
-                for state, count in state_summary.items():
-                    if state not in total_states:
-                        total_states[state] = 0
-                    total_states[state] += count
-
-                workflow_summary["config_summaries"].append(
-                    {
-                        "config_id": config_id,
-                        "config_name": config.get("name", "Unknown"),
-                        "states": state_summary,
-                    }
-                )
-            except Exception as exc:
-                logger.error(
-                    f"Error generating workflow summary for config {config.get('id')}: {str(exc)}"
-                )
-
-        workflow_summary["total_states"] = total_states
-        return workflow_summary
 
     def format_hourly_summary_for_slack(
         self, summary: Dict[str, Any], project_title: str = None
@@ -461,51 +408,6 @@ class TerraSummary:
                     f"• Submitted to workflows: {config['submitted_samples']}"
                 ),
                 "color": "#36C5F0",
-            }
-            attachments.append(attachment)
-
-        return {"title": title, "message": message, "attachments": attachments}
-
-    def format_workflow_summary_for_slack(
-        self, summary: Dict[str, Any], project_title: str = None
-    ) -> Dict[str, Any]:
-        """
-        Format workflow summary for Slack message
-
-        Args:
-            summary: Summary data from generate_workflow_summary
-
-        Returns:
-            Dictionary with formatted title, message and attachments
-        """
-
-        if project_title:
-            title = (
-                f"{project_title} Workflow Summary (Last {summary['days_back']} Days)"
-            )
-        else:
-            title = f"Terra2BQ Workflow Summary (Last {summary['days_back']} Days)"
-
-        message = "*Workflow State Summary*\n"
-
-        # Format total states
-        total_states = summary.get("total_states", {})
-        if total_states:
-            message += "*Overall Workflow States:*\n"
-            for state, count in total_states.items():
-                message += f"• {state}: {count}\n"
-
-        attachments = []
-
-        for config in summary.get("config_summaries", []):
-            states_text = ""
-            for state, count in config.get("states", {}).items():
-                states_text += f"• {state}: {count}\n"
-
-            attachment = {
-                "title": config["config_name"],
-                "text": states_text if states_text else "No workflow states found",
-                "color": "#2EB67D",  # Slack green color
             }
             attachments.append(attachment)
 

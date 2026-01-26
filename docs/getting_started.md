@@ -71,6 +71,8 @@ These fields are automatically managed by bioforklift and should be marked with 
     | `configuration_identifier` | Indicates that this field contains the configuration identifier for the sample |
     | `metadata` | **No functional effects** Indicates the field contains sample metadata |
     | `sync_field` | Indicates that this field should be synchronized between BigQuery and Terra |
+    | `accepted_pattern` | Regex pattern for validating field values (e.g., "^[A-Z0-9]+$") |
+    | `date_format` | Date format specification for date validation and coercion (e.g., "ISO 8601", "YYYY-MM-DD") |
 
     ??? tip "Accepted Data Types for the `type` field (click to expand)"
         | user-provided value for `type` | The associated BigQuery type |
@@ -212,6 +214,7 @@ These fields are automatically managed by bioforklift and should be marked with 
     | `updated_datetime` | Indicates that this field will be updated automatically with the current datetime when the record is modified |
     | `use_as_prefix` | Indicates that this field should be used as a prefix for entity set names |
     | `display_for_alerts` | Indicates that this field should be used in alert messages |
+    | `single_datatable` | Indicates if source and destination datatables are the same (skips upload step) |
 
 ??? tip "Creating a Terra Workflow configuration (click to expand)"
     To fill in the `terra_method_config` field, you will use a separate JSON file that contains the configuration for the workflow that will be fed into the `properties` field. See the following example:
