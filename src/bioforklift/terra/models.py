@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator, computed_field
+from pydantic import BaseModel, Field, model_validator, computed_field, field_serializer
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from typing_extensions import Self
@@ -68,21 +68,43 @@ class MethodConfig(BaseModel):
     namespace: str
     name: str
     rootEntityType: str
+    methodRepoMethod: MethodRepoMethod
     deleted: bool = False
     prerequisites: Dict[str, Any] = Field(default_factory=dict)
-    methodRepoMethod: MethodRepoMethod = Field(default_factory=MethodRepoMethod)
     methodConfigVersion: int = 0
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Dict[str, Any] = Field(default_factory=dict)
 
-    # Pydandic model method runs right after initialization
-    def model_post_init(self, __context: dict) -> None:
-        # Automatically JSON-encode input values for Terra API compatibility
-        # Skip values that contain Terra workspace references (this.*)
-        self.inputs = {
-            k: v if isinstance(v, str) and v.startswith("this.") else json.dumps(v)
-            for k, v in self.inputs.items()
+    @field_serializer("inputs")
+    def serialize_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        JSON-encode input values for Terra API compatibility.
+        Terra workspace references (this.*) are kept as-is.
+
+        This runs only during serialization (model_dump), not construction,
+        preventing double-encoding when round-tripping configs through the API.
+        """
+        return {
+            k: self._encode_value(v)
+            for k, v in inputs.items()
         }
+
+    @staticmethod
+    def _encode_value(value: Any) -> str:
+        """Encode a single input value for Terra API."""
+        # Keep Terra workspace references as-is
+        if isinstance(value, str) and value.startswith("this."):
+            return value
+
+        # If it's already a JSON-encoded string, return as-is
+        if isinstance(value, str):
+            try:
+                json.loads(value)
+                return value  # Valid JSON, don't re-encode
+            except json.JSONDecodeError:
+                pass  # Not valid JSON, encode it
+
+        return json.dumps(value)
 
 
 class TransferStatus(str, Enum):

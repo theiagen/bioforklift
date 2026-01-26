@@ -110,17 +110,18 @@ class TestMethodConfig:
     def test_method_config_encoding(self, sample_method_config):
         """Test MethodConfig encoding with other input types"""
         config = sample_method_config
+        config = config.model_dump(exclude_none=True)  # Trigger any encoding logic
 
-        assert config.inputs["example.str"] == '"test"'
-        assert config.inputs["example.int"] == '5'
-        assert config.inputs["example.float"] == '3.14'
-        assert config.inputs["example.str_array"] == '["A", "B", "C"]'
-        assert config.inputs["example.int_array"] == '[10, 20, 30]'
-        assert config.inputs["example.map"] == '{"key1": "value1", "key2": 10}'
-        assert config.inputs["example.bool"] == 'true'
+        assert config["inputs"]["example.str"] == '"test"'
+        assert config["inputs"]["example.int"] == '5'
+        assert config["inputs"]["example.float"] == '3.14'
+        assert config["inputs"]["example.str_array"] == '["A", "B", "C"]'
+        assert config["inputs"]["example.int_array"] == '[10, 20, 30]'
+        assert config["inputs"]["example.map"] == '{"key1": "value1", "key2": 10}'
+        assert config["inputs"]["example.bool"] == 'true'
 
         # This should not get converted; should remain as string reference
-        assert config.inputs["example.terra_ref"] == "this.value"
+        assert config["inputs"]["example.terra_ref"] == "this.value"
 
 
     def test_method_config_validate_minimal(
@@ -279,17 +280,27 @@ class TestTerraMethods:
             name="Test_Overwrite_Config",
             rootEntityType="sample",
             methodRepoMethod=MethodRepoMethod(methodUri="dockstore://test-method/version"),
-            inputs={"new_input": "this.new_input"},
+            inputs={
+                "new_input": "this.new_input",
+                "example.str": "new_test",
+                "example.map": {"new_key1": "new_value1", "new_key2": 10},
+            },
             outputs={"new_output": "this.new_output"}
         )
 
+        # This will also test that inputs/outputs are properly encoded
         expected_response = {
             "namespace": mock_terra_client.destination_project,
             "name": "Test_Overwrite_Config",
             "rootEntityType": "sample",
             "methodRepoMethod": {"methodUri": "dockstore://test-method/version"},
-            "inputs": {"new_input": "this.new_input"},
+            "inputs": {
+                "new_input": "this.new_input",
+                "example.str": '"new_test"',
+                "example.map": '{"new_key1": "new_value1", "new_key2": 10}',
+            },
             "outputs": {"new_output": "this.new_output"}
+
         }
 
         mock_response.json.return_value = expected_response
@@ -336,6 +347,7 @@ class TestTerraMethods:
         assert test_result.namespace == "test-namespace"
         assert test_result.rootEntityType == "sample"
 
-        assert test_result.inputs["workflow.terra_ref"] == "this.input1"  # Not encoded
-        assert test_result.inputs["workflow.string"] == '"value2"'  # Encoded
-        assert test_result.inputs["workflow.number"] == '42'  # Encoded
+        # Only encoded during serialization, so check raw inputs here
+        assert test_result.inputs["workflow.terra_ref"] == "this.input1"
+        assert test_result.inputs["workflow.string"] == "value2"
+        assert test_result.inputs["workflow.number"] == 42
