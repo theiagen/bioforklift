@@ -89,10 +89,12 @@ class TerraMethods:
         ).json()
 
         # Check for invalid inputs/outputs and raise error if found
-        invalid_fields = {}
-        for key in ["invalidInputs", "invalidOutputs", "missingInputs", "extraInputs"]:
-            if response[key]:
-                invalid_fields[key] = response[key]
+        validation_error_keys = ["invalidInputs", "invalidOutputs", "missingInputs", "extraInputs"]
+        invalid_fields = {
+            key: response.get(key)
+            for key in validation_error_keys
+            if response.get(key)
+        }
 
         if invalid_fields:
             msg = "MethodConfig validation errors found:\n" + "\n".join(
