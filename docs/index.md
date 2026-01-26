@@ -13,6 +13,7 @@ bioforklift provides a comprehensive solution for managing the flow of genomic s
 
 - Download data from Terra to BigQuery
 - Upload data from BigQuery to Terra
+- Transfer data between Terra workspaces
 - Submit and monitor Terra workflows
 - Synchronize metadata between platforms
 - Generate alerts and reports
@@ -20,6 +21,7 @@ bioforklift provides a comprehensive solution for managing the flow of genomic s
 ## Key Features
 
 - **Bidirectional Integration**: Move data seamlessly between Terra and BigQuery
+- **Terra-to-Terra Transfers**: Promote samples between workspaces with automatic deduplication
 - **Schema-Based Data Processing**: Validate, transform, and coerce data using YAML-defined schemas
 - **Workflow Management**: Submit, track, and monitor Terra workflows
 - **Metadata Synchronization**: Keep your metadata in sync across workspaces and datatables

@@ -4,6 +4,7 @@ from .terra_entities import TerraEntities
 from .terra_submissions import TerraSubmissions
 from .terra_merge import TerraMerge
 from .terra_methods import TerraMethods
+from .terra_transfer import TerraToTerraTransfer
 from .exceptions import (
     TerraError,
     TerraAPIError,
@@ -13,8 +14,19 @@ from .exceptions import (
     TerraNotFoundError,
     TerraPermissionError,
     TerraServerError,
+    TerraTransferError,
+    TerraTransferSourceError,
+    TerraTransferUploadError,
 )
-from .models import WorkflowConfig, WorkflowMetadata, SubmissionInfo, MethodConfig, MethodRepoMethod
+from .models import (
+    WorkflowConfig,
+    WorkflowMetadata,
+    SubmissionInfo,
+    MethodConfig,
+    MethodRepoMethod,
+    TransferResult,
+    TransferStatus,
+)
 
 
 __all__ = [
@@ -27,6 +39,9 @@ __all__ = [
     "MethodRepoMethod",
     "WorkflowConfig",
     "TerraMerge",
+    "TerraToTerraTransfer",
+    "TransferResult",
+    "TransferStatus",
     "WorkflowMetadata",
     "SubmissionInfo",
     "TerraError",
@@ -37,4 +52,7 @@ __all__ = [
     "TerraNotFoundError",
     "TerraPermissionError",
     "TerraServerError",
+    "TerraTransferError",
+    "TerraTransferSourceError",
+    "TerraTransferUploadError",
 ]

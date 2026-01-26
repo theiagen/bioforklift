@@ -61,3 +61,27 @@ class TerraAuthenticationError(TerraAPIError):
     """Raised when authentication fails"""
 
     pass
+
+
+class TerraTransferError(TerraError):
+    """Base exception for Terra transfer operations"""
+
+    pass
+
+
+class TerraTransferConfigError(TerraTransferError):
+    """Raised when transfer configuration is invalid or missing"""
+
+    pass
+
+
+class TerraTransferSourceError(TerraTransferError):
+    """Raised when source workspace or table cannot be accessed"""
+
+    pass
+
+
+class TerraTransferUploadError(TerraTransferError):
+    """Raised when uploading to destination workspace fails"""
+
+    pass

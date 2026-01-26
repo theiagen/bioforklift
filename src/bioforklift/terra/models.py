@@ -1,8 +1,16 @@
+<<<<<<< HEAD
 from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 from typing import Optional, Dict, Any
 from typing_extensions import Self
 import json
+=======
+from pydantic import BaseModel, Field, computed_field
+from datetime import datetime
+from typing import Optional, List
+from enum import Enum
+
+>>>>>>> origin/main
 
 class WorkflowConfig(BaseModel):
     """Model for Terra workflow submission configuration"""
@@ -82,3 +90,35 @@ class MethodConfig(BaseModel):
             k: v if isinstance(v, str) and v.startswith("this.") else json.dumps(v)
             for k, v in self.inputs.items()
         }
+class TransferStatus(str, Enum):
+    """Status codes for sample transfer operations"""
+
+    SUCCESS = "success"
+    NO_NEW_SAMPLES = "no_new_samples"
+    ERROR = "error"
+    PARTIAL_SUCCESS = "partial_success"
+
+
+class TransferResult(BaseModel):
+    """Model for sample transfer operation results"""
+
+    status: TransferStatus
+    transferred_ids: List[str] = Field(default_factory=list)
+    skipped_ids: List[str] = Field(default_factory=list)
+    failed_ids: List[str] = Field(default_factory=list)
+    message: Optional[str] = None
+
+    @computed_field
+    @property
+    def transferred_count(self) -> int:
+        return len(self.transferred_ids)
+
+    @computed_field
+    @property
+    def skipped_count(self) -> int:
+        return len(self.skipped_ids)
+
+    @computed_field
+    @property
+    def failed_count(self) -> int:
+        return len(self.failed_ids)
