@@ -346,3 +346,22 @@ class TerraClient:
         return self._http_request(
             "PATCH", endpoint, data=data, use_destination=use_destination
         )
+
+    def put(
+        self,
+        endpoint: str,
+        data: Optional[Dict] = None,
+        files: Optional[Dict] = None,
+        params: Optional[Dict] = None,
+        use_destination: bool = False,
+    ) -> requests.Response:
+        """Make PUT request"""
+
+        return self._http_request(
+            "PUT",
+            endpoint,
+            data=data,
+            files=files,
+            params=params,
+            use_destination=use_destination,
+        )

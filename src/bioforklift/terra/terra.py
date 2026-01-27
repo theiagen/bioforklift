@@ -4,6 +4,7 @@ from .client import TerraClient
 from .terra_entities import TerraEntities
 from .terra_submissions import TerraSubmissions
 from .terra_merge import TerraMerge
+from .terra_methods import TerraMethods
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -47,6 +48,7 @@ class Terra:
         self.entities = TerraEntities(self.client)
         self.submissions = TerraSubmissions(self.client)
         self.merge_tables = TerraMerge(self.entities)
+        self.methods = TerraMethods(self.client)
 
     @property
     def source_workspace(self) -> str:

@@ -1,8 +1,9 @@
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, model_validator, computed_field, field_serializer
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, Dict, List, Any
+from typing_extensions import Self
 from enum import Enum
-
+import json
 
 class WorkflowConfig(BaseModel):
     """Model for Terra workflow submission configuration"""
@@ -39,6 +40,71 @@ class SubmissionInfo(BaseModel):
     entity_name: str
     submission_date: datetime
     status: Optional[str] = None
+
+
+class MethodRepoMethod(BaseModel):
+    """
+    Model for method repository method.
+    """
+    methodUri: Optional[str] = None
+    sourceRepo: Optional[str] = None
+    methodPath: Optional[str] = None
+    methodVersion: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_required_fields(self) -> Self:
+        # Note: having all four fields is perfectly valid, but not required
+        if self.methodUri is None and not all([self.sourceRepo, self.methodPath, self.methodVersion]):
+            raise ValueError("Either 'methodUri' or all of 'sourceRepo', 'methodPath', and 'methodVersion' must be provided.")
+        return self
+
+
+class MethodConfig(BaseModel):
+    """
+    Model for workspace method configuration.
+    See https://api.firecloud.org/#/Method%20Configurations/getWorkspaceMethodConfig
+    """
+
+    namespace: str
+    name: str
+    rootEntityType: str
+    methodRepoMethod: MethodRepoMethod
+    deleted: bool = False
+    prerequisites: Dict[str, Any] = Field(default_factory=dict)
+    methodConfigVersion: int = 0
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    outputs: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_serializer("inputs")
+    def serialize_inputs(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        JSON-encode input values for Terra API compatibility.
+        Terra workspace references (this.*) are kept as-is.
+
+        This runs only during serialization (model_dump), not construction,
+        preventing double-encoding when round-tripping configs through the API.
+        """
+        return {
+            k: self._encode_value(v)
+            for k, v in inputs.items()
+        }
+
+    @staticmethod
+    def _encode_value(value: Any) -> str:
+        """Encode a single input value for Terra API."""
+        # Keep Terra workspace references as-is
+        if isinstance(value, str) and value.startswith("this."):
+            return value
+
+        # If it's already a JSON-encoded string, return as-is
+        if isinstance(value, str):
+            try:
+                json.loads(value)
+                return value  # Valid JSON, don't re-encode
+            except json.JSONDecodeError:
+                pass  # Not valid JSON, encode it
+
+        return json.dumps(value)
 
 
 class TransferStatus(str, Enum):
