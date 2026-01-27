@@ -28,7 +28,7 @@ print(f"Base method config - version: {base_method_config.methodRepoMethod.metho
 print(f"Base method config  - rootEntityType (data table to use): {base_method_config.rootEntityType}")
 print(f"Base method config - inputs: {base_method_config.inputs}")
 
-mod_method_config = base_method_config
+mod_method_config = base_method_config.model_copy(deep=True)
 mod_method_config.name = f"Test_Bioforklift_TheiaProk_FASTA"
 
 mod_method_config.rootEntityType = f"{table_name}"
