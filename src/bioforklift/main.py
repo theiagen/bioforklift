@@ -10,6 +10,8 @@ import sys
 import argparse
 from pathlib import Path
 from bioforklift.scripts.launch import launch, launch_args
+from bioforklift.scripts.upload import upload, upload_args
+from bioforklift.scripts.download import download, download_args
 from bioforklift.scripts.configure import configure, configure_args, CLIConfig
 
 
@@ -23,7 +25,7 @@ def bioforklift_args(parser):
 
     # Download arguments
     download_parser = subparsers.add_parser("download", aliases=["d"], help="Download data from Terra workspace")
-#    download_parser = download_args(download_parser)
+    download_parser = download_args(download_parser)
 
     # Add arguments from launch_args to the launch subparser
     launch_parser = subparsers.add_parser("launch", aliases=["l"], help="Launch a workflow in Terra")
@@ -31,7 +33,7 @@ def bioforklift_args(parser):
 
     # Upload arguments
     upload_parser = subparsers.add_parser("upload", aliases=["u"], help="Upload data to Terra workspace")
-#    upload_parser = upload_args(upload_parser)
+    upload_parser = upload_args(upload_parser)
 
     parser.add_argument("-c", "--config_path", type=str, default=f"{Path.home()}/.config/bioforklift.cfg", help="Path to bioforklift configuration file; DEFAULT: ~/.config/bioforklift.cfg")
 
@@ -47,10 +49,10 @@ def cl_init():
         launch(args, config)
     elif args.command in {"configure", "c"}:
         configure(args)
-#    elif args.command in {"download", "d"}:
-#        download(args)
-#    elif args.command in {"upload", "u"}:
-#        upload(args)
+    elif args.command in {"download", "d"}:
+        download(args, config)
+    elif args.command in {"upload", "u"}:
+        upload(args, config)
     else:
         parser.print_help() 
 
