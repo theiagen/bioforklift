@@ -201,7 +201,7 @@ def launch(args, config=None):
         submission = terra.submissions.submit_workflow(workflow_config)
         logger.info(submission)
         status = terra.submissions.get_submission_status(submission["submissionId"])
-        logger.info(status)
+        logger.debug(status)
 
 if __name__ == "__main__":
     args = cl_init()
