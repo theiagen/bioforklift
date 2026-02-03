@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 class CLIConfig:
-    def __init__(self, config_path=None, workspace=None, project=None, branch=None, call_cache=None, ignore_empty=None):
+    def __init__(self, config_path=None, repository=None, workspace=None, project=None, branch=None, call_cache=None, ignore_empty=None):
+        self.repository = repository
         self.workspace = workspace
         self.project = project
         self.branch = branch
@@ -20,6 +21,8 @@ class CLIConfig:
 
         if config_path:
             loaded_config = self._load_config(self.config_path)
+            if self.repository is None:
+                self.repository = loaded_config["repository"]
             if self.workspace is None:
                 self.workspace = loaded_config["workspace"]
             if self.project is None:
@@ -53,15 +56,16 @@ class CLIConfig:
 
 
 def cl_init():
-    init_parser = argparse.ArgumentParser(description="Configure Bioforklift settings (full overwrite)")
+    init_parser = argparse.ArgumentParser(description="Configure Bioforklift settings")
     parser = configure_args(init_parser)
     args = parser.parse_args()
-
     return args
 
 
 def configure_args(parser):
     wf_parser = parser.add_argument_group("Workflow Launch Parameters")
+    wf_parser.add_argument("-r", "--repository", type=str, default="github.com/theiagen/public_health_bioinformatics",
+                           help="GitHub repository for workflow source; DEFAULT: github.com/theiagen/public_health_bioinformatics")
     wf_parser.add_argument("-b", "--branch", type=str, default="main", help="GitHub branch for workflow source; DEFAULT: main")
     wf_parser.add_argument("-cc", "--call_cache", action="store_true", default=False, help="Enable call caching for the workflow submission; DEFAULT: False")
     wf_parser.add_argument("-ie", "--ignore_empty", action="store_true", default=False, help="Ignore empty outputs in the workflow submission; DEFAULT: False")
@@ -77,6 +81,7 @@ def configure_args(parser):
 
 def configure(configure_args):
     config = CLIConfig(
+        repository=configure_args.repository,
         workspace=configure_args.workspace,
         project=configure_args.project,
         branch=configure_args.branch,
