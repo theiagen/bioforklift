@@ -58,6 +58,10 @@ class CLIConfig:
 def cl_init():
     init_parser = argparse.ArgumentParser(description="Configure Bioforklift settings")
     parser = configure_args(init_parser)
+
+    bf_parser = parser.add_argument_group("Bioforklift Configuration Parameters")
+    bf_parser.add_argument("-c", "--config_path", type=str, default=f"{Path.home()}/.config/bioforklift.cfg", help="Path to bioforklift configuration file; DEFAULT: ~/.config/bioforklift.cfg")
+
     args = parser.parse_args()
     return args
 
@@ -74,8 +78,6 @@ def configure_args(parser):
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
     ws_parser.add_argument("-p", "--project", type=str, help="Terra project name")
 
-    bf_parser = parser.add_argument_group("Bioforklift Configuration Parameters")
-    bf_parser.add_argument("-cp", "--config_path", type=str, default=f"{Path.home()}/.config/bioforklift.cfg", help="Path to bioforklift configuration file; DEFAULT: ~/.config/bioforklift.cfg")
     return parser
 
 
