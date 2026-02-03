@@ -26,6 +26,8 @@ def cl_init():
 def launch_args(parser):
     wf_parser = parser.add_argument_group("Workflow Submission Parameters")
     wf_parser.add_argument("-wf", "--workflow", type=str, help="Terra workflow name to run")
+    wf_parser.add_argument("-t", "--table", type=str, help="Terra entity table name for workflow")
+    wf_parser.add_argument("-r", "--repository", type=str, help="GitHub repository for workflow source")
     wf_parser.add_argument("-b", "--branch", type=str, default="main", help="GitHub branch for workflow source; DEFAULT: main")
 
     launch_parser = parser.add_argument_group("Workflow Launch Parameters")
@@ -40,7 +42,6 @@ def launch_args(parser):
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
     ws_parser.add_argument("-p", "--project", type=str, help="Terra project name")
-    ws_parser.add_argument("-t", "--table", type=str, help="Terra entity table name for workflow")
     ws_parser.add_argument("--preexisting", action="store_true", default=False, help="Use pre-existing method configuration in the workspace; DEFAULT: False")
 
     run_parser = parser.add_argument_group("Runtime Parameters")
@@ -49,7 +50,7 @@ def launch_args(parser):
     return parser
 
 
-def generate_method_config(terra, wf_name, table_name, inputs_dict, outputs_dict, branch):
+def generate_method_config(terra, repo_uri, wf_name, table_name, inputs_dict, outputs_dict, branch):
     # to be removed when added natively
     method_config = MethodConfig(
         namespace=terra.client.destination_project,
@@ -60,7 +61,7 @@ def generate_method_config(terra, wf_name, table_name, inputs_dict, outputs_dict
         prerequisites={},
         methodRepoMethod=MethodRepoMethod(
             sourceRepo="dockstore",
-            methodPath=f"github.com/theiagen/public_health_bioinformatics/{wf_name}",
+            methodPath=f"{repo_uri}/{wf_name}",
             methodVersion=branch,
         ),
         methodConfigVersion=0,
@@ -71,6 +72,7 @@ def generate_method_config(terra, wf_name, table_name, inputs_dict, outputs_dict
 def launch(args, config=None):
     if not config:
         config = CLIConfig(
+            repository=args.repository,
             workspace=args.workspace,
             project=args.project,
             branch=args.branch,
@@ -79,11 +81,13 @@ def launch(args, config=None):
         )
     else:
         # Override config values with command-line arguments if provided
-        if args.workspace:
+        if args.repository is not None:
+            config.repository = args.repository
+        if args.workspace is not None:
             config.workspace = args.workspace
-        if args.project:
+        if args.project is not None:
             config.project = args.project
-        if args.branch:
+        if args.branch is not None:
             config.branch = args.branch
         if args.call_cache is not None:
             config.call_cache = args.call_cache
@@ -98,9 +102,6 @@ def launch(args, config=None):
     )
 
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # get required terra task name and table name for each workflow
-    wf_terra_task_name = args.workflow.replace("_PHB", "").lower()
 
     new_table_df = terra.entities.download_table(args.table, use_destination=True)
     result = terra.entities.create_entity_set(f"{args.table}_set_{current_time}", args.table, new_table_df)
@@ -134,13 +135,13 @@ def launch(args, config=None):
         mod_method_config.rootEntityType = f"{args.table}"
         mod_method_config.methodRepoMethod.methodUri = None
         mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
-        mod_method_config.methodRepoMethod.methodPath = f"github.com/theiagen/public_health_bioinformatics/{args.workflow}"
+        mod_method_config.methodRepoMethod.methodPath = f"{config.repository}/{args.workflow}"
         mod_method_config.methodRepoMethod.methodVersion = args.branch
         mod_method_config.methodConfigVersion = 0
 
         # set inputs from json file and dynamically set samplename based on table name
         mod_method_config.inputs = wf_inputs
-        mod_method_config.inputs[f"{wf_terra_task_name}.{args.sample_col}"] = f"this.{config.table}_id"
+        mod_method_config.inputs[f"{args.table}.{args.sample_col}"] = f"this.{args.table}_id"
 
         # set outputs from json file
         mod_method_config.outputs = wf_outputs
@@ -154,9 +155,9 @@ def launch(args, config=None):
         wf_config_params = {
             "methodConfigurationNamespace": terra.client.destination_project,
             "methodConfigurationName": mod_method_config.name,
-            "entityType": f"{config.table}_set", # entityType is name of set table
-            "entityName": f"{config.table}_set_{current_time}", # entityName is name of specific row in table
-            "expression": f"this.{config.table}s", # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
+            "entityType": f"{args.table}_set", # entityType is name of set table
+            "entityName": f"{args.table}_set_{current_time}", # entityName is name of specific row in table
+            "expression": f"this.{args.table}s", # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
             "useCallCache": config.call_cache,
             "deleteIntermediateOutputFiles": False,
             "useReferenceDisks": False,
