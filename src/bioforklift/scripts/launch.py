@@ -2,18 +2,20 @@ import sys
 import json
 import argparse
 import logging
+from pathlib import Path
 from datetime import datetime
+from bioforkflift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig, MethodRepoMethod
 
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+
 def cl_init():
-    logger = logging.getLogger(__name__)
-    logging.basicConfig(level=logging.INFO)
 
     init_parser = argparse.ArgumentParser(description="Validate Terra workflow submission configurations.")
-    parser = launcher_args(init_parser)
-    run_parser = parser.add_argument_group("Runtime Parameters")
-    run_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    parser = launch_args(init_parser)
     args = parser.parse_args()
 
     if args.verbose:
@@ -21,7 +23,7 @@ def cl_init():
     return args
 
 
-def launcher_args(parser):
+def launch_args(parser):
     wf_parser = parser.add_argument_group("Workflow Submission Parameters")
     wf_parser.add_argument("-wf", "--workflow", type=str, help="Terra workflow name to run")
     wf_parser.add_argument("-b", "--branch", type=str, default="main", help="GitHub branch for workflow source; DEFAULT: main")
@@ -40,6 +42,9 @@ def launcher_args(parser):
     ws_parser.add_argument("-p", "--project", type=str, help="Terra project name")
     ws_parser.add_argument("-t", "--table", type=str, help="Terra entity table name for workflow")
     ws_parser.add_argument("--preexisting", action="store_true", default=False, help="Use pre-existing method configuration in the workspace; DEFAULT: False")
+
+    run_parser = parser.add_argument_group("Runtime Parameters")
+    run_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
 
     return parser
 
@@ -63,23 +68,44 @@ def generate_method_config(terra, wf_name, table_name, inputs_dict, outputs_dict
     )
     return method_config
 
-def launcher(workspace, project, table, workflow, branch, sample_col, input_json, output_json, call_cache, comment, ignore_empty, preexisting, verbose):
+def launch(args, config=None):
+    if not config:
+        config = CLIConfig(
+            workspace=args.workspace,
+            project=args.project,
+            branch=args.branch,
+            call_cache=args.call_cache,
+            ignore_empty=args.ignore_empty,
+        )
+    else:
+        # Override config values with command-line arguments if provided
+        if args.workspace:
+            config.workspace = args.workspace
+        if args.project:
+            config.project = args.project
+        if args.branch:
+            config.branch = args.branch
+        if args.call_cache is not None:
+            config.call_cache = args.call_cache
+        if args.ignore_empty is not None:
+            config.ignore_empty = args.ignore_empty
+
     terra = Terra(
-        source_workspace=workspace,
-        source_project=project,
-        destination_workspace=workspace,
-        destination_project=project,
+        source_workspace=config.workspace,
+        source_project=config.project,
+        destination_workspace=config.workspace,
+        destination_project=config.project,
     )
 
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # get required terra task name and table name for each workflow
-    wf_terra_task_name = workflow.replace("_PHB", "").lower()
+    wf_terra_task_name = args.workflow.replace("_PHB", "").lower()
 
-    new_table_df = terra.entities.download_table(table, use_destination=True)
-    result = terra.entities.create_entity_set(f"{table}_set_{current_time}", table, new_table_df)
+    new_table_df = terra.entities.download_table(args.table, use_destination=True)
+    result = terra.entities.create_entity_set(f"{args.table}_set_{current_time}", args.table, new_table_df)
     if result.ok:
-        logger.info(f"{table} entity set created successfully")
+        logger.info(f"{args.table} entity set created successfully")
 
         # get workflow input parameters from json file
         if isinstance(input_json, str):
@@ -96,25 +122,25 @@ def launcher(workspace, project, table, workflow, branch, sample_col, input_json
             wf_outputs = output_json
 
         # get method config dictionary from existing workspace
-        if preexisting:
-            base_method_config_dict = terra.methods.get_method_config(workflow, use_destination=True)
+        if args.preexisting:
+            base_method_config_dict = terra.methods.get_method_config(args.workflow, use_destination=True)
         else:
-            base_method_config_dict = generate_method_config(terra, workflow, table, wf_inputs, wf_outputs, branch)
+            base_method_config_dict = generate_method_config(terra, args.workflow, args.table, wf_inputs, wf_outputs, args.branch)
         base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
 
         mod_method_config = base_method_config.model_copy(deep=True)
         # modify method config for the new workspace
         mod_method_config.namespace = terra.client.destination_project
-        mod_method_config.rootEntityType = f"{table}"
+        mod_method_config.rootEntityType = f"{args.table}"
         mod_method_config.methodRepoMethod.methodUri = None
         mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
-        mod_method_config.methodRepoMethod.methodPath = f"github.com/theiagen/public_health_bioinformatics/{workflow}"
-        mod_method_config.methodRepoMethod.methodVersion = branch
+        mod_method_config.methodRepoMethod.methodPath = f"github.com/theiagen/public_health_bioinformatics/{args.workflow}"
+        mod_method_config.methodRepoMethod.methodVersion = args.branch
         mod_method_config.methodConfigVersion = 0
 
         # set inputs from json file and dynamically set samplename based on table name
         mod_method_config.inputs = wf_inputs
-        mod_method_config.inputs[f"{wf_terra_task_name}.{sample_col}"] = f"this.{table}_id"
+        mod_method_config.inputs[f"{wf_terra_task_name}.{args.sample_col}"] = f"this.{config.table}_id"
 
         # set outputs from json file
         mod_method_config.outputs = wf_outputs
@@ -128,16 +154,16 @@ def launcher(workspace, project, table, workflow, branch, sample_col, input_json
         wf_config_params = {
             "methodConfigurationNamespace": terra.client.destination_project,
             "methodConfigurationName": mod_method_config.name,
-            "entityType": f"{table}_set", # entityType is name of set table
-            "entityName": f"{table}_set_{current_time}", # entityName is name of specific row in table
-            "expression": f"this.{table}s", # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
-            "useCallCache": call_cache,
+            "entityType": f"{config.table}_set", # entityType is name of set table
+            "entityName": f"{config.table}_set_{current_time}", # entityName is name of specific row in table
+            "expression": f"this.{config.table}s", # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
+            "useCallCache": config.call_cache,
             "deleteIntermediateOutputFiles": False,
             "useReferenceDisks": False,
             "memoryRetryMultiplier": 1.0,
             "workflowFailureMode": "NoNewCalls",
-            "userComment": comment,
-            "ignoreEmptyOutputs": ignore_empty,
+            "userComment": args.comment,
+            "ignoreEmptyOutputs": config.ignore_empty,
         }
 
         # Workflow operations
@@ -149,5 +175,5 @@ def launcher(workspace, project, table, workflow, branch, sample_col, input_json
 
 if __name__ == "__main__":
     args = cl_init()
-    launcher(args.workspace, args.project, args.table, args.workflow, args.branch, args.sample_col, args.input_json, args.output_json, args.call_cache, args.comment, args.ignore_empty, args.preexisting, args.verbose)
+    launch(args)
     sys.exit(0)
