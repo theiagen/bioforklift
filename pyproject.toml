@@ -9,7 +9,7 @@ keywords = ["terra", "bigquery", "bioinformatics", "data-integration"]
 packages = [{include = "bioforklift", from = "src"}]
 
 [tool.poetry.scripts]
-bioforklift = "bioforklift.main:main"
+bioforklift = "bioforklift.main:run"
 
 [tool.poetry.dependencies]
 
