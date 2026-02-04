@@ -18,6 +18,9 @@ def upload_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     d_parser.add_argument(
         "-t", "--table", type=str, help="Terra entity table name for workflow"
     )
+    d_parser.add_argument(
+        "-o", "--overwrite", action="store_true", help="Overwrite existing entities"
+    )
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
@@ -51,6 +54,9 @@ def upload(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: lo
 
     # upload data
     df = pd.read_csv(args.input_path, sep=sep)
+    terra_entities = terra.entities.list_entity_types(include_attributes=False)
+    if not args.overwrite and table_name in terra_entities:
+        raise ValueError(f"Table '{table_name}' already exists in workspace. Use --overwrite to replace it.")
     terra.entities.upload_entities(data=df, target=table_name)
     if logger:
         logger.info(
