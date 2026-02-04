@@ -61,13 +61,13 @@ def run():
 
     # Execute the appropriate subcommand
     if args.command in {"launch", "l"}:
-        launch(args, config, logger)
+        launch(args, config)
     elif args.command in {"configure", "c"}:
-        configure(args, config, logger)
+        configure(args, config)
     elif args.command in {"download", "d"}:
-        download(args, config, logger)
+        download(args, config)
     elif args.command in {"upload", "u"}:
-        upload(args, config, logger)
+        upload(args, config)
     else:
         parser.print_help()
 
