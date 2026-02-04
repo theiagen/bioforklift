@@ -1,4 +1,5 @@
 import json
+import time
 import logging
 import argparse
 from pathlib import Path
@@ -8,11 +9,14 @@ from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra, WorkflowConfig
 
 
+logger = logging.getLogger(__name__)
+
+
 def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Define command-line arguments for launch subcommand"""
     wf_parser = parser.add_argument_group("Workflow Submission Parameters")
     wf_parser.add_argument(
-        "-wf", "--workflow", type=str, help="Terra workflow name to run"
+        "-wf", "--workflow_name", type=str, help="Terra workflow name to run"
     )
     wf_parser.add_argument(
         "-t", "--table", type=str, help="Terra entity table name for workflow"
@@ -32,7 +36,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     launch_parser = parser.add_argument_group("Workflow Launch Parameters")
     launch_parser.add_argument(
-        "-j", "--json", type=str, help="Path to workflow submission JSON file"
+        "-j", "--job_json", type=str, help="Path to workflow submission JSON file"
     )
     launch_parser.add_argument(
         "-s",
@@ -41,7 +45,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default="samplename",
         help="Column name in entity table for sample names; DEFAULT: samplename",
     )
-    # launch_parser.add_argument("--bioblueprint", type=str, help="Path to Bio-Blueprint JSON file for workflow inputs/outputs")
     launch_parser.add_argument(
         "-i",
         "--input_json",
@@ -105,7 +108,7 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
 
     # argument to requirement
     wf_args = {
-        "dockstore": True,
+        "workflow_name": True,
         "table": True, 
         "input_json": True, 
         "output_json": True, 
@@ -119,8 +122,8 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
 
     job_dict = {}
     # parse JSON input
-    if args_dict.get("json"):
-        with open(args_dict["json"], "r") as json_file:
+    if args_dict.get("job_json"):
+        with open(args_dict["job_json"], "r") as json_file:
             json_data = json.load(json_file)
         # iterate through workflows in json file
         for wf, wf_data in json_data.items():
@@ -141,7 +144,8 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                         raise KeyError(f"Missing required argument '{arg}' for workflow '{wf}'")
     else:
         # single workflow from command-line args
-        job_dict[args_dict["workflow"]] = {"dockstore": args_dict["workflow"]}
+        wf = args_dict["workflow_name"]
+        job_dict[wf] = {"workflow_name": wf}
         for arg, require in wf_args.items():
             # use from command-line args if present
             if args_dict.get(arg) is not None:
@@ -160,7 +164,7 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     return job_dict 
 
 
-def launch_job(job_data, terra):
+def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
     """Launch a workflow in Terra based on provided job data"""
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -181,12 +185,12 @@ def launch_job(job_data, terra):
     # get method config dictionary from existing workspace
     if job_data.get("preexisting_config"):
         base_method_config_dict = terra.methods.get_method_config(
-            job_data["dockstore"], use_destination=True
+            job_data["workflow_name"], use_destination=True
         )
     else:
         base_method_config_dict = terra.methods.generate_method_config(
             config.repository,
-            job_data["dockstore"],
+            job_data["workflow_name"],
             job_data["table"],
             job_data["input_json"],
             job_data["output_json"],
@@ -203,7 +207,7 @@ def launch_job(job_data, terra):
     mod_method_config.methodRepoMethod.methodUri = None
     mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
     mod_method_config.methodRepoMethod.methodPath = (
-            f"{config.repository}/{job_data['dockstore']}"
+            f"{config.repository}/{job_data['workflow_name']}"
     )
     mod_method_config.methodRepoMethod.methodVersion = config.branch
     mod_method_config.methodConfigVersion = 0
@@ -252,17 +256,17 @@ def launch_job(job_data, terra):
     logger.debug(status)
 
 
-def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
+def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Prepare and manage launch execution of workflows in Terra"""
 
-    if args.workflow and args.json:
-        raise ValueError("--workflow and --json are mutually exclusive")
-    elif not args.workflow and not args.json:
-        raise ValueError("--workflow or --json are required")
-    elif args.workflow and (not args.table or not args.input_json or not args.output_json):
+    if args.workflow_name and args.job_json:
+        raise ValueError("--workflow and --job_json are mutually exclusive")
+    elif not args.workflow_name and not args.job_json:
+        raise ValueError("--workflow or --job_json are required")
+    elif args.workflow_name and (not args.table or not args.input_json or not args.output_json):
         raise ValueError("--table, --input_json, and --output_json are required when using --workflow")
 
-    config.update(vars(args), prefer_config=False)
+    config.update(vars(args))
     job_dicts = prepare_job_dict(vars(args), config)
 
     terra = Terra(
@@ -274,5 +278,5 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: lo
 
     for wf_name, job_data in job_dicts.items():
         logger.info(f"Launching workflow: {wf_name}")
-        launch_job(job_data, terra)
+        launch_job(job_data, terra, config)
         time.sleep(args.sleep)
