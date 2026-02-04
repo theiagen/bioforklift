@@ -6,6 +6,9 @@ from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra
 
 
+logger = logging.getLogger(__name__)
+
+
 def upload_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Command-line arguments for uploading data to Terra workspace"""
     d_parser = parser.add_argument_group("Data Parameters")
@@ -28,10 +31,10 @@ def upload_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def upload(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
+def upload(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Upload data to Terra workspace"""
 
-    config.update(vars(args), prefer_config=False)
+    config.update(vars(args))
 
     terra = Terra(
         source_workspace=config.workspace,

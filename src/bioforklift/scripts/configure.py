@@ -5,6 +5,9 @@ from pathlib import Path
 from datetime import datetime
 
 
+logger = logging.getLogger(__name__)
+
+
 class CLIConfig:
     """Configuration class for bioforklift CLI tool"""
 
@@ -31,7 +34,8 @@ class CLIConfig:
             if hasattr(self, key):
                 if prefer_self and self.__dict__[key] is not None:
                     continue
-                setattr(self, key, value)
+                if value is not None:
+                    setattr(self, key, value)
 
     def _load(self, config_path: str) -> dict:
         """Load configuration from YAML file"""
@@ -85,12 +89,10 @@ def configure_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def configure(configure_args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None,
-) -> None:
+def configure(configure_args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Configure bioforklift settings and write to configuration file"""
     config.update(vars(configure_args), prefer_self=False)
     # Update with defaults
-    config.update(config_defaults, prefer_self=True)
     config.write()
     if logger:
         logger.info(f"Configuration written to {config.config_path}")

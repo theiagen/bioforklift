@@ -5,6 +5,9 @@ from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra
 
 
+logger = logging.getLogger(__name__)
+
+
 def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Define command-line arguments for download subcommand"""
     d_parser = parser.add_argument_group("Data Parameters")
@@ -26,9 +29,9 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def download(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
+def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Download data from Terra workspace"""
-    config.update(vars(args), prefer_config=False)
+    config.update(vars(args))
 
     terra = Terra(
         source_workspace=config.workspace,
