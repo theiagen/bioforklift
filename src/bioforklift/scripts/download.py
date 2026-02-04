@@ -1,27 +1,31 @@
-import logging
 from pathlib import Path
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra
 
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
-
-def download_args(parser):
+def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Define command-line arguments for download subcommand"""
     d_parser = parser.add_argument_group("Data Parameters")
-    d_parser.add_argument("-t", "--table", type=str, help="Terra entity table name for workflow")
+    d_parser.add_argument(
+        "-t", "--table", type=str, help="Terra entity table name for workflow"
+    )
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
     ws_parser.add_argument("-p", "--project", type=str, help="Terra project name")
 
     run_parser = parser.add_argument_group("Runtime Parameters")
-    run_parser.add_argument("-o", "--output_path", type=str, help="Path to save downloaded data; DEFAULT: current directory")
+    run_parser.add_argument(
+        "-o",
+        "--output_path",
+        type=str,
+        help="Path to save downloaded data; DEFAULT: current directory",
+    )
     return parser
 
 
-def initialize_config(args, config):
+def initialize_config(args: argparse.Namespace, config: CLIConfig) -> CLIConfig:
+    """Initialize configuration for download operation"""
     if not config:
         config = CLIConfig(
             workspace=args.workspace,
@@ -36,8 +40,8 @@ def initialize_config(args, config):
     return config
 
 
-def download(args, config=None):
-
+def download(args: argparse.Namespace, config: CLIConfig = None) -> None:
+    """Download data from Terra workspace"""
     config = initialize_config(args, config)
 
     terra = Terra(
@@ -48,6 +52,9 @@ def download(args, config=None):
     )
 
     df = terra.entities.download_table(args.table, use_destination=True)
-    output_path = Path(args.output_path) if args.output_path else Path(f"{args.table}.tsv")
-    df.to_csv(output_path, index=False, sep='\t')
+    # Save the downloaded table to defined output path or current directory
+    output_path = (
+        Path(args.output_path) if args.output_path else Path(f"{args.table}.tsv")
+    )
+    df.to_csv(output_path, index=False, sep="\t")
     logger.info(f"Downloaded table '{args.table}' to {output_path}")
