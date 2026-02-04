@@ -63,6 +63,7 @@ nav:
   - Getting Started: getting_started.md
   - Core Concepts: core_concepts.md
   - Interfaces:
+    - Command Line: interfaces/cli_interface.md
     - Terra: interfaces/terra_interface.md
     - BigQuery: interfaces/bigquery_interface.md
     - Terra2BQ: interfaces/terra2bq_interface.md
