@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from .models import MethodConfig
+from .models import MethodConfig, MethodRepoMethod
 from .client import TerraClient
 from bioforklift.forklift_logging import setup_logger
 
