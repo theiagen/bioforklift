@@ -185,6 +185,116 @@ class TestTerraToTerraTransfer:
 
         assert result.status == TransferStatus.NO_NEW_SAMPLES
 
+    def test_init_with_transform(self, mock_terra_client):
+        """Test TerraToTerraTransfer initialization with transform callable"""
+        def my_transform(df):
+            return df[df["status"] == "complete"]
+
+        transfer = TerraToTerraTransfer(
+            client=mock_terra_client,
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
+            transform=my_transform,
+        )
+
+        assert transfer.transform is my_transform
+
+    def test_transfer_with_transform_filters_rows(self, mock_terra_client):
+        """Test transfer applies transform to filter rows before upload"""
+        def filter_complete(df):
+            return df[df["status"] == "complete"]
+
+        transfer = TerraToTerraTransfer(
+            client=mock_terra_client,
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
+            transform=filter_complete,
+        )
+
+        # Mock source data with mixed status
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
+            "status": ["complete", "pending", "complete"],
+            "value": [1, 2, 3]
+        })
+
+        transfer.get_new_sample_ids = Mock(return_value={"s1", "s2", "s3"})
+        transfer.entities.download_table = Mock(return_value=source_df)
+        transfer.entities.upload_entities = Mock()
+
+        result = transfer.transfer()
+
+        assert result.status == TransferStatus.SUCCESS
+        assert set(result.transferred_ids) == {"s1", "s3"}
+        assert result.transferred_count == 2
+
+        # Verify only complete samples were uploaded
+        upload_call = transfer.entities.upload_entities.call_args
+        uploaded_df = upload_call.kwargs["data"]
+        assert len(uploaded_df) == 2
+        assert all(uploaded_df["status"] == "complete")
+
+    def test_transfer_with_transform_filters_all_rows(self, mock_terra_client):
+        """Test transfer returns NO_NEW_SAMPLES when transform filters all rows"""
+        def filter_none(df):
+            return df[df["status"] == "nonexistent"]
+
+        transfer = TerraToTerraTransfer(
+            client=mock_terra_client,
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
+            transform=filter_none,
+        )
+
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2"],
+            "status": ["complete", "pending"],
+            "value": [1, 2]
+        })
+
+        transfer.get_new_sample_ids = Mock(return_value={"s1", "s2"})
+        transfer.entities.download_table = Mock(return_value=source_df)
+        transfer.entities.upload_entities = Mock()
+
+        result = transfer.transfer()
+
+        assert result.status == TransferStatus.NO_NEW_SAMPLES
+        assert result.message == "No samples remaining after transform"
+        # upload_entities should not be called
+        transfer.entities.upload_entities.assert_not_called()
+
+    def test_transfer_with_transform_modifies_columns(self, mock_terra_client):
+        """Test transfer applies transform that modifies columns"""
+        def drop_columns(df):
+            return df.drop(columns=["internal_field"])
+
+        transfer = TerraToTerraTransfer(
+            client=mock_terra_client,
+            source_table_name="analyzed_sample",
+            destination_table_name="sample",
+            transform=drop_columns,
+        )
+
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2"],
+            "value": [1, 2],
+            "internal_field": ["secret1", "secret2"]
+        })
+
+        transfer.get_new_sample_ids = Mock(return_value={"s1", "s2"})
+        transfer.entities.download_table = Mock(return_value=source_df)
+        transfer.entities.upload_entities = Mock()
+
+        result = transfer.transfer()
+
+        assert result.status == TransferStatus.SUCCESS
+
+        # Verify internal_field was dropped
+        upload_call = transfer.entities.upload_entities.call_args
+        uploaded_df = upload_call.kwargs["data"]
+        assert "internal_field" not in uploaded_df.columns
+        assert "value" in uploaded_df.columns
+
 
 class TestTerraModuleExports:
     def test_terra_transfer_importable(self):
