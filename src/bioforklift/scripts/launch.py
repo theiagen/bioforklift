@@ -1,7 +1,9 @@
 import json
+import logging
 import argparse
 from pathlib import Path
 from datetime import datetime
+from bioforklift.terra.exceptions import TerraServerError
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig, MethodRepoMethod
 
@@ -118,46 +120,6 @@ def generate_method_config(
     return method_config
 
 
-def initialize_config(args: argparse.Namespace, config: CLIConfig) -> CLIConfig:
-    """Initialize or update CLIConfig based on command-line arguments.
-
-    Preference is given to command-line arguments over existing config values."""
-    if not config:
-        config = CLIConfig(
-            repository=args.repository,
-            workspace=args.workspace,
-            project=args.project,
-            branch=args.branch,
-            call_cache=args.call_cache,
-            ignore_empty=args.ignore_empty,
-        )
-        if not args.branch:
-            config.branch = "main"
-    else:
-        # Override config values with command-line arguments if provided
-        if args.repository is not None:
-            config.repository = args.repository
-        elif not config.repository:
-            config.repository = "github.com/theiagen/public_health_bioinformatics"
-        if args.workspace is not None:
-            config.workspace = args.workspace
-        if args.project is not None:
-            config.project = args.project
-        if args.branch is not None:
-            config.branch = args.branch
-        elif not config.branch:
-            config.branch = "main"
-        if args.call_cache is not None:
-            config.call_cache = args.call_cache
-        elif not config.call_cache:
-            config.call_cache = False
-        if args.ignore_empty is not None:
-            config.ignore_empty = args.ignore_empty
-        elif not config.ignore_empty:
-            config.ignore_empty = False
-    return config
-
-
 def extract_args_json(args: argparse.Namespace) -> argparse.Namespace:
     """Extract workflow submission parameters from JSON file if provided
 
@@ -186,10 +148,10 @@ def extract_args_json(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
-def launch(args: argparse.Namespace, config: CLIConfig = None) -> None:
+def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
     """Launch a workflow in Terra"""
 
-    config = initialize_config(args, config)
+    config.update(vars(args), prefer_config=False)
     args = extract_args_json(args)
 
     terra = Terra(
@@ -202,77 +164,89 @@ def launch(args: argparse.Namespace, config: CLIConfig = None) -> None:
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # could implement a way to use local table
-    new_table_df = terra.entities.download_table(args.table, use_destination=True)
+    try:
+        new_table_df = terra.entities.download_table(args.table, use_destination=True)
+    except TerraServerError as e:
+        raise TerraServerError(f"Error downloading table; does \"{args.table}\" exist in the Terra workspace?")
     result = terra.entities.create_entity_set(
         f"{args.table}_set_{current_time}", args.table, new_table_df
     )
-    if result.ok:
-        logger.info(f"{args.table} entity set created successfully")
+    if not result.ok:
+        logger.error(f"Failed to create {args.table} entity set")
+        raise TerraServerError(f"Entity set creation failed: {result.text}")
 
-        # get method config dictionary from existing workspace
-        if args.preexisting:
-            base_method_config_dict = terra.methods.get_method_config(
-                args.workflow, use_destination=True
-            )
-        else:
-            base_method_config_dict = generate_method_config(
-                terra,
-                config.repository,
-                args.workflow,
-                args.table,
-                args.input_json,
-                args.output_json,
-                config.branch,
-            )
-        base_method_config = terra.methods.dict_to_method_config(
-            base_method_config_dict
+    logger.info(f"{args.table} entity set created successfully")
+
+    # get method config dictionary from existing workspace
+    if args.preexisting:
+        base_method_config_dict = terra.methods.get_method_config(
+            args.workflow, use_destination=True
         )
+    else:
+        base_method_config_dict = generate_method_config(
+            terra,
+            config.repository,
+            args.workflow,
+            args.table,
+            args.input_json,
+            args.output_json,
+            config.branch,
+        )
+    base_method_config = terra.methods.dict_to_method_config(
+        base_method_config_dict
+    )
 
-        mod_method_config = base_method_config.model_copy(deep=True)
-        # modify method config for the new workspace
-        mod_method_config.namespace = terra.client.destination_project
-        mod_method_config.rootEntityType = f"{args.table}"
-        mod_method_config.methodRepoMethod.methodUri = None
-        mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
-        mod_method_config.methodRepoMethod.methodPath = (
+    mod_method_config = base_method_config.model_copy(deep=True)
+    # modify method config for the new workspace
+    mod_method_config.namespace = terra.client.destination_project
+    mod_method_config.rootEntityType = f"{args.table}"
+    mod_method_config.methodRepoMethod.methodUri = None
+    mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
+    mod_method_config.methodRepoMethod.methodPath = (
             f"{config.repository}/{args.workflow}"
-        )
-        mod_method_config.methodRepoMethod.methodVersion = config.branch
-        mod_method_config.methodConfigVersion = 0
+    )
+    mod_method_config.methodRepoMethod.methodVersion = config.branch
+    mod_method_config.methodConfigVersion = 0
 
-        # set inputs from json file and dynamically set samplename based on table name
-        mod_method_config.inputs = args.input_json
-        mod_method_config.inputs[f"{args.table}.{args.sample_col}"] = (
-            f"this.{args.table}_id"
-        )
+    # set inputs from json file and dynamically set samplename based on table name
+    mod_method_config.inputs = args.input_json
+    mod_method_config.inputs[f"{args.table}.{args.sample_col}"] = (
+        f"this.{args.table}_id"
+    )
+    # set outputs from json file
+    mod_method_config.outputs = args.output_json
 
-        # set outputs from json file
-        mod_method_config.outputs = args.output_json
+    # Adds or overwrites the method configuration in the Terra workspace
+    terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
+    
+    # Validate the new method configuration we created in the Terra workspace
+    val = terra.methods.method_config_validate(mod_method_config, use_destination=True)
+    # raise error if invalid I/O detected
+    if val["invalidInputs"] or val["invalidOutputs"]:
+        if val["invalidInputs"]:
+            logger.error(f"Invalid inputs detected: {val['invalidInputs']}")
+        if val["invalidOutputs"]:
+            logger.error(f"Invalid outputs detected: {val['invalidOutputs']}")
+        raise KeyError("Invalid I/O")
 
-        # Adds or overwrites the method configuration in the Terra workspace
-        terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
+    wf_config_params = {
+        "methodConfigurationNamespace": terra.client.destination_project,
+        "methodConfigurationName": mod_method_config.name,
+        "entityType": f"{args.table}_set",  # entityType is name of set table
+        "entityName": f"{args.table}_set_{current_time}",  # entityName is name of specific row in table
+        "expression": f"this.{args.table}s",  # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
+        "useCallCache": config.call_cache,
+        "deleteIntermediateOutputFiles": False,
+        "useReferenceDisks": False,
+        "memoryRetryMultiplier": 1.0,
+        "workflowFailureMode": "NoNewCalls",
+        "userComment": args.comment,
+        "ignoreEmptyOutputs": config.ignore_empty,
+    }
 
-        # Validate the new method configuration we created in the Terra workspace
-        terra.methods.method_config_validate(mod_method_config, use_destination=True)
-
-        wf_config_params = {
-            "methodConfigurationNamespace": terra.client.destination_project,
-            "methodConfigurationName": mod_method_config.name,
-            "entityType": f"{args.table}_set",  # entityType is name of set table
-            "entityName": f"{args.table}_set_{current_time}",  # entityName is name of specific row in table
-            "expression": f"this.{args.table}s",  # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
-            "useCallCache": config.call_cache,
-            "deleteIntermediateOutputFiles": False,
-            "useReferenceDisks": False,
-            "memoryRetryMultiplier": 1.0,
-            "workflowFailureMode": "NoNewCalls",
-            "userComment": args.comment,
-            "ignoreEmptyOutputs": config.ignore_empty,
-        }
-
-        # Workflow operations
-        workflow_config = WorkflowConfig.model_validate(wf_config_params)
-        submission = terra.submissions.submit_workflow(workflow_config)
-        logger.info(submission)
-        status = terra.submissions.get_submission_status(submission["submissionId"])
-        logger.debug(status)
+    # Workflow operations
+    workflow_config = WorkflowConfig.model_validate(wf_config_params)
+    submission = terra.submissions.submit_workflow(workflow_config)
+    logger.info(submission)
+    status = terra.submissions.get_submission_status(submission["submissionId"])
+    logger.debug(status)

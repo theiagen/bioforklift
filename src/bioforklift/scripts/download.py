@@ -1,3 +1,4 @@
+import logging
 import argparse
 from pathlib import Path
 from bioforklift.scripts.configure import CLIConfig
@@ -25,25 +26,9 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def initialize_config(args: argparse.Namespace, config: CLIConfig) -> CLIConfig:
-    """Initialize configuration for download operation"""
-    if not config:
-        config = CLIConfig(
-            workspace=args.workspace,
-            project=args.project,
-        )
-    else:
-        # Override config values with command-line arguments if provided
-        if args.workspace is not None:
-            config.workspace = args.workspace
-        if args.project is not None:
-            config.project = args.project
-    return config
-
-
-def download(args: argparse.Namespace, config: CLIConfig = None) -> None:
+def download(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
     """Download data from Terra workspace"""
-    config = initialize_config(args, config)
+    config.update(vars(args), prefer_config=False)
 
     terra = Terra(
         source_workspace=config.workspace,

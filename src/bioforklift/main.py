@@ -13,6 +13,10 @@ from bioforklift.scripts.launch import launch, launch_args
 from bioforklift.scripts.upload import upload, upload_args
 from bioforklift.scripts.download import download, download_args
 from bioforklift.scripts.configure import configure, configure_args, CLIConfig
+from bioforklift.forklift_logging import setup_logger
+
+
+logger = setup_logger(__name__)
 
 
 def bioforklift_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -43,14 +47,6 @@ def bioforklift_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     )
     upload_parser = upload_args(upload_parser)
 
-    parser.add_argument(
-        "-c",
-        "--config_path",
-        type=str,
-        default=f"{Path.home()}/.config/bioforklift.cfg",
-        help="Path to bioforklift configuration file; DEFAULT: ~/.config/bioforklift.cfg",
-    )
-
     return parser
 
 
@@ -61,17 +57,17 @@ def run():
     args = parser.parse_args()
 
     # Load configuration
-    config = CLIConfig(args.config_path)
+    config = CLIConfig()
 
     # Execute the appropriate subcommand
     if args.command in {"launch", "l"}:
-        launch(args, config)
+        launch(args, config, logger)
     elif args.command in {"configure", "c"}:
-        configure(args)
+        configure(args, config, logger)
     elif args.command in {"download", "d"}:
-        download(args, config)
+        download(args, config, logger)
     elif args.command in {"upload", "u"}:
-        upload(args, config)
+        upload(args, config, logger)
     else:
         parser.print_help()
 

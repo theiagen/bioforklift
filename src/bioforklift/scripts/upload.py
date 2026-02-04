@@ -1,3 +1,4 @@
+import logging
 import argparse
 import pandas as pd
 from pathlib import Path
@@ -24,26 +25,10 @@ def upload_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def initialize_config(args: argparse.Namespace, config: CLIConfig) -> CLIConfig:
-    """Initialize configuration for upload operation"""
-    if not config:
-        config = CLIConfig(
-            workspace=args.workspace,
-            project=args.project,
-        )
-    else:
-        # Override config values with command-line arguments if provided
-        if args.workspace is not None:
-            config.workspace = args.workspace
-        if args.project is not None:
-            config.project = args.project
-    return config
-
-
-def upload(args: argparse.Namespace, config: CLIConfig = None) -> None:
+def upload(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
     """Upload data to Terra workspace"""
 
-    config = initialize_config(args, config)
+    config.update(vars(args), prefer_config=False)
 
     terra = Terra(
         source_workspace=config.workspace,
@@ -67,6 +52,7 @@ def upload(args: argparse.Namespace, config: CLIConfig = None) -> None:
     # upload data
     df = pd.read_csv(args.input_path, sep=sep)
     terra.entities.upload_entities(data=df, target=table_name)
-    logger.info(
-        f"Uploaded data from '{args.input_path}' to table '{table_name}' in workspace '{config.project}/{config.workspace}'"
-    )
+    if logger:
+        logger.info(
+            f"Uploaded data from '{args.input_path}' to table '{table_name}' in workspace '{config.project}/{config.workspace}'"
+        )
