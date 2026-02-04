@@ -1,3 +1,4 @@
+import argparse
 import pandas as pd
 from pathlib import Path
 from bioforklift.scripts.configure import CLIConfig

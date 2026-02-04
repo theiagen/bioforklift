@@ -1,14 +1,13 @@
-import sys
 import json
 import argparse
-import logging
 from pathlib import Path
 from datetime import datetime
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig, MethodRepoMethod
 
 
-def launch_args(parser):
+def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Define command-line arguments for launch subcommand"""
     wf_parser = parser.add_argument_group("Workflow Submission Parameters")
     wf_parser.add_argument(
         "-wf", "--workflow", type=str, help="Terra workflow name to run"

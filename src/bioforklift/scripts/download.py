@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra
