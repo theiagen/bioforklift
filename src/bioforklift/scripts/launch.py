@@ -92,34 +92,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def generate_method_config(
-    terra: Terra,
-    repo_uri: str,
-    wf_name: str,
-    table_name: str,
-    inputs_dict: dict,
-    outputs_dict: dict,
-    branch: str,
-) -> MethodConfig:
-    # to be removed when added natively
-    method_config = MethodConfig(
-        namespace=terra.client.destination_project,
-        name=wf_name,
-        rootEntityType=f"{table_name}_set",
-        inputs=inputs_dict,
-        outputs=outputs_dict,
-        prerequisites={},
-        methodRepoMethod=MethodRepoMethod(
-            sourceRepo="dockstore",
-            methodPath=f"{repo_uri}/{wf_name}",
-            methodVersion=branch,
-        ),
-        methodConfigVersion=0,
-        deleted=False,
-    )
-    return method_config
-
-
 def extract_args_json(args: argparse.Namespace) -> argparse.Namespace:
     """Extract workflow submission parameters from JSON file if provided
 
@@ -183,14 +155,13 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: lo
             args.workflow, use_destination=True
         )
     else:
-        base_method_config_dict = generate_method_config(
-            terra,
+        base_method_config_dict = terra.methods.generate_method_config(
             config.repository,
             args.workflow,
             args.table,
             args.input_json,
             args.output_json,
-            config.branch,
+            config.branch
         )
     base_method_config = terra.methods.dict_to_method_config(
         base_method_config_dict
