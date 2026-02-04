@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from bioforklift.terra.exceptions import TerraServerError
 from bioforklift.scripts.configure import CLIConfig
-from bioforklift.terra import Terra, WorkflowConfig, MethodConfig, MethodRepoMethod
+from bioforklift.terra import Terra, WorkflowConfig
 
 
 def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -73,12 +73,18 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         action="store_true",
         help="Ignore empty outputs in the workflow submission",
     )
+    launch_parser.add_argument(
+        "--sleep",
+        type=int,
+        default=1,
+        help="Seconds to wait between launching multiple workflows; DEFAULT: 1"
+    )
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
     ws_parser.add_argument("-p", "--project", type=str, help="Terra project name")
     ws_parser.add_argument(
-        "--preexisting",
+        "--preexisting_config",
         action="store_true",
         default=False,
         help="Use pre-existing method configuration in the workspace; DEFAULT: False",
@@ -92,75 +98,98 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def extract_args_json(args: argparse.Namespace) -> argparse.Namespace:
+def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     """Extract workflow submission parameters from JSON file if provided
 
     Preference is given to command-line arguments over JSON file values."""
-    if args.json:
-        with open(args.json, "r") as json_file:
+
+    # argument to requirement
+    wf_args = {
+        "dockstore": True,
+        "table": True, 
+        "input_json": True, 
+        "output_json": True, 
+        "sample_col": True, 
+        "comment": False,
+        "branch": True, 
+        "call_cache": True, 
+        "ignore_empty": True,
+        "preexisting_config": True
+    }
+
+    job_dict = {}
+    # parse JSON input
+    if args_dict.get("json"):
+        with open(args_dict["json"], "r") as json_file:
             json_data = json.load(json_file)
-        if not args.workflow:
-            args.workflow = json_data.get("workflow")
-        if not args.table:
-            args.table = json_data.get("table")
-        if not args.input_json:
-            args.input_json = json_data.get("inputs")
-        if not args.output_json:
-            args.output_json = json_data.get("outputs")
-        if not args.sample_col:
-            args.sample_col = json_data.get("sample_col")
-        if not args.comment:
-            args.comment = json_data.get("comment")
-    if args.input_json:
-        with open(args.input_json, "r") as input_file:
-            args.input_json = json.load(input_file)
-    if args.output_json:
-        with open(args.output_json, "r") as output_file:
-            args.output_json = json.load(output_file)
-    return args
+        # iterate through workflows in json file
+        for wf, wf_data in json_data.items():
+            job_dict[wf] = wf_data
+            for arg, require in wf_args.items():
+                # use the argument preferentially from command-line
+                if args_dict.get(arg) is not None:
+                    job_dict[wf][arg] = args_dict.get(arg)
+                # else use from json if present
+                elif wf_data.get(arg) is not None:
+                    job_dict[wf][arg] = wf_data.get(arg)
+                # else pull from config if required
+                elif require:
+                    if config.__dict__.get(arg) is not None:
+                        job_dict[wf][arg] = config.__dict__.get(arg)
+                    # raise error if still missing
+                    else:
+                        raise KeyError(f"Missing required argument '{arg}' for workflow '{wf}'")
+    else:
+        # single workflow from command-line args
+        job_dict[args_dict["workflow"]] = {"dockstore": args_dict["workflow"]}
+        for arg, require in wf_args.items():
+            # use from command-line args if present
+            if args_dict.get(arg) is not None:
+                if arg == "input_json" or arg == "output_json":
+                    with open(args_dict.get(arg), "r") as io_file:
+                        job_dict[wf][arg] = json.load(io_file)
+                else:
+                    job_dict[wf][arg] = args_dict.get(arg)
+            # else pull from config if required
+            elif require:
+                if config.__dict__.get(arg) is not None:
+                    job_dict[wf][arg] = config.__dict__.get(arg)
+                # raise error if still missing
+                else:
+                    raise KeyError(f"Missing required argument '{arg}' for workflow '{wf}'")
+    return job_dict 
 
 
-def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
-    """Launch a workflow in Terra"""
-
-    config.update(vars(args), prefer_config=False)
-    args = extract_args_json(args)
-
-    terra = Terra(
-        source_workspace=config.workspace,
-        source_project=config.project,
-        destination_workspace=config.workspace,
-        destination_project=config.project,
-    )
-
+def launch_job(job_data, terra):
+    """Launch a workflow in Terra based on provided job data"""
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # could implement a way to use local table
     try:
-        new_table_df = terra.entities.download_table(args.table, use_destination=True)
+        new_table_df = terra.entities.download_table(job_data["table"], use_destination=True)
     except TerraServerError as e:
-        raise TerraServerError(f"Error downloading table; does \"{args.table}\" exist in the Terra workspace?")
+        raise TerraServerError(f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?")
     result = terra.entities.create_entity_set(
-        f"{args.table}_set_{current_time}", args.table, new_table_df
+        f"{job_data['table']}_set_{current_time}", job_data["table"], new_table_df
     )
     if not result.ok:
-        logger.error(f"Failed to create {args.table} entity set")
+        logger.error(f"Failed to create {job_data['table']} entity set")
         raise TerraServerError(f"Entity set creation failed: {result.text}")
 
-    logger.info(f"{args.table} entity set created successfully")
+    logger.info(f"{job_data['table']} entity set created successfully")
 
     # get method config dictionary from existing workspace
-    if args.preexisting:
+    if job_data.get("preexisting_config"):
         base_method_config_dict = terra.methods.get_method_config(
-            args.workflow, use_destination=True
+            job_data["dockstore"], use_destination=True
         )
     else:
         base_method_config_dict = terra.methods.generate_method_config(
             config.repository,
-            args.workflow,
-            args.table,
-            args.input_json,
-            args.output_json,
+            job_data["dockstore"],
+            job_data["table"],
+            job_data["input_json"],
+            job_data["output_json"],
             config.branch
         )
     base_method_config = terra.methods.dict_to_method_config(
@@ -170,22 +199,22 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: lo
     mod_method_config = base_method_config.model_copy(deep=True)
     # modify method config for the new workspace
     mod_method_config.namespace = terra.client.destination_project
-    mod_method_config.rootEntityType = f"{args.table}"
+    mod_method_config.rootEntityType = f"{job_data['table']}"
     mod_method_config.methodRepoMethod.methodUri = None
     mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
     mod_method_config.methodRepoMethod.methodPath = (
-            f"{config.repository}/{args.workflow}"
+            f"{config.repository}/{job_data['dockstore']}"
     )
     mod_method_config.methodRepoMethod.methodVersion = config.branch
     mod_method_config.methodConfigVersion = 0
 
     # set inputs from json file and dynamically set samplename based on table name
-    mod_method_config.inputs = args.input_json
-    mod_method_config.inputs[f"{args.table}.{args.sample_col}"] = (
-        f"this.{args.table}_id"
+    mod_method_config.inputs = job_data["input_json"]
+    mod_method_config.inputs[f"{job_data['table']}.{job_data['sample_col']}"] = (
+        f"this.{job_data['table']}_id"
     )
     # set outputs from json file
-    mod_method_config.outputs = args.output_json
+    mod_method_config.outputs = job_data["output_json"]
 
     # Adds or overwrites the method configuration in the Terra workspace
     terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
@@ -203,15 +232,15 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: lo
     wf_config_params = {
         "methodConfigurationNamespace": terra.client.destination_project,
         "methodConfigurationName": mod_method_config.name,
-        "entityType": f"{args.table}_set",  # entityType is name of set table
-        "entityName": f"{args.table}_set_{current_time}",  # entityName is name of specific row in table
-        "expression": f"this.{args.table}s",  # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
+        "entityType": f"{job_data['table']}_set",  # entityType is name of set table
+        "entityName": f"{job_data['table']}_set_{current_time}",  # entityName is name of specific row in table
+        "expression": f"this.{job_data['table']}s",  # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
         "useCallCache": config.call_cache,
         "deleteIntermediateOutputFiles": False,
         "useReferenceDisks": False,
         "memoryRetryMultiplier": 1.0,
         "workflowFailureMode": "NoNewCalls",
-        "userComment": args.comment,
+        "userComment": job_data.get("comment", ""),
         "ignoreEmptyOutputs": config.ignore_empty,
     }
 
@@ -221,3 +250,29 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: lo
     logger.info(submission)
     status = terra.submissions.get_submission_status(submission["submissionId"])
     logger.debug(status)
+
+
+def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig(), logger: logging.Logger = None) -> None:
+    """Prepare and manage launch execution of workflows in Terra"""
+
+    if args.workflow and args.json:
+        raise ValueError("--workflow and --json are mutually exclusive")
+    elif not args.workflow and not args.json:
+        raise ValueError("--workflow or --json are required")
+    elif args.workflow and (not args.table or not args.input_json or not args.output_json):
+        raise ValueError("--table, --input_json, and --output_json are required when using --workflow")
+
+    config.update(vars(args), prefer_config=False)
+    job_dicts = prepare_job_dict(vars(args), config)
+
+    terra = Terra(
+        source_workspace=config.workspace,
+        source_project=config.project,
+        destination_workspace=config.workspace,
+        destination_project=config.project,
+    )
+
+    for wf_name, job_data in job_dicts.items():
+        logger.info(f"Launching workflow: {wf_name}")
+        launch_job(job_data, terra)
+        time.sleep(args.sleep)
