@@ -89,7 +89,9 @@ def configure_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
-def configure(configure_args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
+def configure(
+    configure_args: argparse.Namespace, config: CLIConfig = CLIConfig()
+) -> None:
     """Configure bioforklift settings and write to configuration file"""
     config.update(vars(configure_args), prefer_self=False)
     # Update with defaults

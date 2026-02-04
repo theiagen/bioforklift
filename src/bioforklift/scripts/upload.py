@@ -59,7 +59,9 @@ def upload(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     df = pd.read_csv(args.input_path, sep=sep)
     terra_entities = terra.entities.list_entity_types(include_attributes=False)
     if not args.overwrite and table_name in terra_entities:
-        raise ValueError(f"Table '{table_name}' already exists in workspace. Use --overwrite to replace it.")
+        raise ValueError(
+            f"Table '{table_name}' already exists in workspace. Use --overwrite to replace it."
+        )
     terra.entities.upload_entities(data=df, target=table_name)
     if logger:
         logger.info(

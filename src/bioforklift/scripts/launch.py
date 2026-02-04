@@ -80,7 +80,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--sleep",
         type=int,
         default=1,
-        help="Seconds to wait between launching multiple workflows; DEFAULT: 1"
+        help="Seconds to wait between launching multiple workflows; DEFAULT: 1",
     )
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
@@ -109,15 +109,15 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     # argument to requirement
     wf_args = {
         "workflow_name": True,
-        "table": True, 
-        "input_json": True, 
-        "output_json": True, 
-        "sample_col": True, 
+        "table": True,
+        "input_json": True,
+        "output_json": True,
+        "sample_col": True,
         "comment": False,
-        "branch": True, 
-        "call_cache": True, 
+        "branch": True,
+        "call_cache": True,
         "ignore_empty": True,
-        "preexisting_config": True
+        "preexisting_config": True,
     }
 
     job_dict = {}
@@ -141,7 +141,9 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                         job_dict[wf][arg] = config.__dict__.get(arg)
                     # raise error if still missing
                     else:
-                        raise KeyError(f"Missing required argument '{arg}' for workflow '{wf}'")
+                        raise KeyError(
+                            f"Missing required argument '{arg}' for workflow '{wf}'"
+                        )
     else:
         # single workflow from command-line args
         wf = args_dict["workflow_name"]
@@ -160,8 +162,10 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                     job_dict[wf][arg] = config.__dict__.get(arg)
                 # raise error if still missing
                 else:
-                    raise KeyError(f"Missing required argument '{arg}' for workflow '{wf}'")
-    return job_dict 
+                    raise KeyError(
+                        f"Missing required argument '{arg}' for workflow '{wf}'"
+                    )
+    return job_dict
 
 
 def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
@@ -170,9 +174,13 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
 
     # could implement a way to use local table
     try:
-        new_table_df = terra.entities.download_table(job_data["table"], use_destination=True)
+        new_table_df = terra.entities.download_table(
+            job_data["table"], use_destination=True
+        )
     except TerraServerError as e:
-        raise TerraServerError(f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?")
+        raise TerraServerError(
+            f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?"
+        )
     result = terra.entities.create_entity_set(
         f"{job_data['table']}_set_{current_time}", job_data["table"], new_table_df
     )
@@ -194,11 +202,9 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
             job_data["table"],
             job_data["input_json"],
             job_data["output_json"],
-            config.branch
+            config.branch,
         )
-    base_method_config = terra.methods.dict_to_method_config(
-        base_method_config_dict
-    )
+    base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
 
     mod_method_config = base_method_config.model_copy(deep=True)
     # modify method config for the new workspace
@@ -207,7 +213,7 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
     mod_method_config.methodRepoMethod.methodUri = None
     mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
     mod_method_config.methodRepoMethod.methodPath = (
-            f"{config.repository}/{job_data['workflow_name']}"
+        f"{config.repository}/{job_data['workflow_name']}"
     )
     mod_method_config.methodRepoMethod.methodVersion = config.branch
     mod_method_config.methodConfigVersion = 0
@@ -222,7 +228,7 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
 
     # Adds or overwrites the method configuration in the Terra workspace
     terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
-    
+
     # Validate the new method configuration we created in the Terra workspace
     val = terra.methods.method_config_validate(mod_method_config, use_destination=True)
     # raise error if invalid I/O detected
@@ -263,8 +269,12 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         raise ValueError("--workflow and --job_json are mutually exclusive")
     elif not args.workflow_name and not args.job_json:
         raise ValueError("--workflow or --job_json are required")
-    elif args.workflow_name and (not args.table or not args.input_json or not args.output_json):
-        raise ValueError("--table, --input_json, and --output_json are required when using --workflow")
+    elif args.workflow_name and (
+        not args.table or not args.input_json or not args.output_json
+    ):
+        raise ValueError(
+            "--table, --input_json, and --output_json are required when using --workflow"
+        )
 
     config.update(vars(args))
     job_dicts = prepare_job_dict(vars(args), config)
