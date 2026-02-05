@@ -1,3 +1,4 @@
+import fnmatch
 import logging
 import argparse
 from pathlib import Path
@@ -48,10 +49,21 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         output_dir = Path.cwd()
 
     terra_entities = terra.entities.list_entity_types(include_attributes=False)
+    # unpack the matches via glob-like pattern matching
+    tables = []
     for table in args.table:
-        if table not in terra_entities:
-            raise ValueError(f"Table '{table}' does not exist in the Terra workspace.")
-        df = terra.entities.download_table(table, use_destination=True)
+        fn_tables = fnmatch.filter(terra_entities, table)
+        # exclude the _set suffix
+        if any(t.endswith("_set") for t in fn_tables):
+            logger.debug(f"Excluding '_set' tables from matches for pattern '{table}'")
+            fn_tables = [t for t in fn_tables if not t.endswith("_set")]
+        logger.debug(f"Pattern '{table}' matched tables: {fn_tables}")
+        if not fn_tables:
+            raise ValueError(f"No tables match '{table}' in the Terra workspace.")
+        tables.extend(fn_tables)
+
+    for table in tables:
+        df = terra.entities.download_table(table)
         # Save the downloaded table to defined output path or current directory
         output_path = output_dir / f"{table}.tsv"
         df.to_csv(output_path, index=False, sep="\t")
