@@ -12,7 +12,7 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Define command-line arguments for download subcommand"""
     d_parser = parser.add_argument_group("Data Parameters")
     d_parser.add_argument(
-        "-t", "--table", type=str, help="Terra entity table name for workflow"
+        "table", type=str, nargs="+",help="Terra entity table name(s) (space-delimited)"
     )
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
@@ -40,10 +40,19 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         destination_project=config.project,
     )
 
-    df = terra.entities.download_table(args.table, use_destination=True)
-    # Save the downloaded table to defined output path or current directory
-    output_path = (
-        Path(args.output_path) if args.output_path else Path(f"{args.table}.tsv")
-    )
-    df.to_csv(output_path, index=False, sep="\t")
-    logger.info(f"Downloaded table '{args.table}' to {output_path}")
+    # Create output directory if it doesn't exist
+    if args.output_path:
+        output_dir = Path(args.output_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir = Path.cwd()
+
+    terra_entities = terra.entities.list_entity_types(include_attributes=False)
+    for table in args.table:
+        if table not in terra_entities:
+            raise ValueError(f"Table '{table}' does not exist in the Terra workspace.")
+        df = terra.entities.download_table(table, use_destination=True)
+        # Save the downloaded table to defined output path or current directory
+        output_path = output_dir / f"{table}.tsv"
+        df.to_csv(output_path, index=False, sep="\t")
+        logger.info(f"Downloaded table '{table}' to {output_path}")
