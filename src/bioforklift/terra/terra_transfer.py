@@ -1,4 +1,4 @@
-from typing import Optional, Set
+from typing import Callable, Optional, Set
 import pandas as pd
 from bioforklift.forklift_logging import setup_logger
 from bioforklift.terra.client import TerraClient
@@ -24,6 +24,7 @@ class TerraToTerraTransfer:
         source_identifier_column: Optional[str] = None,
         destination_identifier_column: Optional[str] = None,
         batch_size: int = 500,
+        transform: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None,
     ):
         """
         Initialize TerraToTerraTransfer.
@@ -37,6 +38,10 @@ class TerraToTerraTransfer:
             destination_identifier_column: Column used to identify samples in destination table.
                 Defaults to {destination_table_name}_id (Terra convention).
             batch_size: Number of entities per upload batch (default 500)
+            transform: Optional callable to transform the DataFrame before upload.
+                Receives the filtered DataFrame (new samples only) and should return
+                a transformed DataFrame. Use this to filter rows, drop columns,
+                or modify values before upload.
         """
         self.client = client
         self.entities = TerraEntities(client)
@@ -45,6 +50,7 @@ class TerraToTerraTransfer:
         self.source_identifier_column = source_identifier_column or f"entity:{source_table_name}_id"
         self.destination_identifier_column = destination_identifier_column or f"entity:{destination_table_name}_id"
         self.batch_size = batch_size
+        self.transform = transform
 
     def get_new_sample_ids(self) -> Set[str]:
         """
@@ -143,6 +149,18 @@ class TerraToTerraTransfer:
         samples_to_transfer = source_df[source_df[self.source_identifier_column].isin(new_ids)].copy()
 
         logger.info(f"Filtered to {len(samples_to_transfer)} samples for transfer")
+
+        # Apply optional transform
+        if self.transform is not None:
+            samples_to_transfer = self.transform(samples_to_transfer)
+            logger.info(f"After transform: {len(samples_to_transfer)} samples remaining")
+
+            if samples_to_transfer.empty:
+                logger.info("No samples remaining after transform")
+                return TransferResult(
+                    status=TransferStatus.NO_NEW_SAMPLES,
+                    message="No samples remaining after transform"
+                )
 
         # Rename source ID column to destination ID column for upload
         samples_to_transfer = samples_to_transfer.rename(columns={self.source_identifier_column: self.destination_identifier_column})
