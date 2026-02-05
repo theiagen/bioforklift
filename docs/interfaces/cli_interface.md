@@ -27,18 +27,18 @@ bioforklift configure \
 <br>
 
 ### Downloading and Uploading data
-The `download` and `upload` subcommands download and upload Terra tables.
+The `download` and `upload` subcommands download and upload Terra tables. These subcommands take a space-delimited list of inputs.
 
-e.g. Download/upload a table from Terra with `bioforklift` pre-configured:
+e.g. Download a table from Terra with `bioforklift` pre-configured:
 
 ```bash
-bioforklift download \
-  -t <TABLE_NAME>
+bioforklift download <TABLE_NAME>
 ```
 
+e.g. Upload a table from Terra with `bioforklift` pre-configured:
 ```bash
 bioforklift upload \
-  -i <INPUT_TABLE> \
+  <INPUT_TABLE> \
   -t <TERRA_TABLE_NAME> \
   --overwrite # overwrite existing table
 ```
@@ -64,7 +64,7 @@ bioforklift launch \
 
 A workflow JSON can be provided as input with multiple workflows specified. Redundant execution commands are preferentially chosen based on the following hierarchy: command-line > JSON > bioforklift configuration.
 
-A simple example workflow JSON (please note workspace, project, branch, and repository are required inputs that can be specified in the backend via `bioforklift configure`):
+A simple example workflow job JSON (please note workspace, project, branch, and repository are required inputs that can be specified in the backend via `bioforklift configure`):
 
 ```json
 {
@@ -78,4 +78,10 @@ A simple example workflow JSON (please note workspace, project, branch, and repo
     ...
     <LOCAL_WF_NAME_n>: {..}
 }
+```
+
+e.g. Launch a job from a JSON with `bioforklift` pre-configured:
+
+```bash
+bioforklift launch -j <JOB_JSON>
 ```
