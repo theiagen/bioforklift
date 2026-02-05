@@ -195,16 +195,16 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
         base_method_config_dict = terra.methods.get_method_config(
             job_data["workflow_name"], use_destination=True
         )
+        base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
     else:
-        base_method_config_dict = terra.methods.generate_method_config(
+        base_method_config = terra.methods.generate_method_config(
             config.repository,
             job_data["workflow_name"],
             job_data["table"],
             job_data["input_json"],
             job_data["output_json"],
-            config.branch,
+            config.branch
         )
-    base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
 
     mod_method_config = base_method_config.model_copy(deep=True)
     # modify method config for the new workspace
