@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from .models import MethodConfig
+from .models import MethodConfig, MethodRepoMethod
 from .client import TerraClient
 from bioforklift.forklift_logging import setup_logger
 
@@ -16,6 +16,49 @@ class TerraMethods:
     def __init__(self, client: TerraClient):
         self.client = client
 
+    def generate_method_config(
+        self,
+        repo_uri: str,
+        wf_name: str,
+        table_name: str,
+        inputs_dict: dict,
+        outputs_dict: dict,
+        branch: str,
+        source_repo: str = "dockstore",
+    ) -> MethodConfig:
+        """
+        Generate a MethodConfig object for a workflow
+        
+        Args:
+            repo_uri: URI of the repository containing the workflow
+            wf_name: Name of the workflow
+            table_name: Name of the Terra entity table
+            inputs_dict: Dictionary of workflow inputs
+            outputs_dict: Dictionary of workflow outputs
+            branch: Branch of the repository
+            source_repo: Source repository type (default: "dockstore")
+
+        Returns:
+            MethodConfig object representing the workflow configuration    
+        """
+        # to be removed when added natively
+        method_config = MethodConfig(
+            namespace=self.client.destination_project,
+            name=wf_name,
+            rootEntityType=f"{table_name}_set",
+            inputs=inputs_dict,
+            outputs=outputs_dict,
+            prerequisites={},
+            methodRepoMethod=MethodRepoMethod(
+                sourceRepo=source_repo,
+                methodPath=f"{repo_uri}/{wf_name}",
+                methodVersion=branch,
+            ),
+            methodConfigVersion=0,
+            deleted=False,
+        )
+        return method_config
+    
 
     def get_method_config(
         self,
