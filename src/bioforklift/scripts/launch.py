@@ -36,7 +36,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     launch_parser = parser.add_argument_group("Workflow Launch Parameters")
     launch_parser.add_argument(
-        "-j", "--job_json", type=str, help="Path to workflow submission JSON file"
+        "-j", "--job_json", nargs="+", type=str, help="Path to workflow submission JSON file"
     )
     launch_parser.add_argument(
         "-s",
@@ -123,27 +123,28 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     job_dict = {}
     # parse JSON input
     if args_dict.get("job_json"):
-        with open(args_dict["job_json"], "r") as json_file:
-            json_data = json.load(json_file)
-        # iterate through workflows in json file
-        for wf, wf_data in json_data.items():
-            job_dict[wf] = wf_data
-            for arg, require in wf_args.items():
-                # use the argument preferentially from command-line
-                if args_dict.get(arg) is not None:
-                    job_dict[wf][arg] = args_dict.get(arg)
-                # else use from json if present
-                elif wf_data.get(arg) is not None:
-                    job_dict[wf][arg] = wf_data.get(arg)
-                # else pull from config if required
-                elif require:
-                    if config.__dict__.get(arg) is not None:
-                        job_dict[wf][arg] = config.__dict__.get(arg)
-                    # raise error if still missing
-                    else:
-                        raise KeyError(
-                            f"Missing required argument '{arg}' for workflow '{wf}'"
-                        )
+        for job_json_path in args_dict["job_json"]:
+            with open(job_json_path, "r") as json_file:
+                json_data = json.load(json_file)
+            # iterate through workflows in json file
+            for wf, wf_data in json_data.items():
+                job_dict[wf] = wf_data
+                for arg, require in wf_args.items():
+                    # use the argument preferentially from command-line
+                    if args_dict.get(arg) is not None:
+                        job_dict[wf][arg] = args_dict.get(arg)
+                    # else use from json if present
+                    elif wf_data.get(arg) is not None:
+                        job_dict[wf][arg] = wf_data.get(arg)
+                    # else pull from config if required
+                    elif require:
+                        if config.__dict__.get(arg) is not None:
+                            job_dict[wf][arg] = config.__dict__.get(arg)
+                        # raise error if still missing
+                        else:
+                            raise KeyError(
+                                f"Missing required argument '{arg}' for workflow '{wf}'"
+                            )
     else:
         # single workflow from command-line args
         wf = args_dict["workflow_name"]
