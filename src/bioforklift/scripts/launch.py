@@ -101,6 +101,21 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
+def arg_handling(args: argparse.Namespace) -> None:
+    """Handle argument validation and error handling for workflow submission"""
+    if args.workflow_name and args.job_json:
+        raise ValueError("--workflow and --job_json are mutually exclusive")
+    elif not args.workflow_name and not args.job_json:
+        raise ValueError("--workflow or --job_json are required")
+    elif args.workflow_name and (
+        not args.table or not args.input_json or not args.output_json
+    ):
+        raise ValueError(
+            "--table, --input_json, and --output_json are required when using --workflow"
+        )
+
+
+
 def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     """Extract workflow submission parameters from JSON file if provided
 
@@ -298,20 +313,16 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
 def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Prepare and manage launch execution of workflows in Terra"""
 
-    if args.workflow_name and args.job_json:
-        raise ValueError("--workflow and --job_json are mutually exclusive")
-    elif not args.workflow_name and not args.job_json:
-        raise ValueError("--workflow or --job_json are required")
-    elif args.workflow_name and (
-        not args.table or not args.input_json or not args.output_json
-    ):
-        raise ValueError(
-            "--table, --input_json, and --output_json are required when using --workflow"
-        )
+    # Validate and handle arguments
+    arg_handling(args)
 
+    # Update configuration with command-line arguments
     config.update(vars(args))
+
+    # Prepare job dictionary from command-line arguments and/or JSON file input
     job_dicts = prepare_job_dict(vars(args), config)
 
+    # Initialize Terra client
     terra = Terra(
         source_workspace=config.workspace,
         source_project=config.project,
@@ -319,6 +330,7 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         destination_project=config.project,
     )
 
+    # Submit workflows for each job in the job dictionary
     for wf_name, job_data in job_dicts.items():
         logger.info(f"Launching workflow: {wf_name}")
         launch_job(job_data, terra, config)
