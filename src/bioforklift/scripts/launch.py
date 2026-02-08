@@ -36,7 +36,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     launch_parser = parser.add_argument_group("Workflow Launch Parameters")
     launch_parser.add_argument(
-        "-j", "--job_json", nargs="+", type=str, help="Path to workflow submission JSON file"
+        "-j", "--job_json", nargs="+", type=str, help="Path(s) to workflow submission JSON(s)"
     )
     launch_parser.add_argument(
         "-s",
@@ -112,6 +112,10 @@ def arg_handling(args: argparse.Namespace) -> None:
     ):
         raise ValueError(
             "--table, --input_json, and --output_json are required when using --workflow"
+        )
+    elif args.job_json and (args.table or args.input_json or args.output_json):
+        raise ValueError(
+            "--table, --input_json, and --output_json cannot be used with --job_json"
         )
 
 
