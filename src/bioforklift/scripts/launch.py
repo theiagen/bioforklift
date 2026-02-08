@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from bioforklift.terra.exceptions import TerraServerError
 from bioforklift.scripts.configure import CLIConfig
-from bioforklift.terra import Terra, WorkflowConfig
+from bioforklift.terra import Terra, WorkflowConfig, MethodConfig
 
 
 logger = logging.getLogger(__name__)
@@ -169,10 +169,8 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     return job_dict
 
 
-def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
-    """Launch a workflow in Terra based on provided job data"""
-    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-
+def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
+    """Prepare a table in the Terra workspace for workflow submission by creating an entity set based on the input table"""
     # could implement a way to use local table
     try:
         new_table_df = terra.entities.download_table(
@@ -190,34 +188,27 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
         raise TerraServerError(f"Entity set creation failed: {result.text}")
 
     logger.info(f"{job_data['table']} entity set created successfully")
+    return f"{job_data['table']}_set_{current_time}"  # return name of entity set created for use in workflow config
 
-    # get method config dictionary from existing workspace
-    if job_data.get("preexisting_config"):
-        base_method_config_dict = terra.methods.get_method_config(
-            job_data["workflow_name"], use_destination=True
-        )
-        base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
-    else:
-        base_method_config = terra.methods.generate_method_config(
-            config.repository,
-            job_data["workflow_name"],
-            job_data["table"],
-            job_data["input_json"],
-            job_data["output_json"],
-            config.branch
-        )
 
-    mod_method_config = base_method_config.model_copy(deep=True)
+def prepare_method_config(mod_method_config: MethodConfig, 
+                          job_data: dict, 
+                          terra: Terra, 
+                          config: CLIConfig,
+                          source_repo: str = "dockstore",
+                          method_uri: str = None,
+                          method_config_version: int = 0) -> MethodConfig:
+    """Prepare a method configuration for workflow submission by incorporating metadata"""
     # modify method config for the new workspace
     mod_method_config.namespace = terra.client.destination_project
     mod_method_config.rootEntityType = f"{job_data['table']}"
-    mod_method_config.methodRepoMethod.methodUri = None
-    mod_method_config.methodRepoMethod.sourceRepo = "dockstore"
+    mod_method_config.methodRepoMethod.methodUri = method_uri
+    mod_method_config.methodRepoMethod.sourceRepo = source_repo
     mod_method_config.methodRepoMethod.methodPath = (
         f"{config.repository}/{job_data['workflow_name']}"
     )
     mod_method_config.methodRepoMethod.methodVersion = config.branch
-    mod_method_config.methodConfigVersion = 0
+    mod_method_config.methodConfigVersion = method_config_version
 
     # set inputs from json file and dynamically set samplename based on table name
     mod_method_config.inputs = job_data["input_json"]
@@ -226,10 +217,11 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
     )
     # set outputs from json file
     mod_method_config.outputs = job_data["output_json"]
+    return mod_method_config
 
-    # Adds or overwrites the method configuration in the Terra workspace
-    terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
 
+def validate_method_config(mod_method_config: MethodConfig) -> dict:
+    """Validate the method configuration in the Terra workspace and raise error if invalid I/O detected"""
     # Validate the new method configuration we created in the Terra workspace
     val = terra.methods.method_config_validate(mod_method_config, use_destination=True)
     # raise error if invalid I/O detected
@@ -239,7 +231,11 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
         if val["invalidOutputs"]:
             logger.error(f"Invalid outputs detected: {val['invalidOutputs']}")
         raise KeyError("Invalid I/O")
+    return val
 
+
+def prepare_workflow_config(mod_method_config, job_data: dict, config: CLIConfig) -> WorkflowConfig:
+    """Prepare a workflow configuration for workflow submission by incorporating metadata"""
     wf_config_params = {
         "methodConfigurationNamespace": terra.client.destination_project,
         "methodConfigurationName": mod_method_config.name,
@@ -257,6 +253,42 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
 
     # Workflow operations
     workflow_config = WorkflowConfig.model_validate(wf_config_params)
+    return workflow_config
+
+
+def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
+    """Launch a workflow in Terra based on provided job data"""
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Prepare the workspace for workflow submission by creating an entity set based on the input table
+    prepare_entity_set(terra, job_data, current_time)
+
+    # get method config dictionary from existing workspace
+    if job_data.get("preexisting_config"):
+        base_method_config_dict = terra.methods.get_method_config(
+            job_data["workflow_name"], use_destination=True
+        )
+        base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
+    # generate method config dictionary
+    else:
+        base_method_config = terra.methods.generate_method_config(
+            config.repository,
+            job_data["workflow_name"],
+            job_data["table"],
+            job_data["input_json"],
+            job_data["output_json"],
+            config.branch
+        )
+
+    mod_method_config = base_method_config.model_copy(deep=True)
+    mod_method_config = prepare_method_config(mod_method_config, job_data, terra, config)
+
+    # Adds or overwrites the method configuration in the Terra workspace
+    terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
+    validate_method_config(mod_method_config)
+
+    # Prepare and submit the workflow configuration for execution in Terra
+    workflow_config = prepare_workflow_config(mod_method_config, job_data, config)
     submission = terra.submissions.submit_workflow(workflow_config)
     logger.info(submission)
     status = terra.submissions.get_submission_status(submission["submissionId"])
