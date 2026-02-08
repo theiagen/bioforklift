@@ -96,5 +96,4 @@ def configure(
     config.update(vars(configure_args), prefer_self=False)
     # Update with defaults
     config.write()
-    if logger:
-        logger.info(f"Configuration written to {config.config_path}")
+    logger.info(f"Configuration written to {config.config_path}")
