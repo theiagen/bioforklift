@@ -30,6 +30,20 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return parser
 
 
+def glob_entities(terra_entities: list, table: str) -> list:
+    """Glob-like pattern matching for Terra entity tables"""
+    fn_tables = fnmatch.filter(terra_entities, table)
+    # exclude the _set suffix
+    if any(t.endswith("_set") for t in fn_tables):
+        logger.debug(f"Excluding '_set' tables from matches for pattern '{table}'")
+        fn_tables = [t for t in fn_tables if not t.endswith("_set")]
+    logger.debug(f"Pattern '{table}' matched tables: {fn_tables}")
+    if not fn_tables:
+        raise ValueError(f"No tables match '{table}' in the Terra workspace.")
+
+    return fn_tables
+
+
 def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Download data from Terra workspace"""
     config.update(vars(args))
@@ -52,15 +66,7 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     # unpack the matches via glob-like pattern matching
     tables = []
     for table in args.table:
-        fn_tables = fnmatch.filter(terra_entities, table)
-        # exclude the _set suffix
-        if any(t.endswith("_set") for t in fn_tables):
-            logger.debug(f"Excluding '_set' tables from matches for pattern '{table}'")
-            fn_tables = [t for t in fn_tables if not t.endswith("_set")]
-        logger.debug(f"Pattern '{table}' matched tables: {fn_tables}")
-        if not fn_tables:
-            raise ValueError(f"No tables match '{table}' in the Terra workspace.")
-        tables.extend(fn_tables)
+        tables.extend(glob_entities(terra_entities, table))
 
     for table in tables:
         df = terra.entities.download_table(table)
