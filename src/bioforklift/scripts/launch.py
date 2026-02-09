@@ -1,15 +1,15 @@
 import json
 import time
-import logging
 import argparse
 from pathlib import Path
 from datetime import datetime
 from bioforklift.terra.exceptions import TerraServerError
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig
+from bioforklift.forklift_logging import setup_logger
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

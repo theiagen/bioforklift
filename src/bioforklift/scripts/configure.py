@@ -1,11 +1,11 @@
 import yaml
-import logging
 import argparse
 from pathlib import Path
 from datetime import datetime
+from bioforklift.logging import setup_logger
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class CLIConfig:

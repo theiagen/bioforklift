@@ -1,12 +1,12 @@
-import logging
 import argparse
 import pandas as pd
 from pathlib import Path
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.terra import Terra
+from bioforklift.forklift_logging import setup_logger
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 def upload_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
