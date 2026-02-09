@@ -27,12 +27,20 @@ bioforklift configure \
 <br>
 
 ### Downloading and Uploading data
-The `download` and `upload` subcommands download and upload Terra tables. These subcommands take a space-delimited list of inputs.
+The `download` and `upload` subcommands download and upload Terra data. These subcommands take a space-delimited list of inputs.
 
 e.g. Download a table from Terra with `bioforklift` pre-configured:
 
 ```bash
 bioforklift download <TABLE_NAME>
+```
+
+e.g. Download a table with specific columns, samples, and the GSURI files associated with those columns and samples:
+```bash
+bioforklift download <TABLE_NAME> \
+  -s <SAMPLE1> <SAMPLE2> \
+  -c <COL1> <COL2> \
+  -f
 ```
 
 e.g. Upload a table from Terra with `bioforklift` pre-configured:
