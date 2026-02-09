@@ -239,7 +239,7 @@ def prepare_method_config(mod_method_config: MethodConfig,
     return mod_method_config
 
 
-def validate_method_config(mod_method_config: MethodConfig) -> dict:
+def validate_method_config(mod_method_config: MethodConfig, terra: Terra) -> dict:
     """Validate the method configuration in the Terra workspace and raise error if invalid I/O detected"""
     # Validate the new method configuration we created in the Terra workspace
     val = terra.methods.method_config_validate(mod_method_config, use_destination=True)
@@ -253,7 +253,7 @@ def validate_method_config(mod_method_config: MethodConfig) -> dict:
     return val
 
 
-def prepare_workflow_config(mod_method_config, job_data: dict, config: CLIConfig) -> WorkflowConfig:
+def prepare_workflow_config(terra: Terra, current_time: str, mod_method_config: MethodConfig, job_data: dict, config: CLIConfig) -> WorkflowConfig:
     """Prepare a workflow configuration for workflow submission by incorporating metadata"""
     wf_config_params = {
         "methodConfigurationNamespace": terra.client.destination_project,
@@ -304,10 +304,10 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
 
     # Adds or overwrites the method configuration in the Terra workspace
     terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
-    validate_method_config(mod_method_config)
+    validate_method_config(mod_method_config, terra)
 
     # Prepare and submit the workflow configuration for execution in Terra
-    workflow_config = prepare_workflow_config(mod_method_config, job_data, config)
+    workflow_config = prepare_workflow_config(terra, current_time, mod_method_config, job_data, config)
     submission = terra.submissions.submit_workflow(workflow_config)
     logger.info(submission)
     status = terra.submissions.get_submission_status(submission["submissionId"])
