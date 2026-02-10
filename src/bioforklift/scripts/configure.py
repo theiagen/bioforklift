@@ -1,11 +1,11 @@
 import yaml
-import logging
 import argparse
 from pathlib import Path
 from datetime import datetime
+from bioforklift.forklift_logging import setup_logger
 
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class CLIConfig:
@@ -96,5 +96,4 @@ def configure(
     config.update(vars(configure_args), prefer_self=False)
     # Update with defaults
     config.write()
-    if logger:
-        logger.info(f"Configuration written to {config.config_path}")
+    logger.info(f"Configuration written to {config.config_path}")
