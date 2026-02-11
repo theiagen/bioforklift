@@ -48,6 +48,7 @@ fields:
   workflow_state:
     type: string
     required: false
+    sync_field: true
 
   upload_source:
     type: string

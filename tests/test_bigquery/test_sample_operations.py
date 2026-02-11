@@ -304,3 +304,286 @@ class TestBigQuerySampleOperations:
         # Verify delegation to processor
         assert coerced_df is not None
         assert "sample_id" in coerced_df.columns
+
+
+class TestSyncFromTerra:
+    """Tests for the sync_from_terra method"""
+
+    def test_sync_from_terra_with_differences(self, sample_operations, bigquery_client):
+        """Test syncing when Terra has different values than BigQuery"""
+        # Terra data (source of truth) - has updated workflow_state
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "workflow_state": "Succeeded"},
+            {"sample_id": "SMP002", "workflow_state": "Failed"},
+        ])
+
+        # BigQuery data - has outdated workflow_state
+        bq_data = pd.DataFrame([
+            {"id": "uuid-1", "sample_id": "SMP001", "workflow_state": "Running"},
+            {"id": "uuid-2", "sample_id": "SMP002", "workflow_state": "Running"},
+        ])
+
+        # Mock query_samples to return BigQuery data
+        with patch.object(sample_operations, 'query_samples', return_value=bq_data):
+            # Mock bulk_update_samples
+            with patch.object(
+                sample_operations, 'bulk_update_samples',
+                return_value={"updated_count": 2, "updated_ids": ["uuid-1", "uuid-2"], "failed_updates": []}
+            ) as mock_bulk_update:
+                result = sample_operations.sync_from_terra(
+                    terra_df,
+                    terra_sample_id_column="sample_id",
+                    sync_fields=["workflow_state"]
+                )
+
+                # Verify bulk_update was called with correct updates
+                mock_bulk_update.assert_called_once()
+                updates = mock_bulk_update.call_args[0][0]
+                assert len(updates) == 2
+
+                # Check the updates contain correct values
+                update_by_id = {u["id"]: u for u in updates}
+                assert update_by_id["uuid-1"]["workflow_state"] == "Succeeded"
+                assert update_by_id["uuid-2"]["workflow_state"] == "Failed"
+
+                # Check result
+                assert result["compared_count"] == 2
+                assert result["updated_count"] == 2
+                assert result["errors"] is None
+
+    def test_sync_from_terra_no_differences(self, sample_operations, bigquery_client):
+        """Test syncing when Terra and BigQuery have same values"""
+        # Terra and BigQuery have same data
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "workflow_state": "Succeeded"},
+        ])
+
+        bq_data = pd.DataFrame([
+            {"id": "uuid-1", "sample_id": "SMP001", "workflow_state": "Succeeded"},
+        ])
+
+        with patch.object(sample_operations, 'query_samples', return_value=bq_data):
+            with patch.object(sample_operations, 'bulk_update_samples') as mock_bulk_update:
+                result = sample_operations.sync_from_terra(
+                    terra_df,
+                    terra_sample_id_column="sample_id",
+                    sync_fields=["workflow_state"]
+                )
+
+                # bulk_update should NOT be called when no differences
+                mock_bulk_update.assert_not_called()
+
+                assert result["compared_count"] == 1
+                assert result["updated_count"] == 0
+                assert result["errors"] is None
+
+    def test_sync_from_terra_dry_run(self, sample_operations, bigquery_client):
+        """Test dry run mode returns differences without updating"""
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "workflow_state": "Succeeded"},
+            {"sample_id": "SMP002", "workflow_state": "Failed"},
+        ])
+
+        bq_data = pd.DataFrame([
+            {"id": "uuid-1", "sample_id": "SMP001", "workflow_state": "Running"},
+            {"id": "uuid-2", "sample_id": "SMP002", "workflow_state": "Running"},
+        ])
+
+        with patch.object(sample_operations, 'query_samples', return_value=bq_data):
+            with patch.object(sample_operations, 'bulk_update_samples') as mock_bulk_update:
+                result = sample_operations.sync_from_terra(
+                    terra_df,
+                    terra_sample_id_column="sample_id",
+                    sync_fields=["workflow_state"],
+                    dry_run=True
+                )
+
+                # bulk_update should NOT be called in dry_run mode
+                mock_bulk_update.assert_not_called()
+
+                assert result["compared_count"] == 2
+                assert result["updated_count"] == 0
+                assert result["diff_count"] == 2
+                assert len(result["diff_records"]) == 2
+
+                # Check diff records contain expected data
+                diff_by_sample = {d["sample_id"]: d for d in result["diff_records"]}
+                assert diff_by_sample["SMP001"]["terra_value"] == "Succeeded"
+                assert diff_by_sample["SMP001"]["bigquery_value"] == "Running"
+                assert diff_by_sample["SMP002"]["terra_value"] == "Failed"
+                assert diff_by_sample["SMP002"]["bigquery_value"] == "Running"
+
+    def test_sync_from_terra_uses_schema_sync_fields(self, sample_operations, bigquery_client):
+        """Test that sync uses schema-defined sync_fields when not explicitly provided"""
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "workflow_state": "Succeeded"},
+        ])
+
+        bq_data = pd.DataFrame([
+            {"id": "uuid-1", "sample_id": "SMP001", "workflow_state": "Running"},
+        ])
+
+        with patch.object(sample_operations, 'query_samples', return_value=bq_data):
+            with patch.object(
+                sample_operations, 'bulk_update_samples',
+                return_value={"updated_count": 1, "updated_ids": ["uuid-1"], "failed_updates": []}
+            ):
+                # Don't pass sync_fields - should use schema-defined ones
+                result = sample_operations.sync_from_terra(
+                    terra_df,
+                    terra_sample_id_column="sample_id"
+                )
+
+                # workflow_state is marked as sync_field in test schema
+                assert result["updated_count"] == 1
+
+    def test_sync_from_terra_no_sync_fields(self, sample_operations, bigquery_client):
+        """Test error handling when no sync fields are defined"""
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "some_field": "value"},
+        ])
+
+        # Temporarily remove sync_fields from schema
+        with patch.object(
+            sample_operations.data_processor, 'get_sync_fields',
+            return_value=[]
+        ):
+            result = sample_operations.sync_from_terra(
+                terra_df,
+                terra_sample_id_column="sample_id"
+            )
+
+            assert result["compared_count"] == 0
+            assert result["updated_count"] == 0
+            assert result["errors"] == "No sync fields"
+
+    def test_sync_from_terra_missing_identifier_column(self, sample_operations, bigquery_client):
+        """Test error when Terra data missing identifier column"""
+        # Terra data without sample_id column
+        terra_df = pd.DataFrame([
+            {"workflow_state": "Succeeded"},
+        ])
+
+        result = sample_operations.sync_from_terra(
+            terra_df,
+            terra_sample_id_column="sample_id",  # Column doesn't exist in terra_df
+            sync_fields=["workflow_state"]
+        )
+
+        assert result["compared_count"] == 0
+        assert result["updated_count"] == 0
+        assert "sample_id" in result["errors"]
+        assert "not found in Terra data" in result["errors"]
+
+    def test_sync_from_terra_no_matching_records(self, sample_operations, bigquery_client):
+        """Test when Terra samples don't exist in BigQuery"""
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP999", "workflow_state": "Succeeded"},
+        ])
+
+        # Return empty DataFrame from BigQuery
+        with patch.object(sample_operations, 'query_samples', return_value=pd.DataFrame()):
+            result = sample_operations.sync_from_terra(
+                terra_df,
+                terra_sample_id_column="sample_id",
+                sync_fields=["workflow_state"]
+            )
+
+            assert result["compared_count"] == 0
+            assert result["updated_count"] == 0
+            assert result["errors"] is None
+
+    def test_sync_from_terra_handles_null_values(self, sample_operations, bigquery_client):
+        """Test that null/empty values are handled correctly in comparison"""
+        import numpy as np
+
+        # Terra has value, BQ has null
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "workflow_state": "Succeeded"},
+            {"sample_id": "SMP002", "workflow_state": None},  # Terra null
+        ])
+
+        bq_data = pd.DataFrame([
+            {"id": "uuid-1", "sample_id": "SMP001", "workflow_state": None},  # BQ null
+            {"id": "uuid-2", "sample_id": "SMP002", "workflow_state": "Running"},  # BQ has value
+        ])
+
+        with patch.object(sample_operations, 'query_samples', return_value=bq_data):
+            result = sample_operations.sync_from_terra(
+                terra_df,
+                terra_sample_id_column="sample_id",
+                sync_fields=["workflow_state"],
+                dry_run=True
+            )
+
+            # Both should show as differences
+            assert result["diff_count"] == 2
+
+    def test_sync_from_terra_multiple_fields(self, sample_operations, bigquery_client):
+        """Test syncing multiple fields at once"""
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "workflow_state": "Succeeded", "upload_source": "batch_1"},
+        ])
+
+        bq_data = pd.DataFrame([
+            {"id": "uuid-1", "sample_id": "SMP001", "workflow_state": "Running", "upload_source": "batch_0"},
+        ])
+
+        with patch.object(sample_operations, 'query_samples', return_value=bq_data):
+            with patch.object(
+                sample_operations, 'bulk_update_samples',
+                return_value={"updated_count": 1, "updated_ids": ["uuid-1"], "failed_updates": []}
+            ) as mock_bulk_update:
+                result = sample_operations.sync_from_terra(
+                    terra_df,
+                    terra_sample_id_column="sample_id",
+                    sync_fields=["workflow_state", "upload_source"]
+                )
+
+                # Check both fields are in the update
+                updates = mock_bulk_update.call_args[0][0]
+                assert len(updates) == 1
+                assert updates[0]["workflow_state"] == "Succeeded"
+                assert updates[0]["upload_source"] == "batch_1"
+
+    def test_sync_from_terra_partial_differences(self, sample_operations, bigquery_client):
+        """Test when only some fields differ"""
+        terra_df = pd.DataFrame([
+            {"sample_id": "SMP001", "workflow_state": "Succeeded", "upload_source": "batch_1"},
+        ])
+
+        # Only workflow_state differs, upload_source is same
+        bq_data = pd.DataFrame([
+            {"id": "uuid-1", "sample_id": "SMP001", "workflow_state": "Running", "upload_source": "batch_1"},
+        ])
+
+        with patch.object(sample_operations, 'query_samples', return_value=bq_data):
+            with patch.object(
+                sample_operations, 'bulk_update_samples',
+                return_value={"updated_count": 1, "updated_ids": ["uuid-1"], "failed_updates": []}
+            ) as mock_bulk_update:
+                result = sample_operations.sync_from_terra(
+                    terra_df,
+                    terra_sample_id_column="sample_id",
+                    sync_fields=["workflow_state", "upload_source"]
+                )
+
+                # Only the differing field should be in update
+                updates = mock_bulk_update.call_args[0][0]
+                assert "workflow_state" in updates[0]
+                assert "upload_source" not in updates[0]  # Same value, not included
+
+    def test_normalize_for_comparison(self, sample_operations):
+        """Test the _normalize_for_comparison helper method"""
+        import numpy as np
+
+        # Test null-like values all normalize to None
+        assert sample_operations._normalize_for_comparison(None) is None
+        assert sample_operations._normalize_for_comparison("") is None
+        assert sample_operations._normalize_for_comparison(np.nan) is None
+        assert sample_operations._normalize_for_comparison(pd.NA) is None
+
+        # Test actual values are converted to string
+        assert sample_operations._normalize_for_comparison("test") == "test"
+        assert sample_operations._normalize_for_comparison(123) == "123"
+        assert sample_operations._normalize_for_comparison(12.5) == "12.5"

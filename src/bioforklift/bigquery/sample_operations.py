@@ -855,6 +855,198 @@ class BigQuerySampleOperations:
                 summary[state] = row.get('count', 0)
             
             return summary
-            
+
         except Exception as exc:
             raise RuntimeError(f"Error getting workflow state summary: {str(exc)}")
+
+    def sync_from_terra(
+        self,
+        terra_df: pd.DataFrame,
+        terra_sample_id_column: str,
+        sync_fields: Optional[List[str]] = None,
+        batch_size: int = 1000,
+        dry_run: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Sync BigQuery table with Terra data where Terra is source of truth.
+
+        Compares values in specified fields and bulk updates BigQuery
+        where they differ from Terra.
+
+        Args:
+            terra_df: DataFrame downloaded from Terra destination table
+            terra_sample_id_column: Column name in Terra DataFrame that contains the sample identifier
+                                   (e.g., 'entity:sample_id', 'sample_name')
+            sync_fields: Fields to compare/sync. If None, uses fields marked
+                        as 'sync_field' in schema
+            batch_size: Number of records per update batch
+            dry_run: If True, returns diff without making changes
+
+        Returns:
+            Dict with sync results:
+                - compared_count: Total rows compared
+                - updated_count: Rows updated in BigQuery
+                - diff_records: List of diffs (in dry_run mode)
+                - errors: Any errors encountered
+        """
+        try:
+            # Determine which fields to sync
+            if sync_fields is None:
+                sync_fields = self.data_processor.get_sync_fields()
+
+            if not sync_fields:
+                logger.warning("No sync fields specified or defined in schema")
+                return {"compared_count": 0, "updated_count": 0, "errors": "No sync fields"}
+
+            # Get the BigQuery identifier field for joining
+            bq_sample_id_field = self.data_processor.get_sample_identifier_field()
+            if not bq_sample_id_field:
+                raise ValueError("No sample_identifier field defined in schema")
+
+            # Check that identifier field exists in Terra data
+            if terra_sample_id_column not in terra_df.columns:
+                raise ValueError(
+                    f"Terra sample ID column '{terra_sample_id_column}' not found in Terra data. "
+                    f"Available columns: {list(terra_df.columns)}"
+                )
+
+            # Get Terra identifiers to query from BigQuery
+            terra_ids = terra_df[terra_sample_id_column].dropna().unique().tolist()
+            if not terra_ids:
+                logger.info("No valid sample identifiers found in Terra data")
+                return {"compared_count": 0, "updated_count": 0, "errors": None}
+
+            logger.info(f"Comparing {len(terra_ids)} samples across {len(sync_fields)} fields: {sync_fields}")
+
+            # Query matching records from BigQuery
+            # Need to include 'id' (primary key) for updates, plus bq_sample_id_field and sync_fields
+            fields_to_fetch = list(set(["id", bq_sample_id_field] + sync_fields))
+
+            # Build parameterized query for the sample IDs
+            placeholders = []
+            params = {}
+            for i, sample_id in enumerate(terra_ids):
+                param_name = f"sid_{i}"
+                placeholders.append(f"@{param_name}")
+                params[param_name] = sample_id
+
+            bq_df = self.query_samples(
+                conditions=[f"{bq_sample_id_field} IN ({', '.join(placeholders)})"],
+                parameters=params,
+                fields=fields_to_fetch
+            )
+
+            if bq_df.empty:
+                logger.info("No matching records found in BigQuery")
+                return {"compared_count": 0, "updated_count": 0, "errors": None}
+
+            logger.info(f"Found {len(bq_df)} matching records in BigQuery")
+
+            # Compare and find differences
+            updates = []
+            diff_records = []
+
+            # Index BigQuery data by sample identifier for fast lookup
+            bq_indexed = bq_df.set_index(bq_sample_id_field)
+
+            for _, terra_row in terra_df.iterrows():
+                sample_id = terra_row.get(terra_sample_id_column)
+                if sample_id is None or pd.isna(sample_id):
+                    continue
+                if sample_id not in bq_indexed.index:
+                    continue
+
+                bq_row = bq_indexed.loc[sample_id]
+
+                # Handle case where multiple BQ rows match (take first)
+                if isinstance(bq_row, pd.DataFrame):
+                    bq_row = bq_row.iloc[0]
+
+                # Get the BigQuery primary key 'id' for the update
+                bq_primary_key = bq_row.get("id")
+                if not bq_primary_key:
+                    logger.warning(f"No primary key 'id' found for sample {sample_id}, skipping")
+                    continue
+
+                row_updates = {"id": bq_primary_key}
+                has_diff = False
+
+                for field in sync_fields:
+                    terra_val = terra_row.get(field)
+                    bq_val = bq_row.get(field) if field in bq_row.index else None
+
+                    # Normalize for comparison (handle NaN, None, empty strings)
+                    terra_normalized = self._normalize_for_comparison(terra_val)
+                    bq_normalized = self._normalize_for_comparison(bq_val)
+
+                    if terra_normalized != bq_normalized:
+                        has_diff = True
+                        row_updates[field] = terra_val
+
+                        if dry_run:
+                            diff_records.append({
+                                "sample_id": sample_id,
+                                "field": field,
+                                "terra_value": terra_val,
+                                "bigquery_value": bq_val
+                            })
+
+                if has_diff and len(row_updates) > 1:  # More than just 'id'
+                    updates.append(row_updates)
+
+            logger.info(f"Found {len(updates)} records with differences")
+
+            # Apply updates (unless dry_run)
+            if dry_run:
+                return {
+                    "compared_count": len(terra_ids),
+                    "updated_count": 0,
+                    "diff_count": len(updates),
+                    "diff_records": diff_records,
+                    "errors": None
+                }
+
+            if not updates:
+                logger.info("No differences found, nothing to update")
+                return {
+                    "compared_count": len(terra_ids),
+                    "updated_count": 0,
+                    "errors": None
+                }
+
+            # Use existing bulk_update_samples for efficient batched updates
+            result = self.bulk_update_samples(updates, batch_size=batch_size)
+
+            return {
+                "compared_count": len(terra_ids),
+                "updated_count": result.get("updated_count", 0),
+                "failed_updates": result.get("failed_updates", []),
+                "errors": result.get("errors")
+            }
+
+        except Exception as exc:
+            logger.exception(f"Error syncing from Terra: {exc}")
+            return {
+                "compared_count": 0,
+                "updated_count": 0,
+                "errors": str(exc)
+            }
+
+    def _normalize_for_comparison(self, value) -> Any:
+        """
+        Normalize value for comparison.
+
+        Handles NaN, None, empty strings, and type differences to ensure
+        consistent comparison between Terra and BigQuery values.
+
+        Args:
+            value: The value to normalize
+
+        Returns:
+            Normalized value (None for empty/null values, otherwise the value)
+        """
+        if pd.isna(value) or value is None or value == '':
+            return None
+        # Convert to string for consistent comparison of numeric types
+        # This handles cases where Terra has "123" and BQ has 123
+        return str(value)
