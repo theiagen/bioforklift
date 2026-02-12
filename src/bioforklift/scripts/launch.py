@@ -71,7 +71,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "-c",
         "--comment",
         type=str,
-        default="",
         help="User comment for the workflow submission",
     )
     launch_parser.add_argument(
