@@ -226,12 +226,15 @@ def prepare_method_config(mod_method_config: MethodConfig,
     mod_method_config.methodRepoMethod.methodPath = (
         f"{config.repository}/{job_data['workflow_name']}"
     )
-    mod_method_config.methodRepoMethod.methodVersion = config.branch
+    mod_method_config.methodRepoMethod.methodVersion = job_data["branch"]
     mod_method_config.methodConfigVersion = method_config_version
 
     # set inputs from json file and dynamically set samplename based on table name
     mod_method_config.inputs = job_data["input_json"]
-    mod_method_config.inputs[f"{job_data['table']}.{job_data['sample_col']}"] = (
+    # get prefix of input json keys to dynamically set sample_col
+    # NOTE: this assumes there is at least one input
+    wf_prefix = list(job_data["input_json"])[0].split(".")[0]
+    mod_method_config.inputs[f"{wf_prefix}.{job_data['sample_col']}"] = (
         f"this.{job_data['table']}_id"
     )
     # set outputs from json file
