@@ -299,7 +299,7 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
             job_data["table"],
             job_data["input_json"],
             job_data["output_json"],
-            config.branch
+            job_data["branch"]
         )
 
     mod_method_config = base_method_config.model_copy(deep=True)
@@ -314,6 +314,10 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
     submission = terra.submissions.submit_workflow(workflow_config)
     logger.info(submission)
     status = terra.submissions.get_submission_status(submission["submissionId"])
+    # this is perhaps a suboptimal way of doing this due to hard-coding the Terra link
+    submission_prefix = f"https://app.terra.bio/#workspaces/{config.project}/{config.workspace}/submission_history/"
+    submission_url = f"{submission_prefix}{submission['submissionId']}"
+    logger.info(f"Submission URL: {submission_url}")
     logger.debug(status)
 
 
