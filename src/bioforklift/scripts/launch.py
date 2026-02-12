@@ -279,7 +279,7 @@ def prepare_workflow_config(
         "useReferenceDisks": False,
         "memoryRetryMultiplier": 1.0,
         "workflowFailureMode": "NoNewCalls",
-        "userComment": job_data.get("comment", ""),
+        "userComment": job_data.get("comment", job_data.get("branch", "")),
         "ignoreEmptyOutputs": config.ignore_empty,
     }
 
