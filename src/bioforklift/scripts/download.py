@@ -15,13 +15,26 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Define command-line arguments for download subcommand"""
     d_parser = parser.add_argument_group("Data Parameters")
     d_parser.add_argument(
-        "table", type=str, nargs="+",help="Terra entity table name(s) (space-delimited)"
+        "table",
+        type=str,
+        nargs="+",
+        help="Terra entity table name(s) (space-delimited)",
     )
     d_parser.add_argument(
-        "-c", "--column", type=str, nargs="+", default=[], help="Column name(s) to include in the download (space-delimited); DEFAULT: all columns"
+        "-c",
+        "--column",
+        type=str,
+        nargs="+",
+        default=[],
+        help="Column name(s) to include in the download (space-delimited); DEFAULT: all columns",
     )
     d_parser.add_argument(
-        "-s", "--sample", type=str, nargs="+", default=[], help="Sample name(s) to filter the download (space-delimited); DEFAULT: all samples"
+        "-s",
+        "--sample",
+        type=str,
+        nargs="+",
+        default=[],
+        help="Sample name(s) to filter the download (space-delimited); DEFAULT: all samples",
     )
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
@@ -58,7 +71,9 @@ def glob_entities(terra_entities: list, table: str) -> list:
     return fn_tables
 
 
-def extract_df(df: pd.DataFrame, columns: list = None, samples: list = None, sample_col: str = None) -> pd.DataFrame:
+def extract_df(
+    df: pd.DataFrame, columns: list = None, samples: list = None, sample_col: str = None
+) -> pd.DataFrame:
     """Extract specified columns and samples from the downloaded DataFrame"""
     # extract columns
     if columns:
@@ -70,39 +85,49 @@ def extract_df(df: pd.DataFrame, columns: list = None, samples: list = None, sam
             columns = [col for col in columns if col not in set(missing_cols)]
         df = df[columns]
 
-    # extract samples 
+    # extract samples
     if samples:
         if sample_col not in df.columns:
-            raise ValueError(f"No '{sample_col}' column found in the table for filtering.")
+            raise ValueError(
+                f"No '{sample_col}' column found in the table for filtering."
+            )
         missing_samples = [s for s in samples if s not in df[sample_col].unique()]
         if missing_samples:
-            raise ValueError(f"Samples {missing_samples} not found in the '{sample_col}' column.")
+            raise ValueError(
+                f"Samples {missing_samples} not found in the '{sample_col}' column."
+            )
         df = df[df[sample_col].isin(samples)]
-    
+
     return df
 
 
-def download_gsuri(storage_client: storage.Client, gs_uri: str, output_dir: Path) -> None:
+def download_gsuri(
+    storage_client: storage.Client, gs_uri: str, output_dir: Path
+) -> None:
     """Download a file from a Google Storage URI to the specified output directory"""
     # Parse the gs_uri to extract bucket name and blob name
     if not gs_uri.startswith("gs://"):
         raise ValueError(f"Invalid GSURI '{gs_uri}': must start with 'gs://'")
-    
+
     path_parts = gs_uri[5:].split("/", 1)
     if len(path_parts) != 2:
-        raise ValueError(f"Invalid GSURI '{gs_uri}': must be in the format 'gs://bucket_name/blob_name'")
-    
+        raise ValueError(
+            f"Invalid GSURI '{gs_uri}': must be in the format 'gs://bucket_name/blob_name'"
+        )
+
     bucket_name, blob_name = path_parts
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
-    
+
     # Download the blob to the output directory
     output_path = output_dir / Path(blob_name).name
     blob.download_to_filename(output_path)
     logger.debug(f"Downloaded {gs_uri} to {output_path}")
 
 
-def file_download_mngr(df: pd.DataFrame, output_dir: Path, prefixes: set = {"gs://"}) -> None:
+def file_download_mngr(
+    df: pd.DataFrame, output_dir: Path, prefixes: set = {"gs://"}
+) -> None:
     """Manage file downloads for prefixes in the specified DataFrame columns"""
     storage_client = storage.Client()
     for col in df.columns:
@@ -156,7 +181,9 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         if args.column or args.sample:
             # assume the first column is sample column
             sample_col = df.columns[0]
-            df = extract_df(df, columns=args.column, samples=args.sample, sample_col=sample_col)
+            df = extract_df(
+                df, columns=args.column, samples=args.sample, sample_col=sample_col
+            )
         # Save the downloaded table to defined output path or current directory
         output_path = output_dir / f"{table}.tsv"
         df.to_csv(output_path, index=False, sep="\t")

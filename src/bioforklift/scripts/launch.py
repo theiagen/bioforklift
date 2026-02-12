@@ -36,7 +36,11 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     launch_parser = parser.add_argument_group("Workflow Launch Parameters")
     launch_parser.add_argument(
-        "-j", "--job_json", nargs="+", type=str, help="Path(s) to workflow submission JSON(s)"
+        "-j",
+        "--job_json",
+        nargs="+",
+        type=str,
+        help="Path(s) to workflow submission JSON(s)",
     )
     launch_parser.add_argument(
         "-s",
@@ -117,7 +121,6 @@ def arg_handling(args: argparse.Namespace) -> None:
         raise ValueError(
             "--table, --input_json, and --output_json cannot be used with --job_json"
         )
-
 
 
 def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
@@ -210,13 +213,15 @@ def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
     return f"{job_data['table']}_set_{current_time}"  # return name of entity set created for use in workflow config
 
 
-def prepare_method_config(mod_method_config: MethodConfig, 
-                          job_data: dict, 
-                          terra: Terra, 
-                          config: CLIConfig,
-                          source_repo: str = "dockstore",
-                          method_uri: str = None,
-                          method_config_version: int = 0) -> MethodConfig:
+def prepare_method_config(
+    mod_method_config: MethodConfig,
+    job_data: dict,
+    terra: Terra,
+    config: CLIConfig,
+    source_repo: str = "dockstore",
+    method_uri: str = None,
+    method_config_version: int = 0,
+) -> MethodConfig:
     """Prepare a method configuration for workflow submission by incorporating metadata"""
     # modify method config for the new workspace
     mod_method_config.namespace = terra.client.destination_project
@@ -256,7 +261,13 @@ def validate_method_config(mod_method_config: MethodConfig, terra: Terra) -> dic
     return val
 
 
-def prepare_workflow_config(terra: Terra, current_time: str, mod_method_config: MethodConfig, job_data: dict, config: CLIConfig) -> WorkflowConfig:
+def prepare_workflow_config(
+    terra: Terra,
+    current_time: str,
+    mod_method_config: MethodConfig,
+    job_data: dict,
+    config: CLIConfig,
+) -> WorkflowConfig:
     """Prepare a workflow configuration for workflow submission by incorporating metadata"""
     wf_config_params = {
         "methodConfigurationNamespace": terra.client.destination_project,
@@ -290,7 +301,9 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
         base_method_config_dict = terra.methods.get_method_config(
             job_data["workflow_name"], use_destination=True
         )
-        base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
+        base_method_config = terra.methods.dict_to_method_config(
+            base_method_config_dict
+        )
     # generate method config dictionary
     else:
         base_method_config = terra.methods.generate_method_config(
@@ -299,18 +312,22 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
             job_data["table"],
             job_data["input_json"],
             job_data["output_json"],
-            job_data["branch"]
+            job_data["branch"],
         )
 
     mod_method_config = base_method_config.model_copy(deep=True)
-    mod_method_config = prepare_method_config(mod_method_config, job_data, terra, config)
+    mod_method_config = prepare_method_config(
+        mod_method_config, job_data, terra, config
+    )
 
     # Adds or overwrites the method configuration in the Terra workspace
     terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
     validate_method_config(mod_method_config, terra)
 
     # Prepare and submit the workflow configuration for execution in Terra
-    workflow_config = prepare_workflow_config(terra, current_time, mod_method_config, job_data, config)
+    workflow_config = prepare_workflow_config(
+        terra, current_time, mod_method_config, job_data, config
+    )
     submission = terra.submissions.submit_workflow(workflow_config)
     logger.info(submission)
     status = terra.submissions.get_submission_status(submission["submissionId"])
