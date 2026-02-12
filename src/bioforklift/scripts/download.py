@@ -66,7 +66,8 @@ def extract_df(df: pd.DataFrame, columns: list = None, samples: list = None, sam
         columns = [sample_col] + sorted(set(columns).difference({sample_col}))
         missing_cols = [col for col in columns if col not in df.columns]
         if missing_cols:
-            raise ValueError(f"Columns {missing_cols} not found in the table.")
+            logger.warning(f"Columns {missing_cols} not found")
+            columns = [col for col in columns if col not in set(missing_cols)]
         df = df[columns]
 
     # extract samples 
