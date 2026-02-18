@@ -1,10 +1,12 @@
 import json
 import time
 import argparse
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from bioforklift.terra.exceptions import TerraServerError
 from bioforklift.scripts.configure import CLIConfig
+from bioforklift.scripts.download import extract_samples, filter_df 
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig
 from bioforklift.forklift_logging import setup_logger
 
@@ -14,12 +16,9 @@ logger = setup_logger(__name__)
 
 def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Define command-line arguments for launch subcommand"""
-    wf_parser = parser.add_argument_group("Workflow Submission Parameters")
+    wf_parser = parser.add_argument_group("Workflow Parameters")
     wf_parser.add_argument(
         "-wf", "--workflow_name", type=str, help="Terra workflow name to run"
-    )
-    wf_parser.add_argument(
-        "-t", "--table", type=str, help="Terra entity table name for workflow"
     )
     wf_parser.add_argument(
         "-r",
@@ -33,8 +32,66 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         type=str,
         help="GitHub branch for workflow source; DEFAULT: main",
     )
+    wf_parser.add_argument(
+        "-I",
+        "--id_variable",
+        type=str,
+        default="samplename",
+        help="Input variable for sample ID mapping; DEFAULT: samplename",
+    )
 
-    launch_parser = parser.add_argument_group("Workflow Launch Parameters")
+
+    tbl_parser = parser.add_argument_group("Table Parameters")
+    tbl_parser.add_argument(
+        "-t", "--table", type=str, help="Terra entity table name for workflow"
+    )
+    tbl_parser.add_argument(
+        "-s",
+        "--sample",
+        type=str,
+        nargs="+",
+        help = "Sample name(s) to filter rows upon"
+    )
+    tbl_parser.add_argument(
+        "-f",
+        "--filter",
+        type=str,
+        nargs="+",
+        help = "Strings to filter rows upon"
+    )
+    tbl_parser.add_argument(
+        "-fc",
+        "--filter_column",
+        type=str,
+        nargs="+",
+        help = "Column name(s) to apply filter(s) to; DEFAULT: all"
+    )
+    tbl_parser.add_argument(
+        "-m",
+        "--match",
+        action="store_true",
+        help = "Require exact match rather than substring match for filter(s)"
+    )
+    tbl_parser.add_argument(
+        "-e",
+        "--exclude",
+        action="store_true",
+        help = "Exclude rows matching the filter(s)"
+    )
+    tbl_parser.add_argument(
+        "-x",
+        "--max_rows",
+        type=int,
+        help = "Maximum number of rows to include per filter; DEFAULT: all rows"
+    )
+    tbl_parser.add_argument(
+        "-R",
+        "--randomize",
+        action="store_true",
+        help = "Randomize extraction of filtered rows"
+    )
+
+    launch_parser = parser.add_argument_group("Launch Parameters")
     launch_parser.add_argument(
         "-j",
         "--job_json",
@@ -43,41 +100,34 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Path(s) to workflow submission JSON(s)",
     )
     launch_parser.add_argument(
-        "-s",
-        "--sample_col",
-        type=str,
-        default="samplename",
-        help="Column name in entity table for sample names; DEFAULT: samplename",
-    )
-    launch_parser.add_argument(
         "-i",
         "--input_json",
         type=str,
-        help="Path to input JSON file for submission inputs",
+        help="Path to input JSON file for workflow input mapping",
     )
     launch_parser.add_argument(
         "-o",
         "--output_json",
         type=str,
-        help="Path to output JSON file for submission outputs",
+        help="Path to output JSON file for workflow output mapping",
     )
     launch_parser.add_argument(
         "-cc",
         "--call_cache",
         action="store_true",
-        help="Enable call caching for the workflow submission",
+        help="Enable call caching",
     )
     launch_parser.add_argument(
-        "-c",
+        "-sc",
         "--comment",
         type=str,
-        help="User comment for the workflow submission",
+        help="User comment",
     )
     launch_parser.add_argument(
         "-ie",
         "--ignore_empty",
         action="store_true",
-        help="Ignore empty outputs in the workflow submission",
+        help="Ignore empty outputs",
     )
     launch_parser.add_argument(
         "--sleep",
@@ -86,7 +136,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Seconds to wait between launching multiple workflows; DEFAULT: 1",
     )
 
-    ws_parser = parser.add_argument_group("Terra Workspace Parameters")
+    ws_parser = parser.add_argument_group("Terra Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
     ws_parser.add_argument("-p", "--project", type=str, help="Terra project name")
     ws_parser.add_argument(
@@ -133,7 +183,7 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
         "table": True,
         "input_json": True,
         "output_json": True,
-        "sample_col": True,
+        "id_variable": True,
         "comment": False,
         "branch": True,
         "call_cache": True,
@@ -190,19 +240,24 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     return job_dict
 
 
-def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
+def prepare_entity_set(args: argparse.Namespace, terra: Terra, job_data: dict, current_time: str) -> str:
     """Prepare a table in the Terra workspace for workflow submission by creating an entity set based on the input table"""
     # could implement a way to use local table
     try:
         new_table_df = terra.entities.download_table(
             job_data["table"], use_destination=True
         )
+        # filter if requested
+        if args.sample or args.filter:
+            logger.info(f"Filtering table {job_data['table']}")
+            samples = filter_mngr(new_table_df, args, job_data, terra)
+
     except TerraServerError as e:
         raise TerraServerError(
             f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?"
         )
     result = terra.entities.create_entity_set(
-        f"{job_data['table']}_set_{current_time}", job_data["table"], new_table_df
+        f"{job_data['table']}_set_{current_time}", job_data["table"], samples
     )
     if not result.ok:
         logger.error(f"Failed to create {job_data['table']} entity set")
@@ -235,10 +290,10 @@ def prepare_method_config(
 
     # set inputs from json file and dynamically set samplename based on table name
     mod_method_config.inputs = job_data["input_json"]
-    # get prefix of input json keys to dynamically set sample_col
+    # get prefix of input json keys to dynamically set id_variable
     # NOTE: this assumes there is at least one input
     wf_prefix = list(job_data["input_json"])[0].split(".")[0]
-    mod_method_config.inputs[f"{wf_prefix}.{job_data['sample_col']}"] = (
+    mod_method_config.inputs[f"{wf_prefix}.{job_data['id_variable']}"] = (
         f"this.{job_data['table']}_id"
     )
     # set outputs from json file
@@ -288,12 +343,13 @@ def prepare_workflow_config(
     return workflow_config
 
 
-def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
+def launch_job(args: argparse.Namespace, job_data: dict, terra: Terra, config: CLIConfig) -> None:
     """Launch a workflow in Terra based on provided job data"""
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Prepare the workspace for workflow submission by creating an entity set based on the input table
-    prepare_entity_set(terra, job_data, current_time)
+
+    prepare_entity_set(args, terra, job_data, current_time)
 
     # get method config dictionary from existing workspace
     if job_data.get("preexisting_config"):
@@ -337,6 +393,23 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
     logger.debug(status)
 
 
+def filter_mngr(df: pd.DataFrame, args: argparse.Namespace, job_data: dict, terra: Terra) -> list:
+    """Extract sample list from filters"""
+    sample_col = df.columns[0]
+    if args.sample:
+        df = extract_samples(df, samples=args.sample, sample_col=sample_col)
+    filtered_df = filter_df(
+        df,
+        filters=args.filter,
+        filter_columns=args.filter_column,
+        match=args.match,
+        exclude=args.exclude,
+        max_rows=args.max_rows,
+        randomize=args.randomize,
+    )
+    return filtered_df[sample_col].tolist()
+
+
 def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Prepare and manage launch execution of workflows in Terra"""
 
@@ -360,5 +433,5 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     # Submit workflows for each job in the job dictionary
     for wf_name, job_data in job_dicts.items():
         logger.info(f"Launching workflow: {wf_name}")
-        launch_job(job_data, terra, config)
+        launch_job(args, job_data, terra, config)
         time.sleep(args.sleep)

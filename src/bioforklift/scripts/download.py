@@ -36,6 +36,45 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default=[],
         help="Sample name(s) to filter the download (space-delimited); DEFAULT: all samples",
     )
+    d_parser.add_argument(
+        "-f",
+        "--filter",
+        type=str,
+        nargs="+",
+        help = "Strings to filter rows upon"
+    )
+    d_parser.add_argument(
+        "-fc",
+        "--filter_column",
+        type=str,
+        nargs="+",
+        help = "Column name(s) to apply filter(s) to; DEFAULT: all"
+    )
+    d_parser.add_argument(
+        "-m",
+        "--match",
+        action="store_true",
+        help = "Require exact match rather than substring match for filter(s)"
+    )
+    d_parser.add_argument(
+        "-e",
+        "--exclude",
+        action="store_true",
+        help = "Exclude rows matching the filter(s)"
+    )
+    d_parser.add_argument(
+        "-x",
+        "--max_rows",
+        type=int,
+        help = "Maximum number of rows to include per filter; DEFAULT: all rows"
+    )
+    d_parser.add_argument(
+        "-R",
+        "--randomize",
+        action="store_true",
+        help = "Randomize extraction of filtered rows"
+    )
+
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
@@ -43,10 +82,10 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     run_parser = parser.add_argument_group("Runtime Parameters")
     run_parser.add_argument(
-        "-f",
+        "-F",
         "--files",
         action="store_true",
-        help="Download GSURIs; DEFAULT: False",
+        help="Download GSURIs",
     )
     run_parser.add_argument(
         "-o",
@@ -71,34 +110,81 @@ def glob_entities(terra_entities: list, table: str) -> list:
     return fn_tables
 
 
-def extract_df(
-    df: pd.DataFrame, columns: list = None, samples: list = None, sample_col: str = None
+def extract_columns(
+    df: pd.DataFrame, columns: list = None, sample_col: str = None
 ) -> pd.DataFrame:
     """Extract specified columns and samples from the downloaded DataFrame"""
-    # extract columns
-    if columns:
-        # ensure sample column is included and appears first if specified
-        columns = [sample_col] + sorted(set(columns).difference({sample_col}))
-        missing_cols = [col for col in columns if col not in df.columns]
-        if missing_cols:
-            logger.warning(f"Columns {missing_cols} not found")
-            columns = [col for col in columns if col not in set(missing_cols)]
-        df = df[columns]
+    # ensure sample column is included and appears first if specified
+    columns = [sample_col] + sorted(set(columns).difference({sample_col}))
+    missing_cols = [col for col in columns if col not in df.columns]
+    if missing_cols:
+        logger.warning(f"Columns {missing_cols} not found")
+        columns = [col for col in columns if col not in set(missing_cols)]
+    return df[columns]
 
+
+def extract_samples(
+    df: pd.DataFrame, samples: list = None, sample_col: str = None
+) -> pd.DataFrame:
+    """Extract specified samples from the downloaded DataFrame"""
     # extract samples
-    if samples:
-        if sample_col not in df.columns:
-            raise ValueError(
-                f"No '{sample_col}' column found in the table for filtering."
-            )
-        missing_samples = [s for s in samples if s not in df[sample_col].unique()]
-        if missing_samples:
-            raise ValueError(
-                f"Samples {missing_samples} not found in the '{sample_col}' column."
-            )
-        df = df[df[sample_col].isin(samples)]
+    if sample_col not in df.columns:
+        raise ValueError(
+            f"No '{sample_col}' column found in the table for filtering."
+        )
+    missing_samples = [s for s in samples if s not in df[sample_col].unique()]
+    if missing_samples:
+        raise ValueError(
+            f"Samples {missing_samples} not found in the '{sample_col}' column."
+        )
+    return df[df[sample_col].isin(samples)]
 
-    return df
+
+def filter_df(
+    df: pd.DataFrame,
+    filters: list = None,
+    filter_columns: list = None,
+    match: bool = False,
+    exclude: bool = False,
+    max_rows: int = None,
+    randomize: bool = False,
+) -> pd.DataFrame:
+    """Filter the DataFrame based on specified criteria"""
+    if not filter_columns:
+        filter_columns = df.columns.tolist()
+    else:
+        filter_columns = [col for col in filter_columns if col in df.columns]
+
+    filtered_dfs = []
+    if filters:
+        for f in filters:
+            if match:
+                condition = df[filter_columns].apply(lambda col: col == f).any(axis=1)
+            else:
+                condition = df[filter_columns].apply(lambda col: col.astype(str).str.lower().str.contains(f.lower())).any(axis=1)
+
+            if exclude:
+                condition = ~condition
+
+            filtered_df = df[condition]
+
+            if randomize:
+                filtered_df = filtered_df.sample(frac=1, random_state=42)
+
+            if max_rows is not None:
+                filtered_df = filtered_df.head(max_rows)
+            filtered_dfs.append(filtered_df)
+
+        if filtered_dfs:
+            return pd.concat(filtered_dfs).drop_duplicates().reset_index(drop=True)
+        else:
+            return pd.DataFrame(columns=df.columns)
+    else:
+        if randomize:
+            df = df.sample(frac=1, random_state=42)
+        if max_rows is not None:
+            df = df.head(max_rows)
+        return df
 
 
 def download_gsuri(
@@ -177,16 +263,29 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
 
     for table in tables:
         df = terra.entities.download_table(table)
+        # assume the first column is sample column
+        sample_col = df.columns[0]
         # Extract specified columns and samples if provided
-        if args.column or args.sample:
-            # assume the first column is sample column
-            sample_col = df.columns[0]
+        if args.column:
             df = extract_df(
-                df, columns=args.column, samples=args.sample, sample_col=sample_col
+                df, columns=args.column, sample_col=sample_col
             )
+        if args.sample:
+            df = extract_samples(
+                df, samples=args.sample, sample_col=sample_col
+            )
+        filtered_df = filter_df(
+            df,
+            filters=args.filter,
+            filter_columns=args.filter_column,
+            match=args.match,
+            exclude=args.exclude,
+            max_rows=args.max_rows,
+            randomize=args.randomize,
+        )
         # Save the downloaded table to defined output path or current directory
         output_path = output_dir / f"{table}.tsv"
-        df.to_csv(output_path, index=False, sep="\t")
+        filtered_df.to_csv(output_path, index=False, sep="\t")
         logger.info(f"Downloaded table '{table}' to {output_path}")
         # download files
         if args.files:
@@ -194,4 +293,4 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             # output files to a subdirectory named after the table within the main output directory
             file_dir = output_dir / table
             file_dir.mkdir(parents=True, exist_ok=True)
-            file_download_mngr(df, file_dir)
+            file_download_mngr(filtered_df, file_dir)
