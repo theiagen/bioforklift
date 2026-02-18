@@ -355,7 +355,7 @@ def launch_job(args: argparse.Namespace, job_data: dict, terra: Terra, config: C
 
     # Prepare the workspace for workflow submission by creating an entity set based on the input table
 
-    prepare_entity_set(args, terra, job_data, current_time)
+    prepare_entity_set(terra, job_data, current_time)
 
     # get method config dictionary from existing workspace
     if job_data.get("preexisting_config"):
