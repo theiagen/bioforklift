@@ -246,7 +246,7 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     return job_dict
 
 
-def prepare_entity_set(args: argparse.Namespace, terra: Terra, job_data: dict, current_time: str) -> str:
+def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
     """Prepare a table in the Terra workspace for workflow submission by creating an entity set based on the input table"""
     # could implement a way to use local table
     try:
@@ -254,9 +254,9 @@ def prepare_entity_set(args: argparse.Namespace, terra: Terra, job_data: dict, c
             job_data["table"], use_destination=True
         )
         # filter if requested
-        if args.samples or args.filter:
+        if job_data.get("samples") or job_data.get("filter"):
             logger.info(f"Filtering table {job_data['table']}")
-            samples = filter_mngr(new_table_df, args, job_data, terra)
+            samples = filter_mngr(new_table_df, job_data, terra)
 
     except TerraServerError as e:
         raise TerraServerError(
@@ -399,19 +399,19 @@ def launch_job(args: argparse.Namespace, job_data: dict, terra: Terra, config: C
     logger.debug(status)
 
 
-def filter_mngr(df: pd.DataFrame, args: argparse.Namespace, job_data: dict, terra: Terra) -> list:
+def filter_mngr(df: pd.DataFrame, job_data: dict, terra: Terra) -> list:
     """Extract sample list from filters"""
     sample_col = df.columns[0]
-    if args.samples:
-        df = extract_samples(df, samples=args.samples, sample_col=sample_col)
+    if job_data.get("samples"):
+        df = extract_samples(df, samples=job_data.get("samples"), sample_col=sample_col)
     filtered_df = filter_df(
         df,
-        filters=args.filter,
-        filter_columns=args.filter_column,
-        match=args.exact_match,
-        exclude=args.exclusion_filter,
-        max_rows=args.max_rows,
-        randomize=args.randomize,
+        filters=job_data.get("filter"),
+        filter_columns=job_data.get("filter_column"),
+        match=job_data.get("exact_match", False),
+        exclude=job_data.get("exclusion_filter", False),
+        max_rows=job_data.get("max_rows"),
+        randomize=job_data.get("randomize", False),
     )
     return filtered_df[sample_col].tolist()
 
