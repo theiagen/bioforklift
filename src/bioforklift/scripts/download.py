@@ -177,7 +177,7 @@ def filter_df(
             filtered_dfs.append(filtered_df)
 
         if filtered_dfs:
-            tot_df = pd.concat(filtered_dfs).drop_duplicates().reset_index(drop=True)
+            tot_df = pd.concat(filtered_dfs).drop_duplicates()
         else:
             tot_df = pd.DataFrame(columns=df.columns)
     else:
