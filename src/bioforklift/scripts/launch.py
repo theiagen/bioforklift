@@ -257,6 +257,7 @@ def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
         if job_data.get("samples") or job_data.get("filter"):
             logger.info(f"Filtering table {job_data['table']}")
             samples = filter_mngr(new_table_df, job_data, terra)
+            logger.info(f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}")
 
     except TerraServerError as e:
         raise TerraServerError(
@@ -403,6 +404,7 @@ def filter_mngr(df: pd.DataFrame, job_data: dict, terra: Terra) -> list:
     """Extract sample list from filters"""
     sample_col = df.columns[0]
     if job_data.get("samples"):
+        logger.debug(f"Extracting samples: {job_data.get('samples')}")
         df = extract_samples(df, samples=job_data.get("samples"), sample_col=sample_col)
     filtered_df = filter_df(
         df,

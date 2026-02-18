@@ -187,6 +187,7 @@ def filter_df(
             tot_df = str_df.head(max_rows)
     return df.loc[tot_df.index]
 
+
 def download_gsuri(
     storage_client: storage.Client, gs_uri: str, output_dir: Path
 ) -> None:
