@@ -47,8 +47,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
     tbl_parser.add_argument(
         "-s",
-        "--sample",
-        type=str,
+        "--samples",
         nargs="+",
         help = "Sample name(s) to filter rows upon"
     )
@@ -68,13 +67,13 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
     tbl_parser.add_argument(
         "-m",
-        "--match",
+        "--exact_match",
         action="store_true",
         help = "Require exact match rather than substring match for filter(s)"
     )
     tbl_parser.add_argument(
         "-e",
-        "--exclude",
+        "--exclusion_filter",
         action="store_true",
         help = "Exclude rows matching the filter(s)"
     )
@@ -118,10 +117,10 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Enable call caching",
     )
     launch_parser.add_argument(
-        "-sc",
+        "-C",
         "--comment",
         type=str,
-        help="User comment",
+        help="Submission comment",
     )
     launch_parser.add_argument(
         "-ie",
@@ -189,6 +188,13 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
         "call_cache": True,
         "ignore_empty": True,
         "preexisting_config": True,
+        "filter": False,
+        "filter_column": False,
+        "exact_match": False,
+        "randomize": False,
+        "exclusion_filter": False,
+        "max_rows": False,
+        "samples": False
     }
 
     job_dict = {}
@@ -248,7 +254,7 @@ def prepare_entity_set(args: argparse.Namespace, terra: Terra, job_data: dict, c
             job_data["table"], use_destination=True
         )
         # filter if requested
-        if args.sample or args.filter:
+        if args.samples or args.filter:
             logger.info(f"Filtering table {job_data['table']}")
             samples = filter_mngr(new_table_df, args, job_data, terra)
 
@@ -396,14 +402,14 @@ def launch_job(args: argparse.Namespace, job_data: dict, terra: Terra, config: C
 def filter_mngr(df: pd.DataFrame, args: argparse.Namespace, job_data: dict, terra: Terra) -> list:
     """Extract sample list from filters"""
     sample_col = df.columns[0]
-    if args.sample:
-        df = extract_samples(df, samples=args.sample, sample_col=sample_col)
+    if args.samples:
+        df = extract_samples(df, samples=args.samples, sample_col=sample_col)
     filtered_df = filter_df(
         df,
         filters=args.filter,
         filter_columns=args.filter_column,
-        match=args.match,
-        exclude=args.exclude,
+        match=args.exact_match,
+        exclude=args.exclusion_filter,
         max_rows=args.max_rows,
         randomize=args.randomize,
     )

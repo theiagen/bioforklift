@@ -30,8 +30,7 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
     d_parser.add_argument(
         "-s",
-        "--sample",
-        type=str,
+        "--samples",
         nargs="+",
         default=[],
         help="Sample name(s) to filter the download (space-delimited); DEFAULT: all samples",
@@ -52,13 +51,13 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
     d_parser.add_argument(
         "-m",
-        "--match",
+        "--exact_match",
         action="store_true",
         help = "Require exact match rather than substring match for filter(s)"
     )
     d_parser.add_argument(
         "-e",
-        "--exclude",
+        "--exclusion_filter",
         action="store_true",
         help = "Exclude rows matching the filter(s)"
     )
@@ -271,16 +270,16 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             df = extract_df(
                 df, columns=args.column, sample_col=sample_col
             )
-        if args.sample:
+        if args.samples:
             df = extract_samples(
-                df, samples=args.sample, sample_col=sample_col
+                df, samples=args.samples, sample_col=sample_col
             )
         filtered_df = filter_df(
             df,
             filters=args.filter,
             filter_columns=args.filter_column,
-            match=args.match,
-            exclude=args.exclude,
+            match=args.exact_match,
+            exclude=args.exclusion_filter,
             max_rows=args.max_rows,
             randomize=args.randomize,
         )
