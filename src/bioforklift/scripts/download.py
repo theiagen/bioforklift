@@ -150,23 +150,25 @@ def filter_df(
     randomize: bool = False,
 ) -> pd.DataFrame:
     """Filter the DataFrame based on specified criteria"""
+    # convert all columns to string for filtering
+    str_df = df.astype(str)
     if not filter_columns:
-        filter_columns = df.columns.tolist()
+        filter_columns = str_df.columns.tolist()
     else:
-        filter_columns = [col for col in filter_columns if col in df.columns]
+        filter_columns = [col for col in filter_columns if col in str_df.columns]
 
     filtered_dfs = []
     if filters:
         for f in filters:
             if match:
-                condition = df[filter_columns].apply(lambda col: col == f).any(axis=1)
+                condition = str_df[filter_columns].apply(lambda col: col == f).any(axis=1)
             else:
-                condition = df[filter_columns].apply(lambda col: col.astype(str).str.lower().str.contains(f.lower())).any(axis=1)
+                condition = str_df[filter_columns].apply(lambda col: col.str.lower().str.contains(f.lower())).any(axis=1)
 
             if exclude:
                 condition = ~condition
 
-            filtered_df = df[condition]
+            filtered_df = str_df[condition]
 
             if randomize:
                 filtered_df = filtered_df.sample(frac=1, random_state=42)
@@ -176,16 +178,15 @@ def filter_df(
             filtered_dfs.append(filtered_df)
 
         if filtered_dfs:
-            return pd.concat(filtered_dfs).drop_duplicates().reset_index(drop=True)
+            tot_df = pd.concat(filtered_dfs).drop_duplicates().reset_index(drop=True)
         else:
-            return pd.DataFrame(columns=df.columns)
+            tot_df = pd.DataFrame(columns=df.columns)
     else:
         if randomize:
-            df = df.sample(frac=1, random_state=42)
+            tot_df = str_df.sample(frac=1, random_state=42)
         if max_rows is not None:
-            df = df.head(max_rows)
-        return df
-
+            tot_df = str_df.head(max_rows)
+    return df.loc[tot_df.index]
 
 def download_gsuri(
     storage_client: storage.Client, gs_uri: str, output_dir: Path
