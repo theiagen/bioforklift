@@ -253,19 +253,23 @@ def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
         new_table_df = terra.entities.download_table(
             job_data["table"], use_destination=True
         )
-        # filter if requested
-        if job_data.get("samples") or job_data.get("filter"):
-            logger.info(f"Filtering table {job_data['table']}")
-            samples = filter_mngr(new_table_df, job_data, terra)
-            logger.info(f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}")
-
     except TerraServerError as e:
         raise TerraServerError(
             f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?"
         )
-    result = terra.entities.create_entity_set(
-        f"{job_data['table']}_set_{current_time}", job_data["table"], samples
-    )
+    # filter if requested
+    if job_data.get("samples") or job_data.get("filter") or job_data.get("randomize") or job_data.get("max_rows"):
+        logger.info(f"Filtering table {job_data['table']}")
+        samples = filter_mngr(new_table_df, job_data, terra)
+        logger.info(f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}")
+        result = terra.entities.create_entity_set(
+            f"{job_data['table']}_set_{current_time}", job_data["table"], samples
+        )
+    else:
+        result = terra.entities.create_entity_set(
+            f"{job_data['table']}_set_{current_time}", job_data["table"], new_table_df
+        )
+
     if not result.ok:
         logger.error(f"Failed to create {job_data['table']} entity set")
         raise TerraServerError(f"Entity set creation failed: {result.text}")
