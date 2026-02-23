@@ -131,8 +131,8 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     launch_parser.add_argument(
         "--sleep",
         type=int,
-        default=1,
-        help="Seconds to wait between launching multiple workflows; DEFAULT: 1",
+        default=5,
+        help="Seconds to wait between launching multiple workflows; DEFAULT: 5",
     )
 
     ws_parser = parser.add_argument_group("Terra Parameters")
