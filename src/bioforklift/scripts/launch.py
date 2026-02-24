@@ -443,7 +443,10 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     )
 
     # Submit workflows for each job in the job dictionary
+    first = True
     for wf_name, job_data in job_dicts.items():
+        if not first:
+            time.sleep(args.sleep)
+        first = False
         logger.info(f"Launching workflow: {wf_name}")
         launch_job(args, job_data, terra, config)
-        time.sleep(args.sleep)
