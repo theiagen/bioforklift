@@ -217,8 +217,11 @@ class BigQueryConfigOperations:
             Updated configuration or None if not found
         """
 
+        # Map schema field types to accepted ScalarQueryParameterType value
         BQ_TYPE_MAP = {
             "BOOLEAN": "BOOL",
+            "INT": "INT64",
+            "FLOAT": "FLOAT64"
         }
 
         # Validate update data
@@ -253,7 +256,7 @@ class BigQueryConfigOperations:
 
                 
                 field_def = self.data_processor.schema_definition.get_field(field)
-                
+
                 raw_type = field_def.field_type if field_def else "STRING"
                 param_type = BQ_TYPE_MAP.get(raw_type, raw_type)
 
