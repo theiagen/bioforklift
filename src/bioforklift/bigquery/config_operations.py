@@ -216,6 +216,11 @@ class BigQueryConfigOperations:
         Returns:
             Updated configuration or None if not found
         """
+
+        BQ_TYPE_MAP = {
+            "BOOLEAN": "BOOL",
+        }
+
         # Validate update data
         if not update_data:
             logger.warning("No fields to update")
@@ -248,7 +253,9 @@ class BigQueryConfigOperations:
 
                 
                 field_def = self.data_processor.schema_definition.get_field(field)
-                param_type = field_def.field_type if field_def else "STRING"
+                
+                raw_type = field_def.field_type if field_def else "STRING"
+                param_type = BQ_TYPE_MAP.get(raw_type, raw_type)
 
                 params.append(bigquery.ScalarQueryParameter(field, param_type, value))
 
