@@ -193,11 +193,11 @@ def arg_handling(args: argparse.Namespace) -> None:
         raise ValueError(
             "--table, --input_json, and --output_json cannot be used with --job_json"
         )
-    elif (args.modified_variables and not args.modified_inputs) or (not args.modified_variables and args.modified_inputs):
-        raise ValueError("--modified_variables and --modified_inputs must be used together")
-    elif args.modified_variables and args.modified_inputs:
-        if len(args.modified_variables) != len(args.modified_inputs):
-            raise ValueError("The number of --modified_variables and --modified_inputs values must be the same")
+    elif (args.input_variables and not args.input_values) or (not args.input_variables and args.input_values):
+        raise ValueError("--input_variables and --input_values must be used together")
+    elif args.input_variables and args.input_values:
+        if len(args.input_variables) != len(args.input_values):
+            raise ValueError("The number of --input_variables and --input_values values must be the same")
 
 
 def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
@@ -273,9 +273,9 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                         f"Missing required argument '{arg}' for workflow '{wf}'"
                     )
 
-    # update with command line modified_variabless if required 
-    if args_dict.get("modified_variables"):
-        modified_io = {mod: val for mod, val in zip(args_dict.get("modified_variables"), args_dict.get("modified_inputs"))}
+    # update with command line input_variabless if required 
+    if args_dict.get("input_variables"):
+        modified_io = {mod: val for mod, val in zip(args_dict.get("input_variables"), args_dict.get("input_values"))}
         for wf, wf_data in job_dict.items():
             # prepend workflow name to added keys
             job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **{f"{args_dict.get('wdl_workflow', wf)}.{k}": v for k, v in modified_io.items()}}
