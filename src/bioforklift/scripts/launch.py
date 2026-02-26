@@ -32,33 +32,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         type=str,
         help="GitHub branch for workflow source; DEFAULT: main",
     )
-    wf_parser.add_argument(
-        "-I",
-        "--id_variable",
-        type=str,
-        default="samplename",
-        help="Input variable for sample ID mapping; DEFAULT: samplename",
-    )
-    wf_parser.add_argument(
-        "-n",
-        "--input_variables",
-        type=str,
-        nargs="+",
-        help = "Input variable(s) (prepended with WDL workflow name)"
-    )
-    wf_parser.add_argument(
-        "-nv",
-        "--input_values",
-        type=str,
-        nargs="+",
-        help = "Input value(s) (ordered)"
-    )
-    wf_parser.add_argument(
-        "-ww",
-        "--wdl_workflow",
-        type=str,
-        help = "WDL workflow name to prepend input variables; DEFAULT: workflow name"
-    )
 
 
     tbl_parser = parser.add_argument_group("Table Parameters")
@@ -112,25 +85,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     launch_parser = parser.add_argument_group("Launch Parameters")
     launch_parser.add_argument(
-        "-j",
-        "--job_json",
-        nargs="+",
-        type=str,
-        help="Path(s) to workflow submission JSON(s)",
-    )
-    launch_parser.add_argument(
-        "-i",
-        "--input_json",
-        type=str,
-        help="Path to input JSON file for workflow input mapping",
-    )
-    launch_parser.add_argument(
-        "-o",
-        "--output_json",
-        type=str,
-        help="Path to output JSON file for workflow output mapping",
-    )
-    launch_parser.add_argument(
         "-cc",
         "--call_cache",
         action="store_true",
@@ -154,6 +108,56 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default=5,
         help="Seconds to wait between launching multiple workflows; DEFAULT: 5",
     )
+
+
+    io_parser = parser.add_argument_group("Input/Output Parameters")
+    io_parser.add_argument(
+        "-j",
+        "--job_json",
+        nargs="+",
+        type=str,
+        help="Path(s) to workflow submission JSON(s)",
+    )
+    io_parser.add_argument(
+        "-i",
+        "--input_json",
+        type=str,
+        help="Path to input JSON file for workflow input mapping",
+    )
+    io_parser.add_argument(
+        "-o",
+        "--output_json",
+        type=str,
+        help="Path to output JSON file for workflow output mapping",
+    )
+    io_parser.add_argument(
+        "-n",
+        "--input_variables",
+        type=str,
+        nargs="+",
+        help = "Input variable(s) (prepended with WDL workflow name, will overwrite JSON variables)"
+    )
+    io_parser.add_argument(
+        "-nv",
+        "--input_values",
+        type=str,
+        nargs="+",
+        help = "Input value(s) (ordered with --input_variables)"
+    )
+    io_parser.add_argument(
+        "-I",
+        "--id_variable",
+        type=str,
+        default="samplename",
+        help="Input variable for sample ID mapping; DEFAULT: samplename",
+    )
+    io_parser.add_argument(
+        "-ww",
+        "--wdl_workflow",
+        type=str,
+        help = "WDL workflow name to prepend --input_variables; DEFAULT: workflow name"
+    )
+
 
     ws_parser = parser.add_argument_group("Terra Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
