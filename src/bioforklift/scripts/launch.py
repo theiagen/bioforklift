@@ -39,6 +39,20 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default="samplename",
         help="Input variable for sample ID mapping; DEFAULT: samplename",
     )
+    wf_parser.add_argument(
+        "-m",
+        "--modified_variables",
+        type=str,
+        nargs="+",
+        help = "Input variable(s) to modify"
+    )
+    wf_parser.add_argument(
+        "-mi",
+        "--modified_inputs",
+        type=str,
+        nargs="+",
+        help = "Modified input value(s) (ordered) to replace original input variable value(s)"
+    )
 
 
     tbl_parser = parser.add_argument_group("Table Parameters")
@@ -66,7 +80,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help = "Column name(s) to apply filter(s) to; DEFAULT: all"
     )
     tbl_parser.add_argument(
-        "-m",
+        "-M",
         "--exact_match",
         action="store_true",
         help = "Require exact match rather than substring match for filter(s)"
@@ -169,6 +183,11 @@ def arg_handling(args: argparse.Namespace) -> None:
         raise ValueError(
             "--table, --input_json, and --output_json cannot be used with --job_json"
         )
+    elif (args.modified_variables and not args.modified_inputs) or (not args.modified_variables and args.modified_inputs):
+        raise ValueError("--modified_variables and --modified_inputs must be used together")
+    elif args.modified_variables and args.modified_inputs:
+        if len(args.modified_variables) != len(args.modified_inputs):
+            raise ValueError("The number of --modified_variables and --modified_inputs values must be the same")
 
 
 def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
@@ -243,6 +262,14 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                     raise KeyError(
                         f"Missing required argument '{arg}' for workflow '{wf}'"
                     )
+
+    # update with command line modified_variabless if required 
+    if args_dict.get("modified_variables"):
+        modified_io = {mod: val for mod, val in zip(args_dict.get("modified_variables"), args_dict.get("modified_inputs"))}
+        for wf, wf_data in job_dict.items():
+            # prepend workflow name to added keys
+            job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **{f"{wf}.{k}": v for k, v in modified_io.items()}}
+
     return job_dict
 
 
