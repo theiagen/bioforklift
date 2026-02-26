@@ -240,7 +240,7 @@ class BigQueryConfigOperations:
         # Handle special fields like JSON objects
         processed_data = update_data.copy()
         for field in self.schema:
-            if field.field_type.upper() == "STRING" and field.name in processed_data:
+            if field.field_type.upper() in ("STRING", "JSON")  and field.name in processed_data:
                 if isinstance(processed_data[field.name], dict) or isinstance(
                     processed_data[field.name], list
                 ):
