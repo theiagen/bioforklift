@@ -40,18 +40,24 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Input variable for sample ID mapping; DEFAULT: samplename",
     )
     wf_parser.add_argument(
-        "-m",
-        "--modified_variables",
+        "-n",
+        "--input_variables",
         type=str,
         nargs="+",
-        help = "Input variable(s) to modify"
+        help = "Input variable(s) (prepended with WDL workflow name)"
     )
     wf_parser.add_argument(
-        "-mi",
-        "--modified_inputs",
+        "-nv",
+        "--input_values",
         type=str,
         nargs="+",
-        help = "Modified input value(s) (ordered) to replace original input variable value(s)"
+        help = "Input value(s) (ordered)"
+    )
+    wf_parser.add_argument(
+        "-ww",
+        "--wdl_workflow",
+        type=str,
+        help = "WDL workflow name to prepend input variables; DEFAULT: workflow name"
     )
 
 
@@ -268,7 +274,7 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
         modified_io = {mod: val for mod, val in zip(args_dict.get("modified_variables"), args_dict.get("modified_inputs"))}
         for wf, wf_data in job_dict.items():
             # prepend workflow name to added keys
-            job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **{f"{wf}.{k}": v for k, v in modified_io.items()}}
+            job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **{f"{args_dict.get('wdl_workflow', wf)}.{k}": v for k, v in modified_io.items()}}
 
     return job_dict
 
