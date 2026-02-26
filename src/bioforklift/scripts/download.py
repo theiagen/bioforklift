@@ -26,7 +26,7 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         type=str,
         nargs="+",
         default=[],
-        help="Column name(s) to include in the download (space-delimited); DEFAULT: all columns",
+        help="Column name(s) to include in the download (space-delimited, after filtering); DEFAULT: all columns",
     )
     d_parser.add_argument(
         "-s",
@@ -168,10 +168,8 @@ def filter_df(
                 condition = ~condition
 
             filtered_df = str_df[condition]
-
             if randomize:
                 filtered_df = filtered_df.sample(frac=1, random_state=42)
-
             if max_rows is not None:
                 filtered_df = filtered_df.head(max_rows)
             filtered_dfs.append(filtered_df)
@@ -269,10 +267,6 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         # assume the first column is sample column
         sample_col = df.columns[0]
         # Extract specified columns and samples if provided
-        if args.column:
-            df = extract_df(
-                df, columns=args.column, sample_col=sample_col
-            )
         if args.samples:
             df = extract_samples(
                 df, samples=args.samples, sample_col=sample_col
@@ -286,6 +280,10 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             max_rows=args.max_rows,
             randomize=args.randomize,
         )
+        if args.column:
+            filtered_df = extract_columns(
+                filtered_df, columns=args.column, sample_col=sample_col
+            )
         # Save the downloaded table to defined output path or current directory
         output_path = output_dir / f"{table}.tsv"
         filtered_df.to_csv(output_path, index=False, sep="\t")
