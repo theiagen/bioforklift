@@ -278,7 +278,13 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
         modified_io = {mod: val for mod, val in zip(args_dict.get("input_variables"), args_dict.get("input_values"))}
         for wf, wf_data in job_dict.items():
             # prepend workflow name to added keys
-            job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **{f"{args_dict.get('wdl_workflow', wf)}.{k}": v for k, v in modified_io.items()}}
+            wf_io = {}
+            for k, v in modified_io.items():
+                if args_dict.get("wdl_workflow"):
+                    wf_io[f"{args_dict.get('wdl_workflow')}.{k}"] = v
+                else:
+                    wf_io[f"{wf}.{k}"] = v
+            job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **wf_io}
 
     return job_dict
 
