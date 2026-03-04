@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from bioforklift.terra.exceptions import TerraServerError
 from bioforklift.scripts.configure import CLIConfig
-from bioforklift.scripts.download import extract_samples, filter_df 
+from bioforklift.scripts.download import extract_samples, filter_df
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig
 from bioforklift.forklift_logging import setup_logger
 
@@ -33,54 +33,46 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="GitHub branch for workflow source; DEFAULT: main",
     )
 
-
     tbl_parser = parser.add_argument_group("Table Parameters")
     tbl_parser.add_argument(
         "-t", "--table", type=str, help="Terra entity table name for workflow"
     )
     tbl_parser.add_argument(
-        "-s",
-        "--samples",
-        nargs="+",
-        help = "Sample name(s) to filter rows upon"
+        "-s", "--samples", nargs="+", help="Sample name(s) to filter rows upon"
     )
     tbl_parser.add_argument(
-        "-f",
-        "--filter",
-        type=str,
-        nargs="+",
-        help = "Strings to filter rows upon"
+        "-f", "--filter", type=str, nargs="+", help="Strings to filter rows upon"
     )
     tbl_parser.add_argument(
         "-fc",
         "--filter_column",
         type=str,
         nargs="+",
-        help = "Column name(s) to apply filter(s) to; DEFAULT: all"
+        help="Column name(s) to apply filter(s) to; DEFAULT: all",
     )
     tbl_parser.add_argument(
         "-M",
         "--exact_match",
         action="store_true",
-        help = "Require exact match rather than substring match for filter(s)"
+        help="Require exact match rather than substring match for filter(s)",
     )
     tbl_parser.add_argument(
         "-e",
         "--exclusion_filter",
         action="store_true",
-        help = "Exclude rows matching the filter(s)"
+        help="Exclude rows matching the filter(s)",
     )
     tbl_parser.add_argument(
         "-x",
         "--max_rows",
         type=int,
-        help = "Maximum number of rows to include per filter; DEFAULT: all rows"
+        help="Maximum number of rows to include per filter; DEFAULT: all rows",
     )
     tbl_parser.add_argument(
         "-R",
         "--randomize",
         action="store_true",
-        help = "Randomize extraction of filtered rows"
+        help="Randomize extraction of filtered rows",
     )
 
     launch_parser = parser.add_argument_group("Launch Parameters")
@@ -109,7 +101,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Seconds to wait between launching multiple workflows; DEFAULT: 5",
     )
 
-
     io_parser = parser.add_argument_group("Input/Output Parameters")
     io_parser.add_argument(
         "-j",
@@ -135,14 +126,14 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--input_variables",
         type=str,
         nargs="+",
-        help = "Input variable(s) (prepended with WDL workflow name, will overwrite JSON variables)"
+        help="Input variable(s) (prepended with WDL workflow name, will overwrite JSON variables)",
     )
     io_parser.add_argument(
         "-nv",
         "--input_values",
         type=str,
         nargs="+",
-        help = "Input value(s) (ordered with --input_variables)"
+        help="Input value(s) (ordered with --input_variables)",
     )
     io_parser.add_argument(
         "-I",
@@ -155,9 +146,8 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "-ww",
         "--wdl_workflow",
         type=str,
-        help = "WDL workflow name to prepend --input_variables; DEFAULT: workflow name"
+        help="WDL workflow name to prepend --input_variables; DEFAULT: workflow name",
     )
-
 
     ws_parser = parser.add_argument_group("Terra Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
@@ -193,11 +183,15 @@ def arg_handling(args: argparse.Namespace) -> None:
         raise ValueError(
             "--table, --input_json, and --output_json cannot be used with --job_json"
         )
-    elif (args.input_variables and not args.input_values) or (not args.input_variables and args.input_values):
+    elif (args.input_variables and not args.input_values) or (
+        not args.input_variables and args.input_values
+    ):
         raise ValueError("--input_variables and --input_values must be used together")
     elif args.input_variables and args.input_values:
         if len(args.input_variables) != len(args.input_values):
-            raise ValueError("The number of --input_variables and --input_values values must be the same")
+            raise ValueError(
+                "The number of --input_variables and --input_values values must be the same"
+            )
 
 
 def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
@@ -223,7 +217,7 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
         "randomize": False,
         "exclusion_filter": False,
         "max_rows": False,
-        "samples": False
+        "samples": False,
     }
 
     job_dict = {}
@@ -273,9 +267,14 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                         f"Missing required argument '{arg}' for workflow '{wf}'"
                     )
 
-    # update with command line input_variabless if required 
+    # update with command line input_variabless if required
     if args_dict.get("input_variables"):
-        modified_io = {mod: val for mod, val in zip(args_dict.get("input_variables"), args_dict.get("input_values"))}
+        modified_io = {
+            mod: val
+            for mod, val in zip(
+                args_dict.get("input_variables"), args_dict.get("input_values")
+            )
+        }
         for wf, wf_data in job_dict.items():
             # prepend workflow name to added keys
             wf_io = {}
@@ -301,10 +300,17 @@ def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
             f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?"
         )
     # filter if requested
-    if job_data.get("samples") or job_data.get("filter") or job_data.get("randomize") or job_data.get("max_rows"):
+    if (
+        job_data.get("samples")
+        or job_data.get("filter")
+        or job_data.get("randomize")
+        or job_data.get("max_rows")
+    ):
         logger.info(f"Filtering table {job_data['table']}")
         samples = filter_mngr(new_table_df, job_data, terra)
-        logger.info(f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}")
+        logger.info(
+            f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}"
+        )
         result = terra.entities.create_entity_set(
             f"{job_data['table']}_set_{current_time}", job_data["table"], samples
         )
@@ -397,7 +403,9 @@ def prepare_workflow_config(
     return workflow_config
 
 
-def launch_job(args: argparse.Namespace, job_data: dict, terra: Terra, config: CLIConfig) -> None:
+def launch_job(
+    args: argparse.Namespace, job_data: dict, terra: Terra, config: CLIConfig
+) -> None:
     """Launch a workflow in Terra based on provided job data"""
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 

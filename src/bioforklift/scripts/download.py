@@ -36,44 +36,39 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Sample name(s) to filter the download (space-delimited); DEFAULT: all samples",
     )
     d_parser.add_argument(
-        "-f",
-        "--filter",
-        type=str,
-        nargs="+",
-        help = "Strings to filter rows upon"
+        "-f", "--filter", type=str, nargs="+", help="Strings to filter rows upon"
     )
     d_parser.add_argument(
         "-fc",
         "--filter_column",
         type=str,
         nargs="+",
-        help = "Column name(s) to apply filter(s) to; DEFAULT: all"
+        help="Column name(s) to apply filter(s) to; DEFAULT: all",
     )
     d_parser.add_argument(
         "-m",
         "--exact_match",
         action="store_true",
-        help = "Require exact match rather than substring match for filter(s)"
+        help="Require exact match rather than substring match for filter(s)",
     )
     d_parser.add_argument(
         "-e",
         "--exclusion_filter",
         action="store_true",
-        help = "Exclude rows matching the filter(s)"
+        help="Exclude rows matching the filter(s)",
     )
     d_parser.add_argument(
         "-x",
         "--max_rows",
         type=int,
-        help = "Maximum number of rows to include per filter; DEFAULT: all rows"
+        help="Maximum number of rows to include per filter; DEFAULT: all rows",
     )
     d_parser.add_argument(
         "-R",
         "--randomize",
         action="store_true",
-        help = "Randomize extraction of filtered rows"
+        help="Randomize extraction of filtered rows",
     )
-
 
     ws_parser = parser.add_argument_group("Terra Workspace Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
@@ -128,9 +123,7 @@ def extract_samples(
     """Extract specified samples from the downloaded DataFrame"""
     # extract samples
     if sample_col not in df.columns:
-        raise ValueError(
-            f"No '{sample_col}' column found in the table for filtering."
-        )
+        raise ValueError(f"No '{sample_col}' column found in the table for filtering.")
     missing_samples = [s for s in samples if s not in df[sample_col].unique()]
     if missing_samples:
         raise ValueError(
@@ -160,9 +153,15 @@ def filter_df(
     if filters:
         for f in filters:
             if match:
-                condition = str_df[filter_columns].apply(lambda col: col == f).any(axis=1)
+                condition = (
+                    str_df[filter_columns].apply(lambda col: col == f).any(axis=1)
+                )
             else:
-                condition = str_df[filter_columns].apply(lambda col: col.str.lower().str.contains(f.lower())).any(axis=1)
+                condition = (
+                    str_df[filter_columns]
+                    .apply(lambda col: col.str.lower().str.contains(f.lower()))
+                    .any(axis=1)
+                )
 
             if exclude:
                 condition = ~condition
@@ -268,9 +267,7 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         sample_col = df.columns[0]
         # Extract specified columns and samples if provided
         if args.samples:
-            df = extract_samples(
-                df, samples=args.samples, sample_col=sample_col
-            )
+            df = extract_samples(df, samples=args.samples, sample_col=sample_col)
         filtered_df = filter_df(
             df,
             filters=args.filter,
