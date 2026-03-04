@@ -93,3 +93,21 @@ e.g. Launch a job from a JSON with `bioforklift` pre-configured:
 ```bash
 bioforklift launch -j <JOB_JSON>
 ```
+
+#### Filtering samples/columns
+
+Workflows can be launched with a subset of sample IDs or samples that meet filtering criteria:
+
+- Sample IDs can be declared as a space-delimited list via `-s`
+- String filters can be declared as a space-delimited list via `-f`
+- Columns to filter upon can be declared as a space-delimited list via `-fc`
+- Perfect string matching can be invoked via `-m`
+- Excluding samples, instead of including, can be invoked via `-e`
+- A maximum number of rows for each filtering criterium, or for the entire table if no filters are called, can be invoked via `-x`
+- Random row extraction can be invoked via `-R`
+
+e.g. Launch a job JSON with only 5 *Shigella* samples
+
+```bash
+bioforklift launch -j <JOB_JSON> -f Shigella -fc gambit_predicted_taxon -x 5
+```

@@ -54,7 +54,12 @@ def run():
     """Main function to run bioforklift command-line tool"""
     init_parser = argparse.ArgumentParser(description="Bioforklift Command-Line Tool")
     parser = bioforklift_args(init_parser)
+    parser.add_argument("-b", "--bunkee", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.bunkee:
+        logger.info("BioBunkee mode activated")
+        sys.exit(0)
 
     # Load configuration
     config = CLIConfig()
