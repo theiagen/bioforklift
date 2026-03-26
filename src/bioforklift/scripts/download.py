@@ -2,7 +2,9 @@ import fnmatch
 import argparse
 import pandas as pd
 from pathlib import Path
+from collections import defaultdict
 from google.cloud import storage
+from google.cloud.storage import transfer_manager
 from bioforklift.terra import Terra
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.forklift_logging import setup_logger
@@ -80,6 +82,13 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--files",
         action="store_true",
         help="Download GSURIs",
+    )
+    run_parser.add_argument(
+        "-w",
+        "--max_workers",
+        type=int,
+        default=16,
+        help="Maximum number of parallel download workers; DEFAULT: 16",
     )
     run_parser.add_argument(
         "-o",
@@ -187,48 +196,62 @@ def filter_df(
     return df.loc[tot_df.index]
 
 
-def download_gsuri(
-    storage_client: storage.Client, gs_uri: str, output_dir: Path
-) -> None:
-    """Download a file from a Google Storage URI to the specified output directory"""
-    # Parse the gs_uri to extract bucket name and blob name
-    if not gs_uri.startswith("gs://"):
-        raise ValueError(f"Invalid GSURI '{gs_uri}': must start with 'gs://'")
+def _collect_gcs_uris(df: pd.DataFrame) -> dict:
+    """Collect GCS URIs from DataFrame columns, grouped by column and bucket.
 
-    path_parts = gs_uri[5:].split("/", 1)
-    if len(path_parts) != 2:
-        raise ValueError(
-            f"Invalid GSURI '{gs_uri}': must be in the format 'gs://bucket_name/blob_name'"
-        )
-
-    bucket_name, blob_name = path_parts
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-
-    # Download the blob to the output directory
-    output_path = output_dir / Path(blob_name).name
-    blob.download_to_filename(output_path)
-    logger.debug(f"Downloaded {gs_uri} to {output_path}")
+    Returns:
+        {col: {bucket_name: [blob_name, ...]}}
+    """
+    col_bucket_blobs = {}
+    for col in df.columns:
+        if df[col].str.startswith("gs://").any():
+            bucket_blobs = defaultdict(list)
+            for uri in df[col].dropna().unique():
+                if uri.startswith("gs://"):
+                    parts = uri[5:].split("/", 1)
+                    if len(parts) != 2:
+                        raise ValueError(
+                            f"Invalid GSURI '{uri}': must be in the format 'gs://bucket_name/blob_name'"
+                        )
+                    bucket_blobs[parts[0]].append(parts[1])
+            col_bucket_blobs[col] = bucket_blobs
+    return col_bucket_blobs
 
 
 def file_download_mngr(
-    df: pd.DataFrame, output_dir: Path, prefixes: set = {"gs://"}
+    df: pd.DataFrame, output_dir: Path, max_workers: int = 8
 ) -> None:
-    """Manage file downloads for prefixes in the specified DataFrame columns"""
+    """Manage parallel file downloads for GCS URIs in the specified DataFrame columns.
+    https://docs.cloud.google.com/storage/docs/downloading-objects#storage-download-object-python
+    https://docs.cloud.google.com/python/docs/reference/storage/latest/google.cloud.storage.transfer_manager#google_cloud_storage_transfer_manager_download_many
+    """
     storage_client = storage.Client()
-    for col in df.columns:
-        for prefix in prefixes:
-            if df[col].str.startswith(prefix).any():
-                download_dir = output_dir / col
-                download_dir.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Downloading files from '{col}'")
-                for uri in df[col].dropna().unique():
-                    if uri.startswith(prefix):
-                        try:
-                            logger.debug(f"Downloading {uri}")
-                            download_gsuri(storage_client, uri, download_dir)
-                        except Exception as e:
-                            logger.error(f"Failed to download file from {uri}: {e}")
+    col_bucket_blobs = _collect_gcs_uris(df)
+
+    for col, bucket_blobs in col_bucket_blobs.items():
+        download_dir = output_dir / col
+        download_dir.mkdir(parents=True, exist_ok=True)
+
+        for bucket_name, blob_names in bucket_blobs.items():
+            logger.info(
+                f"Downloading {len(blob_names)} file(s) from '{col}' "
+                f"(bucket: {bucket_name}, workers: {max_workers})"
+            )
+            bucket = storage_client.bucket(bucket_name)
+            # pair each blob with a flattened local filename
+            blob_file_pairs = [
+                (bucket.blob(blob_name), str(download_dir / Path(blob_name).name))
+                for blob_name in blob_names
+            ]
+            results = transfer_manager.download_many(
+                blob_file_pairs,
+                max_workers=max_workers,
+            )
+            for blob_name, result in zip(blob_names, results):
+                if isinstance(result, Exception):
+                    logger.error(f"Failed to download gs://{bucket_name}/{blob_name}: {result}")
+                else:
+                    logger.debug(f"Downloaded gs://{bucket_name}/{blob_name}")
 
 
 def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
@@ -291,4 +314,4 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             # output files to a subdirectory named after the table within the main output directory
             file_dir = output_dir / table
             file_dir.mkdir(parents=True, exist_ok=True)
-            file_download_mngr(filtered_df, file_dir)
+            file_download_mngr(filtered_df, file_dir, max_workers=args.max_workers)
