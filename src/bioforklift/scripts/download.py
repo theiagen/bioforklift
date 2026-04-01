@@ -1,3 +1,4 @@
+import time
 import fnmatch
 import argparse
 import pandas as pd
@@ -82,13 +83,6 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--files",
         action="store_true",
         help="Download GSURIs",
-    )
-    run_parser.add_argument(
-        "-w",
-        "--max_workers",
-        type=int,
-        default=16,
-        help="Maximum number of parallel download workers; DEFAULT: 16",
     )
     run_parser.add_argument(
         "-o",
@@ -219,12 +213,13 @@ def _collect_gcs_uris(df: pd.DataFrame) -> dict:
 
 
 def file_download_mngr(
-    df: pd.DataFrame, output_dir: Path, max_workers: int = 8
+    df: pd.DataFrame, output_dir: Path
 ) -> None:
     """Manage parallel file downloads for GCS URIs in the specified DataFrame columns.
     https://docs.cloud.google.com/storage/docs/downloading-objects#storage-download-object-python
     https://docs.cloud.google.com/python/docs/reference/storage/latest/google.cloud.storage.transfer_manager#google_cloud_storage_transfer_manager_download_many
     """
+    start_time = time.time()
     storage_client = storage.Client()
     col_bucket_blobs = _collect_gcs_uris(df)
 
@@ -235,7 +230,7 @@ def file_download_mngr(
         for bucket_name, blob_names in bucket_blobs.items():
             logger.info(
                 f"Downloading {len(blob_names)} file(s) from '{col}' "
-                f"(bucket: {bucket_name}, workers: {max_workers})"
+                f"(bucket: {bucket_name})"
             )
             bucket = storage_client.bucket(bucket_name)
             # pair each blob with a flattened local filename
@@ -245,7 +240,8 @@ def file_download_mngr(
             ]
             results = transfer_manager.download_many(
                 blob_file_pairs,
-                max_workers=max_workers,
+                worker_type="process",
+                max_workers=None,  # use default number of workers based on CPU count
             )
             for blob_name, result in zip(blob_names, results):
                 if isinstance(result, Exception):
@@ -253,6 +249,8 @@ def file_download_mngr(
                 else:
                     logger.debug(f"Downloaded gs://{bucket_name}/{blob_name}")
 
+    elapsed = time.time() - start_time
+    logger.info(f"File downloads completed in {elapsed:.3f}s")
 
 def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Download data from Terra workspace"""
@@ -314,4 +312,4 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             # output files to a subdirectory named after the table within the main output directory
             file_dir = output_dir / table
             file_dir.mkdir(parents=True, exist_ok=True)
-            file_download_mngr(filtered_df, file_dir, max_workers=args.max_workers)
+            file_download_mngr(filtered_df, file_dir)
