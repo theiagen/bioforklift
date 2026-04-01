@@ -19,10 +19,11 @@ def upload_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Path(s) to input data file(s) in Terra workspace (space-delimited)",
     )
     d_parser.add_argument(
-        "-t", "--table", 
-        type=str, 
+        "-t",
+        "--table",
+        type=str,
         nargs="+",
-        help="Terra entity table name(s) (space-delimited)"
+        help="Terra entity table name(s) (space-delimited)",
     )
     d_parser.add_argument(
         "-o", "--overwrite", action="store_true", help="Overwrite existing entities"
@@ -86,7 +87,7 @@ def upload(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             raise ValueError(
                 f"Table '{table_name}' already exists in workspace. Use --overwrite to replace it."
             )
-        
+
         # upload data to Terra
         terra.entities.upload_entities(data=df, target=table_name)
         logger.info(

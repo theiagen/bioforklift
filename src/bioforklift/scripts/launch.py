@@ -1,10 +1,12 @@
 import json
 import time
 import argparse
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from bioforklift.terra.exceptions import TerraServerError
 from bioforklift.scripts.configure import CLIConfig
+from bioforklift.scripts.download import extract_samples, filter_df
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig
 from bioforklift.forklift_logging import setup_logger
 
@@ -14,12 +16,9 @@ logger = setup_logger(__name__)
 
 def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Define command-line arguments for launch subcommand"""
-    wf_parser = parser.add_argument_group("Workflow Submission Parameters")
+    wf_parser = parser.add_argument_group("Workflow Parameters")
     wf_parser.add_argument(
         "-wf", "--workflow_name", type=str, help="Terra workflow name to run"
-    )
-    wf_parser.add_argument(
-        "-t", "--table", type=str, help="Terra entity table name for workflow"
     )
     wf_parser.add_argument(
         "-r",
@@ -34,56 +33,123 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="GitHub branch for workflow source; DEFAULT: main",
     )
 
-    launch_parser = parser.add_argument_group("Workflow Launch Parameters")
-    launch_parser.add_argument(
-        "-j", "--job_json", nargs="+", type=str, help="Path(s) to workflow submission JSON(s)"
+    tbl_parser = parser.add_argument_group("Table Parameters")
+    tbl_parser.add_argument(
+        "-t", "--table", type=str, help="Terra entity table name for workflow"
     )
-    launch_parser.add_argument(
-        "-s",
-        "--sample_col",
+    tbl_parser.add_argument(
+        "-s", "--samples", nargs="+", help="Sample name(s) to filter rows upon"
+    )
+    tbl_parser.add_argument(
+        "-f", "--filter", type=str, nargs="+", help="Strings to filter rows upon"
+    )
+    tbl_parser.add_argument(
+        "-fc",
+        "--filter_column",
         type=str,
-        default="samplename",
-        help="Column name in entity table for sample names; DEFAULT: samplename",
+        nargs="+",
+        help="Column name(s) to apply filter(s) to; DEFAULT: all",
     )
-    launch_parser.add_argument(
-        "-i",
-        "--input_json",
-        type=str,
-        help="Path to input JSON file for submission inputs",
+    tbl_parser.add_argument(
+        "-M",
+        "--exact_match",
+        action="store_true",
+        help="Require exact match rather than substring match for filter(s)",
     )
-    launch_parser.add_argument(
-        "-o",
-        "--output_json",
-        type=str,
-        help="Path to output JSON file for submission outputs",
+    tbl_parser.add_argument(
+        "-e",
+        "--exclusion_filter",
+        action="store_true",
+        help="Exclude rows matching the filter(s)",
     )
+    tbl_parser.add_argument(
+        "-x",
+        "--max_rows",
+        type=int,
+        help="Maximum number of rows to include per filter; DEFAULT: all rows",
+    )
+    tbl_parser.add_argument(
+        "-R",
+        "--randomize",
+        action="store_true",
+        help="Randomize extraction of filtered rows",
+    )
+
+    launch_parser = parser.add_argument_group("Launch Parameters")
     launch_parser.add_argument(
         "-cc",
         "--call_cache",
         action="store_true",
-        help="Enable call caching for the workflow submission",
+        help="Enable call caching",
     )
     launch_parser.add_argument(
-        "-c",
+        "-C",
         "--comment",
         type=str,
-        default="",
-        help="User comment for the workflow submission",
+        help="Submission comment",
     )
     launch_parser.add_argument(
         "-ie",
         "--ignore_empty",
         action="store_true",
-        help="Ignore empty outputs in the workflow submission",
+        help="Ignore empty outputs",
     )
     launch_parser.add_argument(
         "--sleep",
         type=int,
-        default=1,
-        help="Seconds to wait between launching multiple workflows; DEFAULT: 1",
+        default=5,
+        help="Seconds to wait between launching multiple workflows; DEFAULT: 5",
     )
 
-    ws_parser = parser.add_argument_group("Terra Workspace Parameters")
+    io_parser = parser.add_argument_group("Input/Output Parameters")
+    io_parser.add_argument(
+        "-j",
+        "--job_json",
+        nargs="+",
+        type=str,
+        help="Path(s) to workflow submission JSON(s)",
+    )
+    io_parser.add_argument(
+        "-i",
+        "--input_json",
+        type=str,
+        help="Path to input JSON file for workflow input mapping",
+    )
+    io_parser.add_argument(
+        "-o",
+        "--output_json",
+        type=str,
+        help="Path to output JSON file for workflow output mapping",
+    )
+    io_parser.add_argument(
+        "-n",
+        "--input_variables",
+        type=str,
+        nargs="+",
+        help="Input variable(s) (prepended with WDL workflow name, will overwrite JSON variables)",
+    )
+    io_parser.add_argument(
+        "-nv",
+        "--input_values",
+        type=str,
+        nargs="+",
+        help="Input value(s) (ordered with --input_variables)",
+    )
+    io_parser.add_argument(
+        "-I",
+        "--id_variable",
+        type=str,
+        default="samplename",
+        help="Input variable for sample ID mapping; DEFAULT: samplename",
+    )
+    io_parser.add_argument(
+        "-ww",
+        "--wdl_workflow",
+        type=str,
+        help="WDL workflow name to prepend --input_variables; DEFAULT: workflow name",
+    )
+
+    ws_parser = parser.add_argument_group("Terra Parameters")
     ws_parser.add_argument("-ws", "--workspace", type=str, help="Terra workspace name")
     ws_parser.add_argument("-p", "--project", type=str, help="Terra project name")
     ws_parser.add_argument(
@@ -117,7 +183,15 @@ def arg_handling(args: argparse.Namespace) -> None:
         raise ValueError(
             "--table, --input_json, and --output_json cannot be used with --job_json"
         )
-
+    elif (args.input_variables and not args.input_values) or (
+        not args.input_variables and args.input_values
+    ):
+        raise ValueError("--input_variables and --input_values must be used together")
+    elif args.input_variables and args.input_values:
+        if len(args.input_variables) != len(args.input_values):
+            raise ValueError(
+                "The number of --input_variables and --input_values values must be the same"
+            )
 
 
 def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
@@ -131,12 +205,19 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
         "table": True,
         "input_json": True,
         "output_json": True,
-        "sample_col": True,
+        "id_variable": True,
         "comment": False,
         "branch": True,
         "call_cache": True,
         "ignore_empty": True,
         "preexisting_config": True,
+        "filter": False,
+        "filter_column": False,
+        "exact_match": False,
+        "randomize": False,
+        "exclusion_filter": False,
+        "max_rows": False,
+        "samples": False,
     }
 
     job_dict = {}
@@ -185,6 +266,25 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                     raise KeyError(
                         f"Missing required argument '{arg}' for workflow '{wf}'"
                     )
+
+    # update with command line input_variabless if required
+    if args_dict.get("input_variables"):
+        modified_io = {
+            mod: val
+            for mod, val in zip(
+                args_dict.get("input_variables"), args_dict.get("input_values")
+            )
+        }
+        for wf, wf_data in job_dict.items():
+            # prepend workflow name to added keys
+            wf_io = {}
+            for k, v in modified_io.items():
+                if args_dict.get("wdl_workflow"):
+                    wf_io[f"{args_dict.get('wdl_workflow')}.{k}"] = v
+                else:
+                    wf_io[f"{wf}.{k}"] = v
+            job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **wf_io}
+
     return job_dict
 
 
@@ -199,9 +299,26 @@ def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
         raise TerraServerError(
             f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?"
         )
-    result = terra.entities.create_entity_set(
-        f"{job_data['table']}_set_{current_time}", job_data["table"], new_table_df
-    )
+    # filter if requested
+    if (
+        job_data.get("samples")
+        or job_data.get("filter")
+        or job_data.get("randomize")
+        or job_data.get("max_rows")
+    ):
+        logger.info(f"Filtering table {job_data['table']}")
+        samples = filter_mngr(new_table_df, job_data, terra)
+        logger.info(
+            f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}"
+        )
+        result = terra.entities.create_entity_set(
+            f"{job_data['table']}_set_{current_time}", job_data["table"], samples
+        )
+    else:
+        result = terra.entities.create_entity_set(
+            f"{job_data['table']}_set_{current_time}", job_data["table"], new_table_df
+        )
+
     if not result.ok:
         logger.error(f"Failed to create {job_data['table']} entity set")
         raise TerraServerError(f"Entity set creation failed: {result.text}")
@@ -210,13 +327,15 @@ def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
     return f"{job_data['table']}_set_{current_time}"  # return name of entity set created for use in workflow config
 
 
-def prepare_method_config(mod_method_config: MethodConfig, 
-                          job_data: dict, 
-                          terra: Terra, 
-                          config: CLIConfig,
-                          source_repo: str = "dockstore",
-                          method_uri: str = None,
-                          method_config_version: int = 0) -> MethodConfig:
+def prepare_method_config(
+    mod_method_config: MethodConfig,
+    job_data: dict,
+    terra: Terra,
+    config: CLIConfig,
+    source_repo: str = "dockstore",
+    method_uri: str = None,
+    method_config_version: int = 0,
+) -> MethodConfig:
     """Prepare a method configuration for workflow submission by incorporating metadata"""
     # modify method config for the new workspace
     mod_method_config.namespace = terra.client.destination_project
@@ -226,12 +345,15 @@ def prepare_method_config(mod_method_config: MethodConfig,
     mod_method_config.methodRepoMethod.methodPath = (
         f"{config.repository}/{job_data['workflow_name']}"
     )
-    mod_method_config.methodRepoMethod.methodVersion = config.branch
+    mod_method_config.methodRepoMethod.methodVersion = job_data["branch"]
     mod_method_config.methodConfigVersion = method_config_version
 
     # set inputs from json file and dynamically set samplename based on table name
     mod_method_config.inputs = job_data["input_json"]
-    mod_method_config.inputs[f"{job_data['table']}.{job_data['sample_col']}"] = (
+    # get prefix of input json keys to dynamically set id_variable
+    # NOTE: this assumes there is at least one input
+    wf_prefix = list(job_data["input_json"])[0].split(".")[0]
+    mod_method_config.inputs[f"{wf_prefix}.{job_data['id_variable']}"] = (
         f"this.{job_data['table']}_id"
     )
     # set outputs from json file
@@ -253,7 +375,13 @@ def validate_method_config(mod_method_config: MethodConfig, terra: Terra) -> dic
     return val
 
 
-def prepare_workflow_config(terra: Terra, current_time: str, mod_method_config: MethodConfig, job_data: dict, config: CLIConfig) -> WorkflowConfig:
+def prepare_workflow_config(
+    terra: Terra,
+    current_time: str,
+    mod_method_config: MethodConfig,
+    job_data: dict,
+    config: CLIConfig,
+) -> WorkflowConfig:
     """Prepare a workflow configuration for workflow submission by incorporating metadata"""
     wf_config_params = {
         "methodConfigurationNamespace": terra.client.destination_project,
@@ -266,7 +394,7 @@ def prepare_workflow_config(terra: Terra, current_time: str, mod_method_config: 
         "useReferenceDisks": False,
         "memoryRetryMultiplier": 1.0,
         "workflowFailureMode": "NoNewCalls",
-        "userComment": job_data.get("comment", ""),
+        "userComment": job_data.get("comment", job_data.get("branch", "")),
         "ignoreEmptyOutputs": config.ignore_empty,
     }
 
@@ -275,11 +403,14 @@ def prepare_workflow_config(terra: Terra, current_time: str, mod_method_config: 
     return workflow_config
 
 
-def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
+def launch_job(
+    args: argparse.Namespace, job_data: dict, terra: Terra, config: CLIConfig
+) -> None:
     """Launch a workflow in Terra based on provided job data"""
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Prepare the workspace for workflow submission by creating an entity set based on the input table
+
     prepare_entity_set(terra, job_data, current_time)
 
     # get method config dictionary from existing workspace
@@ -287,7 +418,9 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
         base_method_config_dict = terra.methods.get_method_config(
             job_data["workflow_name"], use_destination=True
         )
-        base_method_config = terra.methods.dict_to_method_config(base_method_config_dict)
+        base_method_config = terra.methods.dict_to_method_config(
+            base_method_config_dict
+        )
     # generate method config dictionary
     else:
         base_method_config = terra.methods.generate_method_config(
@@ -296,22 +429,48 @@ def launch_job(job_data: dict, terra: Terra, config: CLIConfig) -> None:
             job_data["table"],
             job_data["input_json"],
             job_data["output_json"],
-            config.branch
+            job_data["branch"],
         )
 
     mod_method_config = base_method_config.model_copy(deep=True)
-    mod_method_config = prepare_method_config(mod_method_config, job_data, terra, config)
+    mod_method_config = prepare_method_config(
+        mod_method_config, job_data, terra, config
+    )
 
     # Adds or overwrites the method configuration in the Terra workspace
     terra.methods.overwrite_method_config(mod_method_config, use_destination=True)
     validate_method_config(mod_method_config, terra)
 
     # Prepare and submit the workflow configuration for execution in Terra
-    workflow_config = prepare_workflow_config(terra, current_time, mod_method_config, job_data, config)
+    workflow_config = prepare_workflow_config(
+        terra, current_time, mod_method_config, job_data, config
+    )
     submission = terra.submissions.submit_workflow(workflow_config)
     logger.info(submission)
     status = terra.submissions.get_submission_status(submission["submissionId"])
+    # this is perhaps a suboptimal way of doing this due to hard-coding the Terra link
+    submission_prefix = f"https://app.terra.bio/#workspaces/{config.project}/{config.workspace}/submission_history/"
+    submission_url = f"{submission_prefix}{submission['submissionId']}"
+    logger.info(f"Submission URL: {submission_url}")
     logger.debug(status)
+
+
+def filter_mngr(df: pd.DataFrame, job_data: dict, terra: Terra) -> list:
+    """Extract sample list from filters"""
+    sample_col = df.columns[0]
+    if job_data.get("samples"):
+        logger.debug(f"Extracting samples: {job_data.get('samples')}")
+        df = extract_samples(df, samples=job_data.get("samples"), sample_col=sample_col)
+    filtered_df = filter_df(
+        df,
+        filters=job_data.get("filter"),
+        filter_columns=job_data.get("filter_column"),
+        match=job_data.get("exact_match", False),
+        exclude=job_data.get("exclusion_filter", False),
+        max_rows=job_data.get("max_rows"),
+        randomize=job_data.get("randomize", False),
+    )
+    return filtered_df[sample_col].tolist()
 
 
 def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
@@ -335,7 +494,10 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     )
 
     # Submit workflows for each job in the job dictionary
+    first = True
     for wf_name, job_data in job_dicts.items():
+        if not first:
+            time.sleep(args.sleep)
+        first = False
         logger.info(f"Launching workflow: {wf_name}")
-        launch_job(job_data, terra, config)
-        time.sleep(args.sleep)
+        launch_job(args, job_data, terra, config)
