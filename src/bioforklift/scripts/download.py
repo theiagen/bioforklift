@@ -1,3 +1,4 @@
+import os
 import time
 import fnmatch
 import argparse
@@ -83,6 +84,13 @@ def download_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--files",
         action="store_true",
         help="Download GSURIs",
+    )
+    run_parser.add_argument(
+        "-w",
+        "--max_workers",
+        type=int,
+        default=os.cpu_count(),
+        help="Maximum number of parallel download workers; DEFAULT: number of logical CPUs in the system",
     )
     run_parser.add_argument(
         "-o",
@@ -213,7 +221,9 @@ def _collect_gcs_uris(df: pd.DataFrame) -> dict:
 
 
 def file_download_mngr(
-    df: pd.DataFrame, output_dir: Path
+    df: pd.DataFrame,
+    output_dir: Path,
+    max_workers: int = None,
 ) -> None:
     """Manage parallel file downloads for GCS URIs in the specified DataFrame columns.
     https://docs.cloud.google.com/storage/docs/downloading-objects#storage-download-object-python
@@ -241,7 +251,7 @@ def file_download_mngr(
             results = transfer_manager.download_many(
                 blob_file_pairs,
                 worker_type="process",
-                max_workers=None,  # use default number of workers based on CPU count
+                max_workers=max_workers, # "None" will set max_workers to os.cpu_count()
             )
             for blob_name, result in zip(blob_names, results):
                 if isinstance(result, Exception):
@@ -312,4 +322,4 @@ def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             # output files to a subdirectory named after the table within the main output directory
             file_dir = output_dir / table
             file_dir.mkdir(parents=True, exist_ok=True)
-            file_download_mngr(filtered_df, file_dir)
+            file_download_mngr(filtered_df, file_dir, max_workers=args.max_workers)
