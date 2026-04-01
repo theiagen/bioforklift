@@ -220,7 +220,7 @@ class BigQueryConfigOperations:
         # Map schema field types to accepted ScalarQueryParameterType value
         BQ_TYPE_MAP = {
             "BOOLEAN": "BOOL",
-            "INT": "INT64",
+            "INTEGER": "INT64",
             "FLOAT": "FLOAT64"
         }
 
