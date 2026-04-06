@@ -216,6 +216,14 @@ class BigQueryConfigOperations:
         Returns:
             Updated configuration or None if not found
         """
+
+        # Map schema field types to accepted ScalarQueryParameterType value
+        BQ_TYPE_MAP = {
+            "BOOLEAN": "BOOL",
+            "INTEGER": "INT64",
+            "FLOAT": "FLOAT64"
+        }
+
         # Validate update data
         if not update_data:
             logger.warning("No fields to update")
@@ -232,7 +240,7 @@ class BigQueryConfigOperations:
         # Handle special fields like JSON objects
         processed_data = update_data.copy()
         for field in self.schema:
-            if field.field_type.upper() == "STRING" and field.name in processed_data:
+            if field.field_type.upper() in ("STRING", "JSON")  and field.name in processed_data:
                 if isinstance(processed_data[field.name], dict) or isinstance(
                     processed_data[field.name], list
                 ):
@@ -248,7 +256,9 @@ class BigQueryConfigOperations:
 
                 
                 field_def = self.data_processor.schema_definition.get_field(field)
-                param_type = field_def.field_type if field_def else "STRING"
+
+                raw_type = field_def.field_type if field_def else "STRING"
+                param_type = BQ_TYPE_MAP.get(raw_type, raw_type)
 
                 params.append(bigquery.ScalarQueryParameter(field, param_type, value))
 

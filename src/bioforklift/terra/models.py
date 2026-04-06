@@ -93,7 +93,7 @@ class MethodConfig(BaseModel):
     def _encode_value(value: Any) -> str:
         """Encode a single input value for Terra API."""
         # Keep Terra workspace references as-is
-        if isinstance(value, str) and value.startswith("this."):
+        if isinstance(value, str) and (value.startswith("this.") or value.startswith("workspace.")):
             return value
 
         # If it's already a JSON-encoded string, return as-is
