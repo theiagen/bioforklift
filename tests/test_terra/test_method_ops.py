@@ -36,6 +36,7 @@ def sample_method_config(mock_terra_client):
         ),
         inputs={
             "example.terra_ref": "this.value",
+            "example.workspace_ref": "workspace.value",
             "example.str": "test",
             "example.int": 5,
             "example.float": 3.14,
@@ -122,7 +123,7 @@ class TestMethodConfig:
 
         # This should not get converted; should remain as string reference
         assert config["inputs"]["example.terra_ref"] == "this.value"
-
+        assert config["inputs"]["example.workspace_ref"] == "workspace.value"
 
     def test_method_config_validate_minimal(
         self,
