@@ -240,69 +240,62 @@ class Terra2BQ:
         # First let's coerce data types to not have issues with mismatches coming from Terra
         self.samples_ops.coerce_dataframe_types(terra_df)
 
-        # Build a Terra lookup by deduplicating on the entity identifier (keep first)
-        terra_entity_col = terra_df.columns[0]
-        terra_deduped = terra_df.drop_duplicates(subset=[terra_entity_col], keep="first")
+        # For each sample in BigQuery, check if it exists in Terra
+        # We've seen that the Terra data may have multiple rows for the same entity
+        # Or that the entity may not exist in Terra at all because it was filtered out / deleted by user lab
+        for _, bq_sample in config_samples.iterrows():
+            bq_id = bq_sample["id"]
+            entity_id = bq_sample[sample_identifier_field]
 
-        # Resolve Terra field name mappings once using the first row
-        terra_field_map = {}
-        if not terra_deduped.empty:
-            sample_terra_row = terra_deduped.iloc[0]
-            for field_to_sync in sync_fields:
-                terra_field = self._get_terra_field_name(field_to_sync, sample_terra_row)
-                if terra_field:
-                    terra_field_map[field_to_sync] = terra_field
+            # Try to find this entity in the Terra data
+            terra_rows = terra_df[terra_df.iloc[:, 0] == entity_id]
 
-        # Merge BQ samples with Terra data for O(N) lookup instead of O(N×M)
-        merged = config_samples.merge(
-            terra_deduped,
-            left_on=sample_identifier_field,
-            right_on=terra_entity_col,
-            how="inner",
-            suffixes=("_bq", "_terra"),
-        )
+            if terra_rows.empty:
+                continue
 
-        for _, row in merged.iterrows():
-            bq_id = row["id"] if "id" in row else row.get("id_bq")
-            entity_id = row[sample_identifier_field] if sample_identifier_field in row else row.get(f"{sample_identifier_field}_bq")
+            # Take the first matching row
+            terra_row = terra_rows.iloc[0]
 
+            # Check each sync field
             sample_update = {"id": bq_id}
             entity_updates = {}
             needs_update = False
 
             for field_to_sync in sync_fields:
-                terra_field = terra_field_map.get(field_to_sync)
-                if not terra_field:
+                # Skip fields that already have values in BigQuery
+                
+                terra_field = self._get_terra_field_name(field_to_sync, terra_row) 
+                
+                if not terra_field or pd.isna(terra_row[terra_field]) or terra_row[terra_field] == "":
                     continue
 
-                # Resolve the terra value column (may have _terra suffix from merge)
-                terra_col = f"{terra_field}_terra" if f"{terra_field}_terra" in row.index else terra_field
-                terra_value = row.get(terra_col)
-
-                if pd.isna(terra_value) or terra_value == "":
-                    continue
-
-                # Resolve the BQ value column (may have _bq suffix from merge)
-                bq_col = f"{field_to_sync}_bq" if f"{field_to_sync}_bq" in row.index else field_to_sync
-                bq_value = row.get(bq_col)
-
+                terra_value = terra_row[terra_field]
+                
+                # Set update_required to false by default
+                # If overwrite_metadata is true, we always want to update
                 update_required = False
-
+                
+                # Extract the value from BigQuery we want to interrogate
+                bq_value = bq_sample.get(field_to_sync)
+                
                 if overwrite_metadata:
                     logger.debug(
                         f"Overwriting {field_to_sync} in BigQuery with value from Terra: {terra_value}"
                     )
+                    # If we are overwriting the values, then we need to check if they are different
                     if pd.isna(bq_value) or bq_value == "" or bq_value != terra_value:
                         update_required = True
                 else:
+                    # If we are not overwriting the values, then just we need to check if the value is empty
                     if pd.isna(bq_value) or bq_value == "":
                         update_required = True
-
+                    
+                        
                 if update_required:
                     sample_update[field_to_sync] = terra_value
                     entity_updates[field_to_sync] = terra_value
                     needs_update = True
-
+            
             if needs_update:
                 bq_updates.append(sample_update)
                 updated_entities[entity_id] = entity_updates
