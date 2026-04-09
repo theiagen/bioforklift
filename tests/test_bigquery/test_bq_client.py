@@ -360,12 +360,8 @@ class TestBigQueryClient:
         # Sample data
         sample_rows = [{"id": "3f0900b6-8b0b-48ca-948e-fdaccefb5220", "name": "VRDL"}]
 
-        # Mock get_table with a real schema so LoadJobConfig doesn't reject it
+        # Mock get_table
         mock_table = MagicMock()
-        mock_table.schema = [
-            bigquery.SchemaField("id", "STRING"),
-            bigquery.SchemaField("name", "STRING"),
-        ]
         mock_bigquery_client.get_table.return_value = mock_table
 
         # Mock load_table_from_file with errors

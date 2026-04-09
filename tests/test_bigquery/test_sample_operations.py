@@ -231,19 +231,30 @@ class TestBigQuerySampleOperations:
             }
         ]
 
-        # Mock the UPDATE query job
+        # Mock query jobs for update and verification
         mock_update_job = MagicMock()
         mock_update_job.result.return_value = None
-        mock_update_job.num_dml_affected_rows = 2
 
-        bigquery_client.query.return_value = mock_update_job
+        # Mock verification query result
+        verify_result = [
+            MagicMock(id="uuid1"),
+            MagicMock(id="uuid2")
+        ]
+        mock_verify_job = MagicMock()
+        mock_verify_job.result.return_value = verify_result
+
+        # Return different mock jobs for different queries
+        bigquery_client.query.side_effect = [mock_update_job, mock_verify_job]
 
         # Test the bulk update
         result = sample_operations.bulk_update_samples(updates)
 
-        # Check query execution - only the UPDATE query, no verification
-        assert bigquery_client.query.call_count == 1
+        # Check query execution
+        assert bigquery_client.query.call_count == 2
+        # First call should be the UPDATE query
         assert "UPDATE" in bigquery_client.query.call_args_list[0][0][0]
+        # Second call should be the verification query
+        assert "SELECT id" in bigquery_client.query.call_args_list[1][0][0]
 
         # Check result
         assert result["updated_count"] == 2
