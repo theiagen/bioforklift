@@ -217,6 +217,7 @@ class Terra2BQ:
         update_bigquery: bool = True,
         update_batch_size: int = 1,
         overwrite_metadata: bool = False,
+        allow_null_overwrite: bool = False,
     ) -> MetadataSyncResult:
         """
         Update BigQuery records with metadata from Terra.
@@ -229,10 +230,18 @@ class Terra2BQ:
             update_bigquery: Whether to actually update BigQuery
             update_batch_size: Number of samples to update in a single batch
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery from source Terra table
+            allow_null_overwrite: When combined with overwrite_metadata, allow an empty/null Terra
+                value to clear a populated BigQuery field. Destination Terra is not touched by
+                null clears — this is a BigQuery-only override.
 
         Returns:
             MetadataSyncResult with update status, counts, and entities
         """
+        if allow_null_overwrite and not overwrite_metadata:
+            logger.warning(
+                "allow_null_overwrite=True has no effect without overwrite_metadata=True; "
+                "ignoring null-overwrite behavior"
+            )
         bq_updates = []
         updated_entities = {}
         failed_updates = []
@@ -262,43 +271,49 @@ class Terra2BQ:
             needs_update = False
 
             for field_to_sync in sync_fields:
-                # Skip fields that already have values in BigQuery
-                
-                terra_field = self._get_terra_field_name(field_to_sync, terra_row) 
-                
-                if not terra_field or pd.isna(terra_row[terra_field]) or terra_row[terra_field] == "":
+                terra_field = self._get_terra_field_name(field_to_sync, terra_row)
+
+                if not terra_field:
                     continue
 
                 terra_value = terra_row[terra_field]
-                
-                # Set update_required to false by default
-                # If overwrite_metadata is true, we always want to update
-                update_required = False
-                
-                # Extract the value from BigQuery we want to interrogate
+                terra_is_empty = pd.isna(terra_value) or terra_value == ""
                 bq_value = bq_sample.get(field_to_sync)
-                
-                if overwrite_metadata:
+                bq_is_empty = pd.isna(bq_value) or bq_value == ""
+
+                update_required = False
+                write_value = terra_value
+                # Null clears are BigQuery-only: don't push empties to destination Terra.
+                propagate_to_destination = True
+
+                if terra_is_empty:
+                    if overwrite_metadata and allow_null_overwrite and not bq_is_empty:
+                        logger.debug(
+                            f"Clearing {field_to_sync} in BigQuery (Terra value is empty)"
+                        )
+                        update_required = True
+                        write_value = None
+                        propagate_to_destination = False
+                elif overwrite_metadata:
                     logger.debug(
                         f"Overwriting {field_to_sync} in BigQuery with value from Terra: {terra_value}"
                     )
-                    # If we are overwriting the values, then we need to check if they are different
-                    if pd.isna(bq_value) or bq_value == "" or bq_value != terra_value:
+                    if bq_is_empty or bq_value != terra_value:
                         update_required = True
                 else:
-                    # If we are not overwriting the values, then just we need to check if the value is empty
-                    if pd.isna(bq_value) or bq_value == "":
+                    if bq_is_empty:
                         update_required = True
-                    
-                        
+
                 if update_required:
-                    sample_update[field_to_sync] = terra_value
-                    entity_updates[field_to_sync] = terra_value
+                    sample_update[field_to_sync] = write_value
+                    if propagate_to_destination:
+                        entity_updates[field_to_sync] = write_value
                     needs_update = True
-            
+
             if needs_update:
                 bq_updates.append(sample_update)
-                updated_entities[entity_id] = entity_updates
+                if entity_updates:
+                    updated_entities[entity_id] = entity_updates
 
         # Track updates and failed updates
         updated_count = 0
@@ -306,7 +321,11 @@ class Terra2BQ:
         if bq_updates and update_bigquery:
             logger.info(f"Updating {len(bq_updates)} samples with metadata from Terra")
             try:
-                update_result = self.samples_ops.bulk_update_samples(bq_updates, batch_size=update_batch_size)
+                update_result = self.samples_ops.bulk_update_samples(
+                    bq_updates,
+                    batch_size=update_batch_size,
+                    allow_nulls=overwrite_metadata and allow_null_overwrite,
+                )
 
                 if update_result.get("failed_updates"):
                     failed_updates.extend(update_result["failed_updates"])
@@ -1827,6 +1846,7 @@ class Terra2BQ:
         days_back: int,
         sync_fields: List[str],
         overwrite_metadata: bool = False,
+        allow_null_overwrite: bool = False,
         page_size: Optional[int] = None,
         update_bigquery: bool = True,
         update_destination: bool = True,
@@ -1841,6 +1861,8 @@ class Terra2BQ:
             days_back: Number of days to look back for samples
             sync_fields: List of metadata fields to sync between Terra and BigQuery
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
+            allow_null_overwrite: When combined with overwrite_metadata, let empty/null Terra values
+                clear populated BigQuery fields. Does not propagate nulls to destination Terra.
             page_size: Number of rows to fetch per page from Terra (for large tables)
             update_bigquery: Whether to update BigQuery with Terra metadata
             update_destination: Whether to update destination Terra datatable
@@ -1971,6 +1993,7 @@ class Terra2BQ:
             update_bigquery=update_bigquery,
             update_batch_size=update_batch_size,
             overwrite_metadata=overwrite_metadata,
+            allow_null_overwrite=allow_null_overwrite,
         )
 
         # Update destination Terra with updated entities
@@ -2006,6 +2029,7 @@ class Terra2BQ:
         self,
         days_back: int = 30,
         overwrite_metadata: bool = False,
+        allow_null_overwrite: bool = False,
         page_size: Optional[int] = None,
         update_bigquery: bool = True,
         update_destination: bool = True,
@@ -2021,6 +2045,8 @@ class Terra2BQ:
         Args:
             days_back: Number of days to look back for samples
             overwrite_metadata: Whether to overwrite existing metadata in BigQuery where != to Terra value
+            allow_null_overwrite: When combined with overwrite_metadata, let empty/null Terra values
+                clear populated BigQuery fields. Nulls are not propagated to destination Terra.
             page_size: Number of rows to fetch per page from Terra (for large tables)
             update_bigquery: Whether to update BigQuery with Terra metadata (set to False for dry run)
             update_destination: Whether to update destination Terra datatable (set to False for dry run)
@@ -2124,6 +2150,7 @@ class Terra2BQ:
                     days_back=days_back,
                     sync_fields=sync_fields,
                     overwrite_metadata=overwrite_metadata,
+                    allow_null_overwrite=allow_null_overwrite,
                     page_size=page_size,
                     update_bigquery=update_bigquery,
                     update_destination=update_destination,
