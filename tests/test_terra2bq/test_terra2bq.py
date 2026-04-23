@@ -1046,3 +1046,125 @@ def test_update_bigquery_with_terra_metadata_overwrite_behavior(t2bq):
     assert isinstance(result, MetadataSyncResult)
     assert result.status == OperationStatus.NO_UPDATES
     assert result.bq_updated_count == 0
+
+
+def test_update_bigquery_with_terra_metadata_allow_null_overwrite(t2bq):
+    """Terra null/empty values clear BigQuery fields only when both overwrite_metadata
+    and allow_null_overwrite are True, and never propagate to destination Terra."""
+
+    t2bq._get_terra_field_name = MagicMock(
+        side_effect=lambda field, row: field if field in row.index else None
+    )
+    t2bq.samples_ops.coerce_dataframe_types = MagicMock()
+
+    # sample1: Terra null, BQ populated       -> should be cleared when flag is on
+    # sample2: Terra empty string, BQ populated -> should be cleared when flag is on
+    # sample3: Terra null, BQ null            -> no-op (nothing to clear)
+    # sample4: Terra populated, BQ populated (different) -> normal overwrite path
+    bq_samples = pd.DataFrame({
+        "id": ["sample1", "sample2", "sample3", "sample4"],
+        "entity_name": ["entity1", "entity2", "entity3", "entity4"],
+        "existing_field": ["bq_value1", "bq_value2", None, "bq_value4"],
+    })
+
+    terra_data = pd.DataFrame({
+        "entity_name": ["entity1", "entity2", "entity3", "entity4"],
+        "existing_field": [None, "", None, "terra_value4"],
+    })
+
+    # Default behavior: allow_null_overwrite=False — null Terra values are skipped,
+    # only sample4 gets its differing value overwritten.
+    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
+        "updated_count": 1,
+        "failed_updates": []
+    })
+
+    result = t2bq._update_bigquery_with_terra_metadata(
+        config_samples=bq_samples,
+        terra_df=terra_data,
+        sync_fields=["existing_field"],
+        sample_identifier_field="entity_name",
+        update_bigquery=True,
+        overwrite_metadata=True,
+        allow_null_overwrite=False,
+    )
+
+    assert result.status == OperationStatus.SUCCESS
+    call_kwargs = t2bq.samples_ops.bulk_update_samples.call_args.kwargs
+    assert call_kwargs["allow_nulls"] is False
+    updates = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
+    update_ids = {u["id"] for u in updates}
+    assert update_ids == {"sample4"}
+
+    # allow_null_overwrite=True — sample1 and sample2 should be cleared,
+    # sample3 is a no-op (both sides empty), sample4 keeps its normal overwrite.
+    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
+        "updated_count": 3,
+        "failed_updates": []
+    })
+
+    result = t2bq._update_bigquery_with_terra_metadata(
+        config_samples=bq_samples,
+        terra_df=terra_data,
+        sync_fields=["existing_field"],
+        sample_identifier_field="entity_name",
+        update_bigquery=True,
+        overwrite_metadata=True,
+        allow_null_overwrite=True,
+    )
+
+    assert result.status == OperationStatus.SUCCESS
+    call_kwargs = t2bq.samples_ops.bulk_update_samples.call_args.kwargs
+    assert call_kwargs["allow_nulls"] is True
+
+    updates = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
+    updates_by_id = {u["id"]: u for u in updates}
+
+    assert set(updates_by_id.keys()) == {"sample1", "sample2", "sample4"}
+    assert updates_by_id["sample1"]["existing_field"] is None
+    assert updates_by_id["sample2"]["existing_field"] is None
+    assert updates_by_id["sample4"]["existing_field"] == "terra_value4"
+
+    # Destination Terra should not receive the null clears — only sample4 flows through.
+    assert set(result.updated_entities.keys()) == {"entity4"}
+    assert result.updated_entities["entity4"] == {"existing_field": "terra_value4"}
+
+
+def test_allow_null_overwrite_requires_overwrite_metadata(t2bq, caplog):
+    """allow_null_overwrite without overwrite_metadata should warn and behave like the default."""
+    import logging
+
+    t2bq._get_terra_field_name = MagicMock(
+        side_effect=lambda field, row: field if field in row.index else None
+    )
+    t2bq.samples_ops.coerce_dataframe_types = MagicMock()
+
+    bq_samples = pd.DataFrame({
+        "id": ["sample1"],
+        "entity_name": ["entity1"],
+        "existing_field": ["bq_value1"],
+    })
+    terra_data = pd.DataFrame({
+        "entity_name": ["entity1"],
+        "existing_field": [None],
+    })
+
+    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
+        "updated_count": 0,
+        "failed_updates": []
+    })
+
+    with caplog.at_level(logging.WARNING):
+        result = t2bq._update_bigquery_with_terra_metadata(
+            config_samples=bq_samples,
+            terra_df=terra_data,
+            sync_fields=["existing_field"],
+            sample_identifier_field="entity_name",
+            update_bigquery=True,
+            overwrite_metadata=False,
+            allow_null_overwrite=True,
+        )
+
+    assert any("allow_null_overwrite" in record.message for record in caplog.records)
+    assert result.status == OperationStatus.NO_UPDATES
+    t2bq.samples_ops.bulk_update_samples.assert_not_called()

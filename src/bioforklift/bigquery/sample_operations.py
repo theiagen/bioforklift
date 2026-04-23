@@ -386,7 +386,12 @@ class BigQuerySampleOperations:
         )
         
     
-    def bulk_update_samples(self, updates: List[Dict[str, Any]], batch_size: int = 1000) -> Dict[str, Any]:
+    def bulk_update_samples(
+        self,
+        updates: List[Dict[str, Any]],
+        batch_size: int = 1000,
+        allow_nulls: bool = False,
+    ) -> Dict[str, Any]:
         """
         Bulk update samples using a single query.
 
@@ -394,16 +399,18 @@ class BigQuerySampleOperations:
             updates: List of dictionaries with updates, each must have an 'id' field
                     Example: [{'id': '123', 'status': 'succeeded', 'upload_date': '2024-02-24'}]
             batch_size: Number of records to process in each batch (default: 1000)
+            allow_nulls: If True, pass None values through to BigQuery as NULL writes. When
+                False (default), None-valued fields are stripped and left untouched.
 
         Returns:
             Dictionary with update results
         """
-        # Function largely ported from the original bulk_update_samples function in google-workflows, 
+        # Function largely ported from the original bulk_update_samples function in google-workflows,
         # but with some modifications to work with the BigQuery client and schema attributes
-        
+
         all_updated_ids = []
         all_failed_updates = []
-        
+
         try:
             if not updates:
                 logger.info("No updates provided")
@@ -418,7 +425,8 @@ class BigQuerySampleOperations:
 
                 sample_id = update["id"]
                 update_data = {
-                    k: v for k, v in update.items() if k != "id" and v is not None
+                    k: v for k, v in update.items()
+                    if k != "id" and (allow_nulls or v is not None)
                 }
 
                 # Coerce types using the data processor to handle numpy types and schema types
