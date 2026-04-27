@@ -143,6 +143,12 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Input variable for sample ID mapping; DEFAULT: samplename",
     )
     io_parser.add_argument(
+        "-ni",
+        "--no_id",
+        action="store_true",
+        help="Do not generate a sample ID input; DEFAULT: False"
+    )
+    io_parser.add_argument(
         "-ww",
         "--wdl_workflow",
         type=str,
@@ -335,6 +341,7 @@ def prepare_method_config(
     source_repo: str = "dockstore",
     method_uri: str = None,
     method_config_version: int = 0,
+    generate_id: bool = True
 ) -> MethodConfig:
     """Prepare a method configuration for workflow submission by incorporating metadata"""
     # modify method config for the new workspace
@@ -353,9 +360,11 @@ def prepare_method_config(
     # get prefix of input json keys to dynamically set id_variable
     # NOTE: this assumes there is at least one input
     wf_prefix = list(job_data["input_json"])[0].split(".")[0]
-    mod_method_config.inputs[f"{wf_prefix}.{job_data['id_variable']}"] = (
-        f"this.{job_data['table']}_id"
-    )
+    # generating IDs should ideally be modifiable in the job_json 
+    if generate_id:
+        mod_method_config.inputs[f"{wf_prefix}.{job_data['id_variable']}"] = (
+            f"this.{job_data['table']}_id"
+        )
     # set outputs from json file
     mod_method_config.outputs = job_data["output_json"]
     return mod_method_config
@@ -434,7 +443,7 @@ def launch_job(
 
     mod_method_config = base_method_config.model_copy(deep=True)
     mod_method_config = prepare_method_config(
-        mod_method_config, job_data, terra, config
+        mod_method_config, job_data, terra, config, generate_id = not args.no_id
     )
 
     # Adds or overwrites the method configuration in the Terra workspace
