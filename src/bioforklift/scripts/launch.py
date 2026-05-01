@@ -136,13 +136,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Input value(s) (ordered with --input_variables)",
     )
     io_parser.add_argument(
-        "-I",
-        "--id_variable",
-        type=str,
-        default="samplename",
-        help="Input variable for sample ID mapping; DEFAULT: samplename",
-    )
-    io_parser.add_argument(
         "-ww",
         "--wdl_workflow",
         type=str,
@@ -205,7 +198,6 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
         "table": True,
         "input_json": True,
         "output_json": True,
-        "id_variable": True,
         "comment": False,
         "branch": True,
         "call_cache": True,
@@ -350,12 +342,6 @@ def prepare_method_config(
 
     # set inputs from json file and dynamically set samplename based on table name
     mod_method_config.inputs = job_data["input_json"]
-    # get prefix of input json keys to dynamically set id_variable
-    # NOTE: this assumes there is at least one input
-    wf_prefix = list(job_data["input_json"])[0].split(".")[0]
-    mod_method_config.inputs[f"{wf_prefix}.{job_data['id_variable']}"] = (
-        f"this.{job_data['table']}_id"
-    )
     # set outputs from json file
     mod_method_config.outputs = job_data["output_json"]
     return mod_method_config
