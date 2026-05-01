@@ -50,6 +50,32 @@ class TerraEntities:
             # Return the full entity data structure dictionary
             return entity_data
 
+    def get_entities(
+        self,
+        entity_type: str,
+        use_destination: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all entities (rows) from a given entity type (table) from a Terra workspace.
+        `entityType` = Terra table name
+        `entities` = Terra table rows
+        `attributes` = Terra table columns
+
+        Args:
+            entity_type: Name of the entity type to retrieve
+            use_destination: Whether to use destination workspace (True) or source workspace (False)
+        Returns:
+            List of dictionaries containing metadata for each entity of the specified type
+        """
+        response = self.client.get(f"entities/{entity_type}", use_destination=use_destination)
+
+        logger.info(f"Retrieved all entities of type '{entity_type}' from Terra workspace")
+
+        if response.status_code != 200:
+            logger.error(f"Failed to retrieve entities of type '{entity_type}': {response.text}")
+            raise ValueError(f"Failed to retrieve entities of type '{entity_type}': {response.text}")
+        return response.json()
+
     def get_entity(
         self,
         entity_type: str,
@@ -57,7 +83,7 @@ class TerraEntities:
         use_destination: bool = False
     ) -> Dict[str, Any]:
         """
-        Get entity from a Terra workspace.
+        Get a specific entity (row) from a given entity type (table) from a Terra workspace.
         `entityType` = Terra table name
         `entities` = Terra table rows
         `attributes` = Terra table columns
