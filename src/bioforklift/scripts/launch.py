@@ -275,7 +275,7 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
             with open(job_json_path, "r") as json_file:
                 json_data = json.load(json_file)
             # iterate through workflows in json file
-            for wf, entity_dict in json_data.items():
+            for wf, entity_dict in json_data["entities"].items():
                 job_dict[wf] = {}
                 for entity, wf_data in entity_dict.items():
                     job_dict[wf][entity] = wf_data
