@@ -232,14 +232,14 @@ def prepare_entity_name(
         if entity_exists:
             if reuse_set:
                 logger.info(f"Entity '{entity_name}' exists and will be reused")
-                return entity_exists
+                return entity_name, entity_exists
             else:
                 new_entity_name = f"{entity_name}_{current_time}"
                 logger.warning(
                     f"Entity '{entity_name}' exists and new entity will be named {new_entity_name}"
                 )
-                return new_entity_name
-    return f"{table_name}_set_{current_time}"
+                return new_entity_name, False
+    return f"{table_name}_set_{current_time}", False
 
 
 def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
@@ -275,9 +275,9 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
             with open(job_json_path, "r") as json_file:
                 json_data = json.load(json_file)
             # iterate through workflows in json file
-            for wf, entity_dict in json_data["entities"].items():
+            for wf, wf_dict in json_data.items():
                 job_dict[wf] = {}
-                for entity, wf_data in entity_dict.items():
+                for entity, wf_data in wf_dict.items():
                     job_dict[wf][entity] = wf_data
                     for arg, require in wf_args.items():
                         # use the argument preferentially from command-line
@@ -547,10 +547,15 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             first = False
             logger.info(f"Launching workflow: {wf_name}")
 
+            # determine if table name exists and do we need to reuse this
             clean_table_name = job_data["table"].removesuffix("_set")
-            clean_entity_name = prepare_entity_name(
+            clean_entity_name, entity_exists = prepare_entity_name(
                 terra, entity_name, clean_table_name, job_data["reuse_set"]
             )
-            prepare_entity_set(terra, clean_table_name, job_data, clean_entity_name)
 
+            # create the set if it does not exist
+            if not entity_exists:
+                prepare_entity_set(terra, clean_table_name, job_data, clean_entity_name)
+            
+            # launch the job
             launch_job(clean_entity_name, job_data, terra, config)
