@@ -239,8 +239,7 @@ def prepare_entity_name(
                     f"Entity '{entity_name}' exists and new entity will be named {new_entity_name}"
                 )
                 return new_entity_name
-    else:
-        return f"{table_name}_set_{current_time}"
+    return f"{table_name}_set_{current_time}"
 
 
 def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
