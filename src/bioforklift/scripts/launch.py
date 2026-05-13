@@ -199,7 +199,7 @@ def arg_handling(args: argparse.Namespace) -> None:
             )
 
 
-def check_entity_exists(terra: Terra, entity_name: Str, table_name: Str) -> bool:
+def check_entity_exists(terra: Terra, entity_name: str, table_name: str) -> bool:
     """Check if a specific entity (set) exists in the Terra workspace"""
     entity_type = f"{table_name.removesuffix("_set")}_set"  # entity type is always the set table, even if the user is referencing an existing non-set table
     try:
@@ -217,8 +217,8 @@ def check_entity_exists(terra: Terra, entity_name: Str, table_name: Str) -> bool
 
 
 def prepare_entity_name(
-    terra: Terra, entity_name: Str, table_name: Str, reuse_set: bool
-) -> Str:
+    terra: Terra, entity_name: str, table_name: str, reuse_set: bool
+) -> str:
 
     # Create a default entity name and update `job_data` with it if the user hasn't provided an --entity_name
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
