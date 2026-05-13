@@ -43,11 +43,11 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Terra entity (set) name for workflow; DEFAULT: table name with timestamp",
     )
     tbl_parser.add_argument(
-        "-os",
-        "--overwrite_set",
+        "-rs",
+        "--reuse_set",
         action="store_true",
         default=False,
-        help="Overwrite set defined by '--entity_name'; DEFAULT: use preexisting sample set",
+        help="Reuse set defined by '--entity_name' - overrides '--samples'; DEFAULT: append current time to existing set",
     )
     tbl_parser.add_argument(
         "-s", "--samples", nargs="+", help="Sample name(s) to filter rows upon"
@@ -252,7 +252,7 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
     wf_args = {
         "workflow_name": True,
         "table": True,
-        "overwrite_set": False,
+        "reuse_set": False,
         "input_json": True,
         "output_json": True,
         "comment": False,
