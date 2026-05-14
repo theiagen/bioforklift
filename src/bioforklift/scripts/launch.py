@@ -239,6 +239,8 @@ def prepare_entity_name(
                     f"Entity '{entity_name}' exists and new entity will be named {new_entity_name}"
                 )
                 return new_entity_name, False
+        else:
+            return entity_name, False
     return f"{table_name}_set_{current_time}", False
 
 
