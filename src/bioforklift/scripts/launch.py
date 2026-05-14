@@ -278,6 +278,8 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
             for wf, wf_dict in json_data.items():
                 job_dict[wf] = {}
                 for entity, wf_data in wf_dict.items():
+                    if entity == "null": # artifact of JSON incompatibility with null keys
+                        entity = None
                     job_dict[wf][entity] = wf_data
                     for arg, require in wf_args.items():
                         # use the argument preferentially from command-line
