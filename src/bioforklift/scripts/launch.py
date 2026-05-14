@@ -240,7 +240,7 @@ def prepare_entity_name(
                 )
                 return new_entity_name, False
         else:
-            return entity_name, False
+            return entity_name, entity_exists 
     return f"{table_name}_set_{current_time}", False
 
 
