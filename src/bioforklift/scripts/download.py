@@ -191,7 +191,7 @@ def filter_df(
         return df.loc[tot_df.index]
     elif randomize or max_rows is not None:
         if randomize:
-            str_df = str_df.sample(frac=1, random_state=42)
+            str_df = str_df.sample(frac=1)
         if max_rows is not None:
             str_df = str_df.head(max_rows)
         return df.loc[str_df.index]
