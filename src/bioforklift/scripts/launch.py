@@ -331,7 +331,7 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
             )
         }
         for wf, entity_dict in job_dict.items():
-            for entity, wf_data in wf_dict.items():
+            for entity, wf_data in entity_dict.items():
                 # prepend workflow name to added keys
                 wf_io = {}
                 for k, v in modified_io.items():
