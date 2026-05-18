@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, Mock
 from bioforklift.terra import TerraEntities
+from bioforklift.terra.exceptions import TerraNotFoundError
 import pandas as pd
 
 
@@ -185,6 +186,77 @@ class TestDownloadTable:
         assert "sample_id" in dataframe.columns
         assert "value1" in dataframe.columns
         assert "value2" in dataframe.columns
+
+
+class TestGetEntity:
+    def test_get_entity_basic(self, data_ops, mock_terra_client):
+        """Test basic get_entity returns parsed JSON payload"""
+        fake_entity = {
+            "name": "sample1_row",
+            "entityType": "sample_table",
+            "attributes": {"col": "value"},
+        }
+        mock_terra_client.get.return_value = Mock(
+            status_code=200, json=lambda: fake_entity
+        )
+
+        result = data_ops.get_entity(
+            entity_type="sample_table",
+            entity_name="sample1_row",
+        )
+
+        mock_terra_client.get.assert_called_once_with(
+            "entities/sample_table/sample1_row", use_destination=False
+        )
+        assert result == fake_entity
+
+    def test_get_entity_not_found(self, data_ops, mock_terra_client):
+        """Test that a TerraNotFoundError from the client propagates out"""
+        mock_terra_client.get.side_effect = TerraNotFoundError("not found")
+
+        with pytest.raises(TerraNotFoundError):
+            data_ops.get_entity(
+                entity_type="sample_table",
+                entity_name="sample1_row",
+            )
+
+
+class TestGetEntities:
+    def test_get_entities_basic(self, data_ops, mock_terra_client):
+        """Test basic get_entities returns list of entity dicts"""
+        fake_entities = [
+            {
+                "name": "sample1_row",
+                "entityType": "sample_table",
+                "attributes": {"col": "value"},
+            },
+            {
+                "name": "sample2_row",
+                "entityType": "sample_table",
+                "attributes": {"col": "value"},
+            },
+        ]
+        mock_terra_client.get.return_value = Mock(
+            status_code=200, json=lambda: fake_entities
+        )
+
+        result = data_ops.get_entities(entity_type="sample_table")
+
+        mock_terra_client.get.assert_called_once_with(
+            "entities/sample_table", use_destination=False
+        )
+        assert result == fake_entities
+        assert len(result) == 2
+        assert result[0]["name"] == "sample1_row"
+        assert result[1]["name"] == "sample2_row"
+
+
+    def test_get_entities_not_found(self, data_ops, mock_terra_client):
+        """Test that a TerraNotFoundError from the client propagates out"""
+        mock_terra_client.get.side_effect = TerraNotFoundError("not found")
+
+        with pytest.raises(TerraNotFoundError):
+            data_ops.get_entities(entity_type="sample_table")
 
 
 class TestCreateEntitySet:
