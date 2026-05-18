@@ -728,6 +728,7 @@ class Terra2BQ:
             state_updates = []
             workflow_states = {}
             failed_updates = []
+            total_updated = 0
 
             for _, sample in incomplete_samples.iterrows():
                 sample_id = sample.get("id")
@@ -762,6 +763,7 @@ class Terra2BQ:
                             context="incomplete workflows",
                         )
 
+                        total_updated += update_result.workflow_count
                         if update_result.failed_updates:
                             failed_updates.extend(update_result.failed_updates)
 
@@ -784,12 +786,13 @@ class Terra2BQ:
                     context="incomplete workflows (final batch)",
                 )
 
+                total_updated += update_result.workflow_count
                 if update_result.failed_updates:
                     failed_updates.extend(update_result.failed_updates)
-                    
+
             return {
-                "status": "success" if state_updates else "no_updates",
-                "updated_count": len(state_updates),
+                "status": "success" if total_updated > 0 else "no_updates",
+                "updated_count": total_updated,
                 "workflow_states": workflow_states,
                 "failed_updates": failed_updates,
             }

@@ -847,6 +847,99 @@ def test_update_workflow_status_for_config_success(t2bq, sample_config):
     assert t2bq._process_submission.call_count == 2
     t2bq._process_incomplete_workflows.assert_called_once()
 
+
+def _make_workflow_mock(workflow_id, status):
+    """Build a fake workflow object with workflow_id/status attributes."""
+    wf = MagicMock()
+    wf.workflow_id = workflow_id
+    wf.status = status
+    return wf
+
+
+def test_process_incomplete_workflows_counts_all_batches(t2bq):
+    """
+    Regression: _process_incomplete_workflows must count updates flushed in
+    every batch, not just the leftover after the last in-loop flush.
+
+    Previous behavior: when total samples was an exact multiple of batch_size,
+    state_updates was emptied by the in-loop flush and the function returned
+    status='no_updates' with updated_count=0 — even though every row was
+    written. This made 'Running' (and other incomplete) updates look invisible.
+    """
+    # 4 samples in 'Running', batch_size=2 -> two inner flushes, no leftover
+    incomplete_df = pd.DataFrame({
+        "id": ["sample1", "sample2", "sample3", "sample4"],
+        "terra_workflow_id": ["wf1", "wf2", "wf3", "wf4"],
+        "terra_submission_id": ["sub1", "sub1", "sub1", "sub1"],
+    })
+    t2bq.samples_ops.get_incomplete_workflow_samples.return_value = incomplete_df
+
+    workflows = [_make_workflow_mock(f"wf{i}", "Running") for i in range(1, 5)]
+    t2bq.terra.submissions.get_workflows_by_submission.return_value = workflows
+
+    t2bq._apply_batch_updates = MagicMock(
+        side_effect=lambda batch_updates, batch_size, update_bigquery, context: WorkflowResult(
+            status=OperationStatus.SUCCESS,
+            workflow_count=len(batch_updates),
+            failed_updates=[],
+        )
+    )
+
+    result = t2bq._process_incomplete_workflows(
+        config_id="test-config-id",
+        days_back=30,
+        batch_size=2,
+        update_bigquery=True,
+    )
+
+    # Two inner batch flushes, no final-leftover flush
+    assert t2bq._apply_batch_updates.call_count == 2
+    assert result["status"] == "success"
+    assert result["updated_count"] == 4
+    assert result["workflow_states"] == {"Running": 4}
+    assert result["failed_updates"] == []
+
+
+def test_process_incomplete_workflows_counts_partial_final_batch(t2bq):
+    """
+    Regression: the previous return value used len(state_updates) for
+    updated_count, which only reflected the leftover partial batch. The fix
+    accumulates workflow_count from every _apply_batch_updates call.
+    """
+    incomplete_df = pd.DataFrame({
+        "id": ["sample1", "sample2", "sample3", "sample4", "sample5"],
+        "terra_workflow_id": ["wf1", "wf2", "wf3", "wf4", "wf5"],
+        "terra_submission_id": ["sub1"] * 5,
+    })
+    t2bq.samples_ops.get_incomplete_workflow_samples.return_value = incomplete_df
+
+    statuses = ["Running", "Running", "Submitted", "Running", "Submitted"]
+    workflows = [_make_workflow_mock(f"wf{i + 1}", statuses[i]) for i in range(5)]
+    t2bq.terra.submissions.get_workflows_by_submission.return_value = workflows
+
+    t2bq._apply_batch_updates = MagicMock(
+        side_effect=lambda batch_updates, batch_size, update_bigquery, context: WorkflowResult(
+            status=OperationStatus.SUCCESS,
+            workflow_count=len(batch_updates),
+            failed_updates=[],
+        )
+    )
+
+    result = t2bq._process_incomplete_workflows(
+        config_id="test-config-id",
+        days_back=30,
+        batch_size=2,
+        update_bigquery=True,
+    )
+
+    # 2 inner flushes (2 + 2) + 1 final flush (1 leftover)
+    assert t2bq._apply_batch_updates.call_count == 3
+    assert result["status"] == "success"
+    assert result["updated_count"] == 5
+    assert result["workflow_states"] == {"Running": 3, "Submitted": 2}
+    assert result["failed_updates"] == []
+
+
 # # Test update_workflow_status
 def test_update_workflow_status_success(t2bq):
     """Test successful update_workflow_status across all configs"""
