@@ -68,6 +68,10 @@ bioforklift launch \
   -o <OUTPUTS_JSON>
 ```
 
+#### Set workflows
+
+To indicate a set workflow, ensure `-t` contains the suffix "_set".
+
 #### Workflow JSON
 
 A workflow JSON can be provided as input with multiple workflows specified. Redundant execution commands are preferentially chosen based on the following hierarchy: command-line > JSON > bioforklift configuration.
@@ -77,13 +81,16 @@ A simple example workflow job JSON (please note workspace, project, branch, and 
 ```json
 {
     <LOCAL_WF_NAME_1>: {
-        "workflow_name": <TERRA_WF_NAME>,
-        "table": <TERRA_TABLE>,
-        "comment": <EXECUTION_COMMENT>,
-        "input_json": <INPUTS_JSON>,
-        "output_json": <OUTPUTS_JSON>
-    },
+        <TERRA_ENTITY_NAME>: { # "null"/""/None will default to `-t` + time 
+          "samples": [], # empty list indicates all samples
+          "workflow_name": <TERRA_WF_NAME>,
+          "table": <TERRA_TABLE>,
+          "comment": <EXECUTION_COMMENT>,
+          "input_json": <INPUTS_JSON>,
+          "output_json": <OUTPUTS_JSON>
+      },
     ...
+    },
     <LOCAL_WF_NAME_n>: {..}
 }
 ```

@@ -4,7 +4,7 @@ import argparse
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
-from bioforklift.terra.exceptions import TerraServerError
+from bioforklift.terra.exceptions import TerraServerError, TerraNotFoundError
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.scripts.download import extract_samples, filter_df
 from bioforklift.terra import Terra, WorkflowConfig, MethodConfig
@@ -36,6 +36,18 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     tbl_parser = parser.add_argument_group("Table Parameters")
     tbl_parser.add_argument(
         "-t", "--table", type=str, help="Terra entity table name for workflow"
+    )
+    tbl_parser.add_argument(
+        "--entity_name",
+        type=str,
+        help="Terra entity (set) name for workflow; DEFAULT: table name with timestamp",
+    )
+    tbl_parser.add_argument(
+        "-rs",
+        "--reuse_set",
+        action="store_true",
+        default=False,
+        help="Reuse set defined by '--entity_name' - overrides '--samples'; DEFAULT: append current time to existing set",
     )
     tbl_parser.add_argument(
         "-s", "--samples", nargs="+", help="Sample name(s) to filter rows upon"
@@ -136,13 +148,6 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Input value(s) (ordered with --input_variables)",
     )
     io_parser.add_argument(
-        "-I",
-        "--id_variable",
-        type=str,
-        default="samplename",
-        help="Input variable for sample ID mapping; DEFAULT: samplename",
-    )
-    io_parser.add_argument(
         "-ww",
         "--wdl_workflow",
         type=str,
@@ -194,7 +199,52 @@ def arg_handling(args: argparse.Namespace) -> None:
             )
 
 
-def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
+def check_entity_exists(terra: Terra, entity_name: str, table_name: str) -> bool:
+    """Check if a specific entity (set) exists in the Terra workspace"""
+    entity_type = f"{table_name.removesuffix("_set")}_set"  # entity type is always the set table, even if the user is referencing an existing non-set table
+    try:
+        entity = terra.entities.get_entity(
+            entity_type=entity_type,
+            entity_name=entity_name,
+            use_destination=True,
+        )
+        return entity is not None
+    except TerraNotFoundError:
+        return False
+    except TerraServerError as e:
+        logger.error(f"Error checking for entity existence: {e}")
+        raise e
+
+
+def prepare_entity_name(
+    terra: Terra, entity_name: str, table_name: str, reuse_set: bool
+) -> str:
+
+    # Create a default entity name and update `job_data` with it if the user hasn't provided an --entity_name
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Raise an error if the user tries to create a set that already exists
+    # Otherwise create the new set with either the default timestammped name or the user-provided --entity_name
+    if entity_name:
+        logger.info(f"Checking if entity '{entity_name}' exists")
+        entity_exists = check_entity_exists(terra, entity_name, table_name)
+
+        if entity_exists:
+            if reuse_set:
+                logger.info(f"Entity '{entity_name}' exists and will be reused")
+                return entity_name, entity_exists
+            else:
+                new_entity_name = f"{entity_name}_{current_time}"
+                logger.warning(
+                    f"Entity '{entity_name}' exists and new entity will be named {new_entity_name}"
+                )
+                return new_entity_name, False
+        else:
+            return entity_name, entity_exists 
+    return f"{table_name}_set_{current_time}", False
+
+
+def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
     """Extract workflow submission parameters from JSON file if provided
 
     Preference is given to command-line arguments over JSON file values."""
@@ -203,9 +253,9 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
     wf_args = {
         "workflow_name": True,
         "table": True,
+        "reuse_set": False,
         "input_json": True,
         "output_json": True,
-        "id_variable": True,
         "comment": False,
         "branch": True,
         "call_cache": True,
@@ -227,40 +277,47 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
             with open(job_json_path, "r") as json_file:
                 json_data = json.load(json_file)
             # iterate through workflows in json file
-            for wf, wf_data in json_data.items():
-                job_dict[wf] = wf_data
-                for arg, require in wf_args.items():
-                    # use the argument preferentially from command-line
-                    if args_dict.get(arg) is not None:
-                        job_dict[wf][arg] = args_dict.get(arg)
-                    # else use from json if present
-                    elif wf_data.get(arg) is not None:
-                        job_dict[wf][arg] = wf_data.get(arg)
-                    # else pull from config if required
-                    elif require:
-                        if config.__dict__.get(arg) is not None:
-                            job_dict[wf][arg] = config.__dict__.get(arg)
-                        # raise error if still missing
-                        else:
-                            raise KeyError(
-                                f"Missing required argument '{arg}' for workflow '{wf}'"
-                            )
+            for wf, wf_dict in json_data.items():
+                job_dict[wf] = {}
+                for entity, wf_data in wf_dict.items():
+                    if args_dict["entity_name"]:
+                        entity = args_dict["entity_name"] 
+                    elif entity == "null" or entity == "": # artifact of JSON incompatibility with null keys
+                        entity = None
+                    job_dict[wf][entity] = wf_data
+                    for arg, require in wf_args.items():
+                        # use the argument preferentially from command-line
+                        if args_dict.get(arg) is not None:
+                            job_dict[wf][entity][arg] = args_dict.get(arg)
+                        # else use from json if present
+                        elif wf_data.get(arg) is not None:
+                            job_dict[wf][entity][arg] = wf_data.get(arg)
+                        # else pull from config if required
+                        elif require:
+                            if config.__dict__.get(arg) is not None:
+                                job_dict[wf][entity][arg] = config.__dict__.get(arg)
+                            # raise error if still missing
+                            else:
+                                raise KeyError(
+                                    f"Missing required argument '{arg}' for workflow '{wf}'"
+                                )
     else:
         # single workflow from command-line args
         wf = args_dict["workflow_name"]
-        job_dict[wf] = {"workflow_name": wf}
+        entity = args_dict["entity_name"]
+        job_dict[wf] = {entity: {"workflow_name": wf}}
         for arg, require in wf_args.items():
             # use from command-line args if present
             if args_dict.get(arg) is not None:
                 if arg == "input_json" or arg == "output_json":
                     with open(args_dict.get(arg), "r") as io_file:
-                        job_dict[wf][arg] = json.load(io_file)
+                        job_dict[wf][entity][arg] = json.load(io_file)
                 else:
-                    job_dict[wf][arg] = args_dict.get(arg)
+                    job_dict[wf][entity][arg] = args_dict.get(arg)
             # else pull from config if required
             elif require:
                 if config.__dict__.get(arg) is not None:
-                    job_dict[wf][arg] = config.__dict__.get(arg)
+                    job_dict[wf][entity][arg] = config.__dict__.get(arg)
                 # raise error if still missing
                 else:
                     raise KeyError(
@@ -275,29 +332,34 @@ def prepare_job_dict(args_dict: dict, config: CLIConfig) -> dict:
                 args_dict.get("input_variables"), args_dict.get("input_values")
             )
         }
-        for wf, wf_data in job_dict.items():
-            # prepend workflow name to added keys
-            wf_io = {}
-            for k, v in modified_io.items():
-                if args_dict.get("wdl_workflow"):
-                    wf_io[f"{args_dict.get('wdl_workflow')}.{k}"] = v
-                else:
-                    wf_io[f"{wf}.{k}"] = v
-            job_dict[wf]["input_json"] = {**job_dict[wf]["input_json"], **wf_io}
+        for wf, entity_dict in job_dict.items():
+            for entity, wf_data in entity_dict.items():
+                # prepend workflow name to added keys
+                wf_io = {}
+                for k, v in modified_io.items():
+                    if args_dict.get("wdl_workflow"):
+                        wf_io[f"{args_dict.get('wdl_workflow')}.{k}"] = v
+                    else:
+                        wf_io[f"{wf}.{k}"] = v
+                job_dict[wf][entity]["input_json"] = {
+                    **job_dict[wf][entity]["input_json"],
+                    **wf_io,
+                }
 
     return job_dict
 
 
-def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
+def prepare_entity_set(
+    terra: Terra, table_name: str, job_data: dict, entity_name=None
+) -> str:
     """Prepare a table in the Terra workspace for workflow submission by creating an entity set based on the input table"""
+    # cannot download set tables, so we must download the base and then create the set
     # could implement a way to use local table
     try:
-        new_table_df = terra.entities.download_table(
-            job_data["table"], use_destination=True
-        )
+        new_table_df = terra.entities.download_table(table_name, use_destination=True)
     except TerraServerError as e:
         raise TerraServerError(
-            f"Error downloading table; does \"{job_data['table']}\" exist in the Terra workspace?"
+            f'Error downloading table; does "{table_name}" exist in the Terra workspace?'
         )
     # filter if requested
     if (
@@ -306,25 +368,21 @@ def prepare_entity_set(terra: Terra, job_data: dict, current_time: str) -> str:
         or job_data.get("randomize")
         or job_data.get("max_rows")
     ):
-        logger.info(f"Filtering table {job_data['table']}")
+        logger.info(f"Filtering table {table_name}")
         samples = filter_mngr(new_table_df, job_data, terra)
         logger.info(
             f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}"
         )
-        result = terra.entities.create_entity_set(
-            f"{job_data['table']}_set_{current_time}", job_data["table"], samples
-        )
+        result = terra.entities.create_entity_set(entity_name, table_name, samples)
     else:
-        result = terra.entities.create_entity_set(
-            f"{job_data['table']}_set_{current_time}", job_data["table"], new_table_df
-        )
+        result = terra.entities.create_entity_set(entity_name, table_name, new_table_df)
 
     if not result.ok:
-        logger.error(f"Failed to create {job_data['table']} entity set")
+        logger.error(f"Failed to create {entity_name} entity set")
         raise TerraServerError(f"Entity set creation failed: {result.text}")
 
-    logger.info(f"{job_data['table']} entity set created successfully")
-    return f"{job_data['table']}_set_{current_time}"  # return name of entity set created for use in workflow config
+    logger.info(f"{entity_name} entity set created successfully")
+    return entity_name  # return name of entity set created for use in workflow config
 
 
 def prepare_method_config(
@@ -350,12 +408,6 @@ def prepare_method_config(
 
     # set inputs from json file and dynamically set samplename based on table name
     mod_method_config.inputs = job_data["input_json"]
-    # get prefix of input json keys to dynamically set id_variable
-    # NOTE: this assumes there is at least one input
-    wf_prefix = list(job_data["input_json"])[0].split(".")[0]
-    mod_method_config.inputs[f"{wf_prefix}.{job_data['id_variable']}"] = (
-        f"this.{job_data['table']}_id"
-    )
     # set outputs from json file
     mod_method_config.outputs = job_data["output_json"]
     return mod_method_config
@@ -377,18 +429,21 @@ def validate_method_config(mod_method_config: MethodConfig, terra: Terra) -> dic
 
 def prepare_workflow_config(
     terra: Terra,
-    current_time: str,
     mod_method_config: MethodConfig,
     job_data: dict,
+    entity_name: str,
     config: CLIConfig,
 ) -> WorkflowConfig:
     """Prepare a workflow configuration for workflow submission by incorporating metadata"""
+    set_mode = job_data["table"].endswith("_set")
     wf_config_params = {
         "methodConfigurationNamespace": terra.client.destination_project,
         "methodConfigurationName": mod_method_config.name,
-        "entityType": f"{job_data['table']}_set",  # entityType is name of set table
-        "entityName": f"{job_data['table']}_set_{current_time}",  # entityName is name of specific row in table
-        "expression": f"this.{job_data['table']}s",  # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
+        "entityType": f"{job_data['table'].removesuffix("_set")}_set",  # entityType will always be the name of the set table
+        "entityName": f"{entity_name}",  # entityName is name of specific row in table
+        "expression": (
+            None if set_mode else f"this.{job_data['table']}s"
+        ),  # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
         "useCallCache": config.call_cache,
         "deleteIntermediateOutputFiles": False,
         "useReferenceDisks": False,
@@ -404,14 +459,9 @@ def prepare_workflow_config(
 
 
 def launch_job(
-    args: argparse.Namespace, job_data: dict, terra: Terra, config: CLIConfig
+    entity_name: str, job_data: dict, terra: Terra, config: CLIConfig
 ) -> None:
     """Launch a workflow in Terra based on provided job data"""
-    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Prepare the workspace for workflow submission by creating an entity set based on the input table
-
-    prepare_entity_set(terra, job_data, current_time)
 
     # get method config dictionary from existing workspace
     if job_data.get("preexisting_config"):
@@ -443,7 +493,7 @@ def launch_job(
 
     # Prepare and submit the workflow configuration for execution in Terra
     workflow_config = prepare_workflow_config(
-        terra, current_time, mod_method_config, job_data, config
+        terra, mod_method_config, job_data, entity_name, config
     )
     submission = terra.submissions.submit_workflow(workflow_config)
     logger.info(submission)
@@ -483,7 +533,8 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     config.update(vars(args))
 
     # Prepare job dictionary from command-line arguments and/or JSON file input
-    job_dicts = prepare_job_dict(vars(args), config)
+
+    job_dicts = prepare_job_dicts(vars(args), config)
 
     # Initialize Terra client
     terra = Terra(
@@ -495,9 +546,22 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
 
     # Submit workflows for each job in the job dictionary
     first = True
-    for wf_name, job_data in job_dicts.items():
-        if not first:
-            time.sleep(args.sleep)
-        first = False
-        logger.info(f"Launching workflow: {wf_name}")
-        launch_job(args, job_data, terra, config)
+    for wf_name, entity_dict in job_dicts.items():
+        for entity_name, job_data in entity_dict.items():
+            if not first:
+                time.sleep(args.sleep)
+            first = False
+            logger.info(f"Launching workflow: {wf_name}")
+
+            # determine if table name exists and do we need to reuse this
+            clean_table_name = job_data["table"].removesuffix("_set")
+            clean_entity_name, entity_exists = prepare_entity_name(
+                terra, entity_name, clean_table_name, job_data["reuse_set"]
+            )
+
+            # create the set if it does not exist
+            if not entity_exists:
+                prepare_entity_set(terra, clean_table_name, job_data, clean_entity_name)
+            
+            # launch the job
+            launch_job(clean_entity_name, job_data, terra, config)

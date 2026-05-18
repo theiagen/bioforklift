@@ -188,14 +188,15 @@ def filter_df(
             tot_df = pd.concat(filtered_dfs).drop_duplicates()
         else:
             tot_df = pd.DataFrame(columns=df.columns)
+        return df.loc[tot_df.index]
     elif randomize or max_rows is not None:
         if randomize:
-            tot_df = str_df.sample(frac=1, random_state=42)
+            str_df = str_df.sample(frac=1)
         if max_rows is not None:
-            tot_df = str_df.head(max_rows)
+            str_df = str_df.head(max_rows)
+        return df.loc[str_df.index]
     else:
         return df
-    return df.loc[tot_df.index]
 
 
 def _collect_gcs_uris(df: pd.DataFrame) -> dict:
