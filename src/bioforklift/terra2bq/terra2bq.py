@@ -786,7 +786,7 @@ class Terra2BQ:
                     context="incomplete workflows (final batch)",
                 )
 
-                total_updated += update_result.workflow_count
+                total_updated += update_result.workflow_count or 0
                 if update_result.failed_updates:
                     failed_updates.extend(update_result.failed_updates)
 
