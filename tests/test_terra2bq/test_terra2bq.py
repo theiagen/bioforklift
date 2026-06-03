@@ -847,6 +847,99 @@ def test_update_workflow_status_for_config_success(t2bq, sample_config):
     assert t2bq._process_submission.call_count == 2
     t2bq._process_incomplete_workflows.assert_called_once()
 
+
+def _make_workflow_mock(workflow_id, status):
+    """Build a fake workflow object with workflow_id/status attributes."""
+    wf = MagicMock()
+    wf.workflow_id = workflow_id
+    wf.status = status
+    return wf
+
+
+def test_process_incomplete_workflows_counts_all_batches(t2bq):
+    """
+    Regression: _process_incomplete_workflows must count updates flushed in
+    every batch, not just the leftover after the last in-loop flush.
+
+    Previous behavior: when total samples was an exact multiple of batch_size,
+    state_updates was emptied by the in-loop flush and the function returned
+    status='no_updates' with updated_count=0 — even though every row was
+    written. This made 'Running' (and other incomplete) updates look invisible.
+    """
+    # 4 samples in 'Running', batch_size=2 -> two inner flushes, no leftover
+    incomplete_df = pd.DataFrame({
+        "id": ["sample1", "sample2", "sample3", "sample4"],
+        "terra_workflow_id": ["wf1", "wf2", "wf3", "wf4"],
+        "terra_submission_id": ["sub1", "sub1", "sub1", "sub1"],
+    })
+    t2bq.samples_ops.get_incomplete_workflow_samples.return_value = incomplete_df
+
+    workflows = [_make_workflow_mock(f"wf{i}", "Running") for i in range(1, 5)]
+    t2bq.terra.submissions.get_workflows_by_submission.return_value = workflows
+
+    t2bq._apply_batch_updates = MagicMock(
+        side_effect=lambda batch_updates, batch_size, update_bigquery, context: WorkflowResult(
+            status=OperationStatus.SUCCESS,
+            workflow_count=len(batch_updates),
+            failed_updates=[],
+        )
+    )
+
+    result = t2bq._process_incomplete_workflows(
+        config_id="test-config-id",
+        days_back=30,
+        batch_size=2,
+        update_bigquery=True,
+    )
+
+    # Two inner batch flushes, no final-leftover flush
+    assert t2bq._apply_batch_updates.call_count == 2
+    assert result["status"] == "success"
+    assert result["updated_count"] == 4
+    assert result["workflow_states"] == {"Running": 4}
+    assert result["failed_updates"] == []
+
+
+def test_process_incomplete_workflows_counts_partial_final_batch(t2bq):
+    """
+    Regression: the previous return value used len(state_updates) for
+    updated_count, which only reflected the leftover partial batch. The fix
+    accumulates workflow_count from every _apply_batch_updates call.
+    """
+    incomplete_df = pd.DataFrame({
+        "id": ["sample1", "sample2", "sample3", "sample4", "sample5"],
+        "terra_workflow_id": ["wf1", "wf2", "wf3", "wf4", "wf5"],
+        "terra_submission_id": ["sub1"] * 5,
+    })
+    t2bq.samples_ops.get_incomplete_workflow_samples.return_value = incomplete_df
+
+    statuses = ["Running", "Running", "Submitted", "Running", "Submitted"]
+    workflows = [_make_workflow_mock(f"wf{i + 1}", statuses[i]) for i in range(5)]
+    t2bq.terra.submissions.get_workflows_by_submission.return_value = workflows
+
+    t2bq._apply_batch_updates = MagicMock(
+        side_effect=lambda batch_updates, batch_size, update_bigquery, context: WorkflowResult(
+            status=OperationStatus.SUCCESS,
+            workflow_count=len(batch_updates),
+            failed_updates=[],
+        )
+    )
+
+    result = t2bq._process_incomplete_workflows(
+        config_id="test-config-id",
+        days_back=30,
+        batch_size=2,
+        update_bigquery=True,
+    )
+
+    # 2 inner flushes (2 + 2) + 1 final flush (1 leftover)
+    assert t2bq._apply_batch_updates.call_count == 3
+    assert result["status"] == "success"
+    assert result["updated_count"] == 5
+    assert result["workflow_states"] == {"Running": 3, "Submitted": 2}
+    assert result["failed_updates"] == []
+
+
 # # Test update_workflow_status
 def test_update_workflow_status_success(t2bq):
     """Test successful update_workflow_status across all configs"""
@@ -1168,3 +1261,300 @@ def test_allow_null_overwrite_requires_overwrite_metadata(t2bq, caplog):
     assert any("allow_null_overwrite" in record.message for record in caplog.records)
     assert result.status == OperationStatus.NO_UPDATES
     t2bq.samples_ops.bulk_update_samples.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Identifier resolution for sync_metadata
+#
+# Regression coverage for the case where the configured sample_identifier is
+# NOT the Terra entity ID (it is populated via column_mappings / use_field_name
+# from an attribute column). Before the fix, _update_bigquery_with_terra_metadata
+# always matched on the entity-ID column (terra_df.iloc[:, 0]) and silently
+# matched nothing for these configs.
+# ---------------------------------------------------------------------------
+
+from bioforklift.data_processing.sample_processor import SampleDataProcessor
+
+
+def _make_processor(tmp_path, schema_yaml: str) -> SampleDataProcessor:
+    schema_file = tmp_path / "id_schema.yaml"
+    schema_file.write_text(schema_yaml)
+    return SampleDataProcessor(str(schema_file))
+
+
+def test_get_identifier_source_columns_default_mapping(tmp_path):
+    """Default sample_identifier (no mapping) reports no configured source columns."""
+    processor = _make_processor(tmp_path, """fields:
+  sample_id:
+    type: string
+    sample_identifier: true
+""")
+    # No column_mappings / use_field_name -> identifier comes from the entity-ID rename
+    assert processor.get_identifier_source_columns() == []
+
+
+def test_get_identifier_source_columns_column_mappings(tmp_path):
+    """column_mappings identifier reports the configured mapping list."""
+    processor = _make_processor(tmp_path, """fields:
+  h5n1_id:
+    type: string
+    sample_identifier: true
+    column_mappings: ["entity:h5n1_specimen_id"]
+""")
+    assert processor.get_identifier_source_columns() == ["entity:h5n1_specimen_id"]
+
+
+def test_get_identifier_source_columns_use_field_name(tmp_path):
+    """use_field_name identifier reports the field name as its source column."""
+    processor = _make_processor(tmp_path, """fields:
+  basespace_sample_name:
+    type: string
+    sample_identifier: true
+    use_field_name: true
+""")
+    assert processor.get_identifier_source_columns() == ["basespace_sample_name"]
+
+
+def test_update_bigquery_errors_when_configured_identifier_column_missing(t2bq, tmp_path):
+    """
+    When the sample_identifier declares a source column (use_field_name /
+    column_mappings) but that column is absent from the Terra data, sync must
+    surface an ERROR rather than silently falling back to the entity-ID column
+    and matching nothing.
+    """
+    t2bq.sample_processor = _make_processor(tmp_path, """fields:
+  id:
+    type: string
+    primary_key: true
+    system_value: true
+  basespace_sample_name:
+    type: string
+    sample_identifier: true
+    use_field_name: true
+  assembly_status:
+    type: string
+    sync_field: true
+""")
+
+    t2bq.samples_ops.coerce_dataframe_types = MagicMock()
+    t2bq.samples_ops.bulk_update_samples = MagicMock()
+
+    bq_samples = pd.DataFrame({
+        "id": ["uuid1"],
+        "basespace_sample_name": ["BS_A"],
+        "assembly_status": [None],
+    })
+
+    # The configured identifier column 'basespace_sample_name' is NOT in the Terra data
+    terra_data = pd.DataFrame({
+        "entity:ohio_ar_test_id": ["t1"],
+        "assembly_status": ["PASS"],
+    })
+
+    result = t2bq._update_bigquery_with_terra_metadata(
+        config_samples=bq_samples,
+        terra_df=terra_data,
+        sync_fields=["assembly_status"],
+        sample_identifier_field="basespace_sample_name",
+        update_bigquery=True,
+        overwrite_metadata=False,
+    )
+
+    assert result.status == OperationStatus.ERROR
+    assert "basespace_sample_name" in result.message
+    t2bq.samples_ops.bulk_update_samples.assert_not_called()
+
+
+def test_update_bigquery_matches_non_entity_identifier(t2bq, tmp_path):
+    """
+    Regression: when sample_identifier is a non-entity attribute (use_field_name),
+    BigQuery samples must still be matched against the correct Terra attribute
+    column rather than the entity-ID column.
+
+    With the previous iloc[:, 0] matching, none of these samples would be found
+    and bq_updated_count would be 0.
+    """
+    t2bq.sample_processor = _make_processor(tmp_path, """fields:
+  id:
+    type: string
+    primary_key: true
+    system_value: true
+  sample_id:
+    type: string
+    column_mappings: ["entity:ohio_ar_test_id"]
+  basespace_sample_name:
+    type: string
+    sample_identifier: true
+    use_field_name: true
+  assembly_status:
+    type: string
+    sync_field: true
+""")
+
+    t2bq.samples_ops.coerce_dataframe_types = MagicMock()
+    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
+        "updated_count": 2,
+        "failed_updates": [],
+    })
+
+    # BigQuery samples: identifier holds BaseSpace names, NOT entity IDs
+    bq_samples = pd.DataFrame({
+        "id": ["uuid1", "uuid2"],
+        "basespace_sample_name": ["BS_A", "BS_B"],
+        "assembly_status": [None, None],  # empty -> eligible to be filled
+    })
+
+    # Terra data: entity-ID column is first and differs from the identifier values
+    terra_data = pd.DataFrame({
+        "entity:ohio_ar_test_id": ["t1", "t2"],
+        "basespace_sample_name": ["BS_A", "BS_B"],
+        "assembly_status": ["PASS", "FAIL"],
+    })
+
+    result = t2bq._update_bigquery_with_terra_metadata(
+        config_samples=bq_samples,
+        terra_df=terra_data,
+        sync_fields=["assembly_status"],
+        sample_identifier_field="basespace_sample_name",
+        update_bigquery=True,
+        overwrite_metadata=False,
+    )
+
+    assert result.status == OperationStatus.SUCCESS
+    assert result.bq_updated_count == 2
+
+    call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
+    updates_by_id = {u["id"]: u for u in call_args}
+    assert updates_by_id["uuid1"]["assembly_status"] == "PASS"
+    assert updates_by_id["uuid2"]["assembly_status"] == "FAIL"
+
+    # The destination-update map is keyed by the matched identifier value
+    assert set(result.updated_entities.keys()) == {"BS_A", "BS_B"}
+
+
+def test_sync_metadata_for_config_propagates_identifier_match_error(t2bq, sample_config):
+    """
+    An identifier-match ERROR from _update_bigquery_with_terra_metadata must
+    propagate out of sync_metadata_for_config (not be swallowed as NO_UPDATES),
+    and the destination update must be skipped.
+    """
+    sample_df = pd.DataFrame({
+        "id": ["sample1"],
+        "sample_id": ["BS_A"],
+        "config_id": ["test-config-id"],
+    })
+    terra_df = pd.DataFrame({"entity:ohio_ar_test_id": ["t1"], "attr1": ["val1"]})
+
+    t2bq.samples_ops.get_samples_by_timeframe.return_value = sample_df
+    t2bq._get_terra_data = MagicMock(
+        return_value=DataResult(status=OperationStatus.SUCCESS, data=terra_df)
+    )
+    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.ERROR,
+        message="Sample identifier 'sample_id' maps from ['x'], but none ... present",
+        bq_updated_count=0,
+        updated_entities={},
+        failed_updates=[],
+    ))
+    t2bq._update_terra_with_synced_metadata = MagicMock()
+    t2bq._get_target_entity_from_config = MagicMock(return_value="sample")
+
+    result = t2bq.sync_metadata_for_config(
+        sample_config, days_back=7, sync_fields=["attr1"],
+        update_bigquery=True, update_destination=True,
+    )
+
+    assert result.status == OperationStatus.ERROR
+    assert result.config_id == sample_config["id"]
+    assert "sample_id" in result.message
+    # Destination Terra must not be touched when the source match failed
+    t2bq._update_terra_with_synced_metadata.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Surfacing of metadata-sync failures
+#
+# A config whose BigQuery updates succeed but whose destination Terra updates
+# all fail must not report SUCCESS - it should be PARTIAL_SUCCESS (or ERROR when
+# nothing succeeded), so failures aren't hidden in failed_updates.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("success_count,failed_updates,expected", [
+    (5, [], OperationStatus.SUCCESS),
+    (0, [], OperationStatus.NO_UPDATES),
+    (3, [{"entity_id": "e1", "error": "404"}], OperationStatus.PARTIAL_SUCCESS),
+    (0, [{"entity_id": "e1", "error": "404"}], OperationStatus.ERROR),
+])
+def test_derive_sync_status(success_count, failed_updates, expected):
+    assert Terra2BQ._derive_sync_status(success_count, failed_updates) == expected
+
+
+def test_sync_metadata_for_config_partial_success_on_destination_failures(t2bq, sample_config):
+    """
+    BigQuery updates succeed but every destination Terra PATCH fails -> the
+    config must report PARTIAL_SUCCESS, not SUCCESS, and carry the failures.
+    """
+    sample_df = pd.DataFrame({
+        "id": ["sample1"],
+        "sample_id": ["entity1"],
+        "config_id": ["test-config-id"],
+    })
+    terra_df = pd.DataFrame({"entity:sample_id": ["entity1"], "attr1": ["val1"]})
+
+    t2bq.samples_ops.get_samples_by_timeframe.return_value = sample_df
+    t2bq._get_terra_data = MagicMock(
+        return_value=DataResult(status=OperationStatus.SUCCESS, data=terra_df)
+    )
+    # BigQuery side succeeds and produces an entity to push to the destination
+    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.SUCCESS,
+        bq_updated_count=1,
+        updated_entities={"entity1": {"attr1": "val1"}},
+        failed_updates=[],
+    ))
+    # Destination side fails for every entity
+    t2bq._update_terra_with_synced_metadata = MagicMock(return_value=MetadataSyncResult(
+        status=OperationStatus.NO_UPDATES,
+        destination_updated_count=0,
+        failed_updates=[{"entity_id": "entity1", "error": "404 not found"}],
+    ))
+    t2bq._get_target_entity_from_config = MagicMock(return_value="sample")
+
+    result = t2bq.sync_metadata_for_config(
+        sample_config, days_back=7, sync_fields=["attr1"],
+        update_bigquery=True, update_destination=True,
+    )
+
+    assert result.status == OperationStatus.PARTIAL_SUCCESS
+    assert result.bq_updated_count == 1
+    assert result.destination_updated_count == 0
+    assert len(result.failed_updates) == 1
+
+
+def test_sync_metadata_aggregate_partial_success(t2bq):
+    """A failing config makes the aggregate sync_metadata report PARTIAL_SUCCESS."""
+    configs = [
+        {"id": "config1", "entity_type": "sample1"},
+        {"id": "config2", "entity_type": "sample2"},
+    ]
+    t2bq.get_active_configs = MagicMock(return_value=configs)
+    t2bq.sync_metadata_for_config = MagicMock(side_effect=[
+        MetadataSyncResult(status=OperationStatus.SUCCESS, config_id="config1",
+                           bq_updated_count=3, destination_updated_count=3, failed_updates=[]),
+        MetadataSyncResult(status=OperationStatus.PARTIAL_SUCCESS, config_id="config2",
+                           bq_updated_count=1, destination_updated_count=0,
+                           failed_updates=[{"entity_id": "e9", "error": "404"}]),
+    ])
+    t2bq.config_ops.get_prefix_fields.return_value = "prefix_field"
+    t2bq.setup_terra_client = MagicMock()
+    t2bq._cleanup_terra_client = MagicMock()
+
+    with patch("bioforklift.terra2bq.terra2bq.sleep"):
+        result = t2bq.sync_metadata(
+            days_back=7, update_bigquery=True, update_destination=True,
+            batch_size=1, cooldown_seconds=0,
+        )
+
+    assert result.status == OperationStatus.PARTIAL_SUCCESS
+    assert result.processed_configs == 2
+    assert len(result.failed_updates) == 1

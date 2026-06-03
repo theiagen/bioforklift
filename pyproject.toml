@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bioforklift"
-version = "0.4.0"
+version = "0.4.1"
 description = "Package for handling bioinformatics data automations between data sources"
 authors = ["Michal-Babins <michal.babinski@theiagen.com>"]
 license = "GPL-3.0"
