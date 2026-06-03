@@ -857,6 +857,37 @@ class SampleDataProcessor:
 
       return None
 
+    def get_identifier_source_columns(self) -> List[str]:
+        """
+        Return the explicitly-configured source columns for the sample_identifier.
+
+        The sample_identifier field can be populated three ways (see
+        ``_apply_entity_type_mapping``/``_map_field_names``):
+          - default: renamed from the Terra entity-ID column ``entity:<type>_id``
+            -> no configured source columns (returns [])
+          - ``column_mappings``: copied from the first available mapped column
+            -> returns the mapping list
+          - ``use_field_name``: read from a Terra column matching the field name
+            -> returns [field_name]
+
+        For the latter two the identifier value is a Terra attribute, NOT the
+        entity ID, so callers must match against the configured column rather
+        than the entity-ID column. An empty list signals the default mapping,
+        where the caller should match on the entity-ID column.
+
+        Returns:
+            List of configured source column names, empty for the default mapping.
+        """
+        identifier_field = self.get_sample_identifier_field()
+        if not identifier_field:
+            return []
+
+        field_def = self.schema_definition.get_field(identifier_field)
+        if not field_def:
+            return []
+
+        return field_def.get_source_columns()
+
     def drop_system_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
         Drop columns marked as system_value from DataFrame.
