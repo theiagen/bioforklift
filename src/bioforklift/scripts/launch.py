@@ -275,7 +275,11 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
     if args_dict.get("job_json"):
         for job_json_path in args_dict["job_json"]:
             with open(job_json_path, "r") as json_file:
-                json_data = json.load(json_file)
+                try:
+                    json_data = json.load(json_file)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error parsing JSON file '{job_json_path}': {e}")
+                    raise e
             # iterate through workflows in json file
             for wf, wf_dict in json_data.items():
                 job_dict[wf] = {}
