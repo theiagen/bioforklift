@@ -422,6 +422,7 @@ def validate_method_config(mod_method_config: MethodConfig, terra: Terra) -> dic
     # Validate the new method configuration we created in the Terra workspace
     val = terra.methods.method_config_validate(mod_method_config, use_destination=True)
     # raise error if invalid I/O detected
+    # may be erroneous and reported above
     if val["invalidInputs"] or val["invalidOutputs"]:
         if val["invalidInputs"]:
             logger.error(f"Invalid inputs detected: {val['invalidInputs']}")
