@@ -1,6 +1,12 @@
 import requests
 from typing import Optional, Dict
 from bioforklift.forklift_logging import setup_logger
+from .basespace_exceptions import (
+    BaseSpaceInvalidResponseError,
+    BaseSpaceConnectionError,
+    BaseSpaceTimeoutError,
+    api_error_for_status,
+)
 
 logger = setup_logger(__name__)
 
@@ -19,8 +25,8 @@ class BaseSpaceClient:
         self.api_version = basespace_api_version
 
     @property
-    def _get_headers(self) -> Dict[str, str]:
-        """Helper method to construct headers for API requests."""
+    def _headers(self) -> Dict[str, str]:
+        """Helper property to construct headers for API requests."""
         return {"x-access-token": self.access_token}
 
     def _build_url_path(
@@ -28,7 +34,6 @@ class BaseSpaceClient:
         endpoint: str,
     ) -> str:
         """Helper method to construct full URL for API requests."""
-        logger.debug(f"Building BaseSpace URL for endpoint: {endpoint} with API version: {self.api_version}")
         return f"{self.base_url}/{self.api_version}/{endpoint.lstrip('/')}"
 
     def _http_request(
@@ -36,7 +41,7 @@ class BaseSpaceClient:
         method: str,
         endpoint: str,
         params: Optional[Dict] = None,
-        stream: Optional[bool] = False,
+        stream: bool = False,
         timeout: Optional[tuple] = None,
     ) -> requests.Response:
         """
@@ -54,7 +59,6 @@ class BaseSpaceClient:
         """
 
         url = self._build_url_path(endpoint)
-        logger.debug(f"BaseSpace URL constructed: {url}")
 
         # Default timeout: 30s to connect, 5min to read
         if timeout is None:
@@ -64,23 +68,43 @@ class BaseSpaceClient:
             response = requests.request(
                 method=method.upper(),
                 url=url,
-                headers=self._get_headers,
+                headers=self._headers,
                 params=params,
                 stream=stream,
                 timeout=timeout,
             )
+            logger.info(f"BaseSpace URL constructed: {response.url}")
             response.raise_for_status()
             return response
+        except requests.Timeout as e:
+            logger.error(f"Request to {url} timed out: {e}")
+            raise BaseSpaceTimeoutError(f"Request to {url} timed out") from e
+        except requests.ConnectionError as e:
+            logger.error(f"Could not connect to {url}: {e}")
+            raise BaseSpaceConnectionError(f"Could not connect to {url}") from e
+        except requests.HTTPError as e:
+            # Attempt to parse error response body for more details, first check for invalid JSON or unexpected formats.
+            try:
+                body = e.response.json()
+            except ValueError as json_error:
+                raise BaseSpaceInvalidResponseError("Response body was not valid JSON") from json_error
+
+            source = body.get("ResponseStatus") or body
+            message = source.get("Message") or str(e)
+            raise api_error_for_status(
+                message, e.response.status_code, response=body,
+            ) from e
+
         except requests.RequestException as e:
             logger.error(f"HTTP request failed: {e}")
-            raise
+            raise BaseSpaceConnectionError(str(e)) from e
 
     def get(
         self,
         endpoint: str,
         params: Optional[Dict] = None,
         timeout: Optional[tuple] = None,
-        stream: Optional[bool] = False,
+        stream: bool = False,
     ) -> requests.Response:
         """
         Make a GET request to the BaseSpace API.
