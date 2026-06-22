@@ -73,7 +73,7 @@ class BaseSpaceClient:
                 stream=stream,
                 timeout=timeout,
             )
-            logger.info(f"BaseSpace URL constructed: {response.url}")
+            logger.debug(f"BaseSpace URL constructed: {response.url}")
             response.raise_for_status()
             return response
         except requests.Timeout as e:

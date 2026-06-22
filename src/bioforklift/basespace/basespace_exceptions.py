@@ -20,6 +20,11 @@ class BaseSpaceInvalidResponseError(BaseSpaceError):
     pass
 
 
+class BaseSpaceCollectionIdError(BaseSpaceError):
+    """Raised when a collection ID cannot be resolved to a single project/run."""
+    pass
+
+
 class BaseSpaceDatasetError(BaseSpaceError):
     """Raised when a sample resolves to no datasets, or to more than one (ambiguous)."""
     pass
@@ -63,6 +68,9 @@ class BaseSpaceNotFoundError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 404."""
     pass
 
+class BaseSpaceServerError(BaseSpaceAPIError):
+    """Raised when BaseSpace returns 500."""
+    pass
 
 # Maps HTTP status codes to their most specific exception class. Any status
 # not listed falls back to the generic BaseSpaceAPIError.
@@ -71,6 +79,7 @@ _ERROR_MAPPING: Dict[int, Type[BaseSpaceAPIError]] = {
     401: BaseSpaceAuthenticationError,
     403: BaseSpaceForbiddenError,
     404: BaseSpaceNotFoundError,
+    500: BaseSpaceServerError,
 }
 
 
