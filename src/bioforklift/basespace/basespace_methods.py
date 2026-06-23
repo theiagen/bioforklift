@@ -8,10 +8,11 @@ from .basespace_exceptions import (
   BaseSpaceServerError,
 )
 from .basespace_models import (
-    Item,
+    BaseSpaceResponse,
+    DatasetItem,
     Paging,
-    Query,
-    SearchResponse,
+    SearchItem,
+    SearchQuery,
 )
 from bioforklift.forklift_logging import setup_logger
 
@@ -30,9 +31,10 @@ class BaseSpaceMethods:
     def search(
         self,
         scope: Literal[None, "runs", "projects", "genomes", "samples", "appresults", "sample_files", "appresult_files"] = None,
-        query: Query = Query(),
+        query: SearchQuery = SearchQuery(),
         paging: Paging = Paging(),
-    ) -> SearchResponse:
+        **extra_params,
+    ) -> BaseSpaceResponse[SearchItem]:
         """
         Search BaseSpace within a scope for a single field/term.
 
@@ -52,7 +54,8 @@ class BaseSpaceMethods:
                 params={
                     **({"scope": scope} if scope else {}),
                     **({"query": query.as_string} if query.as_string else {}),
-                    **paging.model_dump(by_alias=True, exclude_none=True)
+                    **paging.model_dump(by_alias=True, exclude_none=True),
+                    **extra_params,
                 }
             )
         except BaseSpaceServerError:
@@ -62,14 +65,14 @@ class BaseSpaceMethods:
             )
             raise
 
-        return SearchResponse.model_validate(response.json())
+        return BaseSpaceResponse[SearchItem].model_validate(response.json())
 
 
     def filter_search_response(
         self,
-        search_response: SearchResponse,
+        search_response: BaseSpaceResponse[SearchItem],
         criteria: dict,
-    ) -> List[Item]:
+    ) -> List[SearchItem]:
         """
         Filter a search response's items for those whose data matches all field==value pairs exactly.
 
@@ -79,16 +82,18 @@ class BaseSpaceMethods:
         Returns:
             The items whose data matches all field==value pairs exactly.
         """
-        return [
-            item for item in search_response.items
-            if all(
-                getattr(item.data, field, None) == value
-                for field, value in criteria.items()
-            )
-        ]
+        matches = []
+        for item in search_response.items:
+            # `UnknownItem` (and any non-search item) has no `.data`; skip it.
+            data = getattr(item, "data", None)
+            if data is None:
+                continue
+            if all(getattr(data, field, None) == value for field, value in criteria.items()):
+                matches.append(item)
+        return matches
 
 
-    def resolve_collection_id(self, collection_id: str) -> str:
+    def resolve_collection_id(self, collection_id: str) -> Tuple[str, str]:
         """
         Resolve an input "collection_id" to its BaseSpace project/run. A "collection_id"
         can be a project/run ID or a project/run name. If no resource matches, or if
@@ -97,7 +102,7 @@ class BaseSpaceMethods:
         Args:
             collection_id: The user-provided identifier for a project or run, which may be an ID or a name.
         Returns:
-            The matched project/run's BaseSpace `Id`.
+            A tuple containing the matched project/run's BaseSpace `type` and `id`.
         """
         logger.info(f"Resolving BaseSpace collection ID: `{collection_id}`")
 
@@ -127,7 +132,7 @@ class BaseSpaceMethods:
         for scope, field in search_fields:
             response = self.search(
                 scope=scope,
-                query=Query(field=field, value=collection_id),
+                query=SearchQuery(field=field, value=collection_id),
             )
 
             exact_matches = self.filter_search_response(response, {field: collection_id})
@@ -158,4 +163,43 @@ class BaseSpaceMethods:
         logger.info(
             f"Input collection ID `{collection_id}` resolved to `{item.data.id}` ({item.type}.id)"
         )
-        return item.data.id
+        return (item.type, item.data.id)
+
+
+    def datasets(
+        self,
+        project_id: Optional[str] = None,
+        input_runs: Optional[str] = None,
+        dataset_types: Optional[str] = None,
+        paging: Paging = Paging(),
+        **extra_params,
+    ) -> BaseSpaceResponse[DatasetItem]:
+        """
+        Get a list of datasets, optionally scoped to a project or run and filtered by type.
+
+        Args:
+            project_id: Restrict to datasets in this project (BaseSpace `projectid`).
+            input_runs: Restrict to datasets produced by this run (BaseSpace `inputruns`).
+            dataset_types: Restrict to these dataset types, e.g. "common.fastq" (`datasettypes`).
+            paging: Optional paging parameters.
+            **extra_params: Any additional query params passed through to the endpoint.
+        Returns:
+            The parsed `/datasets` body, with items typed as `DatasetItem`.
+        """
+        logger.info(
+            f"Fetching BaseSpace datasets (project_id={project_id}, "
+            f"input_runs={input_runs}, dataset_types={dataset_types})"
+        )
+
+        response = self.client.get(
+            endpoint="datasets",
+            params = {
+                **({"projectid": project_id} if project_id else {}),
+                **({"inputruns": input_runs} if input_runs else {}),
+                **({"datasettypes": dataset_types} if dataset_types else {}),
+                **paging.model_dump(by_alias=True, exclude_none=True),
+                **extra_params,
+            }
+        )
+
+        return BaseSpaceResponse[DatasetItem].model_validate(response.json())
