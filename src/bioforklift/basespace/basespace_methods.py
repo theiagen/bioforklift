@@ -1,5 +1,5 @@
 from pydantic import validate_call
-from typing import List, Literal
+from typing import List, Literal, Optional, Tuple
 
 from .basespace_client import BaseSpaceClient
 

@@ -1,6 +1,6 @@
-from typing import Annotated, List, Literal, Optional, Union
+from typing import Annotated, Any, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, Tag, Discriminator, computed_field
 from pydantic.alias_generators import to_pascal
 
 
@@ -14,7 +14,7 @@ class BaseSpaceAPIModel(BaseModel):
     )
 
 
-class Query(BaseModel):
+class SearchQuery(BaseModel):
     """Defines a search query for BaseSpace"""
     field: Optional[str] = None
     value: Optional[str] = None
@@ -32,7 +32,7 @@ class Query(BaseModel):
         return f'{field}{value}'
 
     @classmethod
-    def from_lucene_query(cls, query_str: str) -> "Query":
+    def from_lucene_query(cls, query_str: str) -> "SearchQuery":
         """
         Wrap a raw Lucene query string verbatim (no parsing/validation).
         See: https://lucene.apache.org/core/2_9_4/queryparsersyntax.html
@@ -68,14 +68,6 @@ class RunData(BaseSpaceAPIModel):
     experiment_name: Optional[str] = None
 
 
-class ProjectData(BaseSpaceAPIModel):
-    """
-    The `Project` key/dict nested inside a list of dict `Items` from the `/search?scope=projects` endpoint.
-    """
-    id: str
-    name: Optional[str] = None
-
-
 class RunItem(BaseSpaceAPIModel):
     """
     A single `Items` entry from the `/search?scope=runs` endpoint.
@@ -84,6 +76,14 @@ class RunItem(BaseSpaceAPIModel):
 
     type: Literal["run"]
     data: RunData = Field(alias="Run")
+
+
+class ProjectData(BaseSpaceAPIModel):
+    """
+    The `Project` key/dict nested inside a list of dict `Items` from the `/search?scope=projects` endpoint.
+    """
+    id: str
+    name: Optional[str] = None
 
 
 class ProjectItem(BaseSpaceAPIModel):
@@ -95,17 +95,108 @@ class ProjectItem(BaseSpaceAPIModel):
     data: ProjectData = Field(alias="Project")
 
 
-# Each `Item` has it's own unique structure but all share a `type` field that determines which one it is,
-# so we can use that as a discriminator to parse them into distinct models.
+class DatasetType(BaseSpaceAPIModel):
+    """
+    The `DatasetType` key/dict nested inside a list of dict `Items` from the `/datasets` endpoint when searching for datasets.
+    """
+    id: str
+    name: Optional[str] = None
+    conforms_to_ids: List[str] = Field(default_factory=list)
+
+
+class CommonFastqAttributes(BaseSpaceAPIModel):
+    is_paired_end: Optional[bool] = None
+    max_length_read1: Optional[int] = None
+    max_length_read2: Optional[int] = None
+    # to_pascal turns "..._pf" into "...Pf", so the PF fields need explicit aliases.
+    total_clusters_pf: Optional[int] = Field(default=None, alias="TotalClustersPF")
+    total_clusters_raw: Optional[int] = None
+    total_reads_pf: Optional[int] = Field(default=None, alias="TotalReadsPF")
+    total_reads_raw: Optional[int] = None
+
+
+class DatasetAttributes(BaseSpaceAPIModel):
+    common_fastq: Optional[CommonFastqAttributes] = Field(default=None, alias="common_fastq")
+
+
+class DatasetItem(BaseSpaceAPIModel):
+    """
+    A single `Items` entry from the `/datasets` endpoint when searching for datasets.
+    """
+    id: str
+    name: Optional[str] = None
+    dataset_type: Optional[DatasetType] = None
+    attributes: Optional[DatasetAttributes] = None
+
+
+class UnknownItem(BaseSpaceAPIModel):
+    """
+    Fallback for item shapes not yet modeled. Keeps the raw payload (extra='allow')
+    instead of raising an error, so new scopes don't break.
+    """
+    model_config = ConfigDict(alias_generator=to_pascal, populate_by_name=True, extra="allow")
+
+
+
+def _item_type(value: Any) -> str:
+    if isinstance(value, BaseModel):
+        return {
+            RunItem: "run",
+            ProjectItem: "project",
+            DatasetItem: "dataset",
+            UnknownItem: "unknown"
+        }.get(type(value), "unknown")
+
+    if isinstance(value, dict):
+        if (
+            "Project" in value and
+            value.get("Type", "").lower() == "project"
+        ):
+            return "project"
+        if (
+            "Run" in value and
+            value.get("Type", "").lower() == "run"
+        ):
+            return "run"
+        if (
+            value.get("Id", "").startswith("ds.")
+        ):
+            return "dataset"
+    return "unknown"
+
+
+# Each `Item` has it's own unique structure and are discriminated by the
+# _item_type function, which looks for the presence of certain keys and values
+# to parse responses/results into distinct models.
 Item = Annotated[
-    Union[ProjectItem, RunItem],
-    Field(discriminator="type"),
+    Union[
+        Annotated[RunItem, Tag("run")],
+        Annotated[ProjectItem, Tag("project")],
+        Annotated[DatasetItem, Tag("dataset")],
+        Annotated[UnknownItem, Tag("unknown")],
+    ],
+    Discriminator(_item_type),
 ]
 
-class SearchResponse(BaseSpaceAPIModel):
+
+# Items returned by the `/search` endpoint: projects and runs, with anything from other
+# scopes (samples, genomes, appresults, ...) falling through to `UnknownItem`.
+SearchItem = Annotated[
+    Union[
+        Annotated[RunItem, Tag("run")],
+        Annotated[ProjectItem, Tag("project")],
+        Annotated[UnknownItem, Tag("unknown")],
+    ],
+    Discriminator(_item_type),
+]
+
+
+class BaseSpaceResponse[ItemType](BaseSpaceAPIModel):
     """
-    The full body of a `/search` endpoint call.
+    A generic response model for BaseSpace API calls, containing a list of `Items`
+    and a `Paging` block. The expected item type is specified per call, e.g.
+    ``BaseSpaceResponse[DatasetItem].model_validate(...)``.
     """
 
-    items: List[Item]
+    items: List[ItemType]
     paging: PagingResponse
