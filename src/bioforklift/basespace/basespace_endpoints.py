@@ -1,3 +1,5 @@
+import requests
+
 from pydantic import validate_call
 from typing import Literal, Optional
 from .basespace_client import BaseSpaceClient
@@ -6,6 +8,7 @@ from .basespace_exceptions import (
 )
 from .basespace_models import (
     BaseSpaceResponse,
+    DatasetFileItem,
     DatasetItem,
     Paging,
     SearchItem,
@@ -89,8 +92,10 @@ class BaseSpaceEndpoints:
             The parsed `/datasets` body, with items typed as `DatasetItem`.
         """
         logger.info(
-            f"Fetching BaseSpace datasets (project_id={project_id}, "
-            f"input_runs={input_runs}, dataset_types={dataset_types})"
+            f"Fetching BaseSpace datasets "
+            f"{'project_id=' + project_id if project_id else ''}, "
+            f"{'input_runs=' + input_runs if input_runs else ''}, "
+            f"{'dataset_types=' + dataset_types if dataset_types else ''}"
         )
 
         response = self.client.get(
@@ -104,6 +109,77 @@ class BaseSpaceEndpoints:
             }
         )
 
-        logger.info(f"Fetched {len(response.json().get('Items', []))} dataset(s) from BaseSpace")
+        displayed_count = response.json().get("Paging", {}).get("DisplayedCount", 0)
+        total_count = response.json().get("Paging", {}).get("TotalCount", 0)
+        offset = response.json().get("Paging", {}).get("Offset", 0)
+        limit = response.json().get("Paging", {}).get("Limit", 0)
+
+        logger.info(
+            f"Fetched {displayed_count} dataset(s) from BaseSpace "
+            f"(total_count={total_count}, offset={offset}, limit={limit})"
+        )
 
         return BaseSpaceResponse[DatasetItem].model_validate(response.json())
+
+
+    def datasets_files(
+        self,
+        dataset_id: str,
+        filehrefcontentresolution: Optional[bool] = None,
+        paging: Paging = Paging(),
+        **extra_params,
+    ) -> BaseSpaceResponse[DatasetFileItem]:
+        """
+        Get a list of files for a given dataset.
+        https://developer.basespace.illumina.com/docs/content/documentation/rest-api/api-reference#operation--datasets--id--files-get
+
+        Args:
+            dataset_id: The `DatasetItem.id` to fetch files for.
+            filehrefcontentresolution: Optional flag to include file href content resolution.
+            paging: Optional paging parameters.
+            **extra_params: Any additional query params passed through to the endpoint.
+        Returns:
+            The parsed `/datasets/{dataset_id}/files` body, with items typed as `DatasetFileItem`.
+        """
+
+        logger.info(f"Fetching BaseSpace files for dataset_id=`{dataset_id}`")
+
+        response = self.client.get(
+            endpoint=f"datasets/{dataset_id}/files",
+            params = {
+                **({"filehrefcontentresolution": filehrefcontentresolution} if filehrefcontentresolution else {}),
+                **paging.model_dump(by_alias=True, exclude_none=True),
+                **extra_params,
+            }
+        )
+
+        return BaseSpaceResponse[DatasetFileItem].model_validate(response.json())
+
+
+    def files_content(
+        self,
+        file_id: str,
+        redirect: Optional[bool] = None,
+        stream: bool = True,
+    ) -> requests.Response:
+        """
+        Get the content of a file by its ID.
+        https://developer.basespace.illumina.com/docs/content/documentation/rest-api/api-reference#operation--files--id--content-get
+
+        Args:
+            file_id: The `DatasetFileItem.id` to fetch content for.
+            redirect: Optional flag to follow redirects.
+            stream: Whether to stream the response content.
+        Returns:
+            The raw response from the BaseSpace API, which may be a redirect or the file content.
+        """
+
+        response = self.client.get(
+            endpoint=f"files/{file_id}/content",
+            params = {
+                **({"redirect": redirect} if redirect is not None else {}),
+            },
+            stream=stream,
+        )
+
+        return response
