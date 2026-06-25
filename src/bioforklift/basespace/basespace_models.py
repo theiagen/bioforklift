@@ -1,11 +1,13 @@
 from typing import Annotated, Any, List, Literal, Optional, Union
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Field, Tag, Discriminator, computed_field
+from pydantic import AliasPath, BaseModel, ConfigDict, Field, Tag, Discriminator
 from pydantic.alias_generators import to_pascal
 
 
 class BaseSpaceAPIModel(BaseModel):
-    """Base class for BaseSpace API models."""
+    """
+    Base class for BaseSpace API models.
+    """
 
     # Automatically convert snake_case field names to PascalCase for BaseSpace API compatibility.
     model_config = ConfigDict(
@@ -14,35 +16,31 @@ class BaseSpaceAPIModel(BaseModel):
         extra="ignore",
     )
 
+
 # =========================================================================
-# Item Models
+# Models for `/search` endpoint
 # =========================================================================
 
-def _item_type(value: Any) -> str:
-    if isinstance(value, BaseModel):
-        return {
-            RunItem: "run",
-            ProjectItem: "project",
-            DatasetItem: "dataset",
-            UnknownItem: "unknown"
-        }.get(type(value), "unknown")
 
-    if isinstance(value, dict):
-        if (
-            "Project" in value and
-            value.get("Type", "").lower() == "project"
-        ):
-            return "project"
-        if (
-            "Run" in value and
-            value.get("Type", "").lower() == "run"
-        ):
-            return "run"
-        if (
-            value.get("Id", "").startswith("ds.")
-        ):
-            return "dataset"
-    return "unknown"
+class RunItem(BaseSpaceAPIModel):
+    """
+    A single entry in the `Items` list from the `/search?scope=runs` endpoint.
+    """
+
+    type: Literal["run"]
+    id: str = Field(validation_alias=AliasPath("Run", "Id")) # maps to the nested path ("Run": {"Id": ...})
+    name: Optional[str] = Field(default=None, validation_alias=AliasPath("Run", "Name"))
+    experiment_name: Optional[str] = Field(default=None, validation_alias=AliasPath("Run", "ExperimentName"))
+
+
+class ProjectItem(BaseSpaceAPIModel):
+    """
+    A single entry in the `Items` list from the `/search?scope=projects` endpoint.
+    """
+
+    type: Literal["project"]
+    id: str = Field(validation_alias=AliasPath("Project", "Id")) # maps to the nested path ("Project": {"Id": ...})
+    name: Optional[str] = Field(default=None, validation_alias=AliasPath("Project", "Name"))
 
 
 class UnknownItem(BaseSpaceAPIModel):
@@ -50,6 +48,7 @@ class UnknownItem(BaseSpaceAPIModel):
     Fallback for item shapes not yet modeled. Keeps the raw payload (extra='allow')
     instead of raising an error, so new scopes don't break.
     """
+
     model_config = ConfigDict(
         alias_generator=to_pascal,
         populate_by_name=True,
@@ -57,63 +56,28 @@ class UnknownItem(BaseSpaceAPIModel):
     )
 
 
-# =========================================================================
-# Models for `/search` endpoint
-# =========================================================================
-
-class SearchQuery(BaseModel):
-    """Defines a search query for BaseSpace"""
-    field: Optional[str] = None
-    value: Optional[str] = None
-    # Allows us to support (field + value) queries as well as (from_lucene_query) literal strings for more complex queries.
-    _raw: Optional[str] = None
-
-    @computed_field
-    @property
-    def as_string(self) -> str:
-        """Construct the query string for this search scope."""
-        field = f"{self.field}:" if self.field else ""
-        value = f'"{self.value}"' if (self.field and self.value) else ""
-        if self._raw is not None:
-            return f"{self._raw}"
-        return f'{field}{value}'
-
-    @classmethod
-    def from_lucene_query(cls, query_str: str) -> "SearchQuery":
-        """
-        Wrap a raw Lucene query string verbatim (no parsing/validation).
-        See: https://lucene.apache.org/core/2_9_4/queryparsersyntax.html
-        """
-        return cls(_raw=query_str)
-
-    def __str__(self) -> str:
-        return self.as_string
-
-
-class RunItem(BaseSpaceAPIModel):
+def _item_type(value: Any) -> str:
     """
-    A single `Items` entry from the `/search?scope=runs` endpoint.
+    Discriminator for a `SearchItem`. Serves as a map to model and distinguish raw `/search`
+    result dicts to their corresponding model instances. Includes a fallback to `UnknownItem`.
     """
+    if isinstance(value, BaseModel):
+        return {
+            RunItem: "run",
+            ProjectItem: "project",
+            UnknownItem: "unknown",
+        }.get(type(value), "unknown")
 
-    type: Literal["run"]
-    # AliasPath allows us to map and specify a nested path (i.e. "Run": {"Id": ...})
-    id: str = Field(validation_alias=AliasPath("Run", "Id"))
-    name: Optional[str] = Field(default=None, validation_alias=AliasPath("Run", "Name"))
-    experiment_name: Optional[str] = Field(default=None, validation_alias=AliasPath("Run", "ExperimentName"))
-
-
-class ProjectItem(BaseSpaceAPIModel):
-    """
-    A single `Items` entry from the `/search?scope=projects` endpoint.
-    """
-    type: Literal["project"]
-    # AliasPath allows us to map and specify a nested path (i.e. "Project": {"Id": ...})
-    id: str = Field(validation_alias=AliasPath("Project", "Id"))
-    name: Optional[str] = Field(default=None, validation_alias=AliasPath("Project", "Name"))
+    if isinstance(value, dict):
+        if "Project" in value and value.get("Type", "").lower() == "project":
+            return "project"
+        if "Run" in value and value.get("Type", "").lower() == "run":
+            return "run"
+    return "unknown"
 
 
-# Items returned by the `/search` endpoint: projects and runs, with anything from other
-# scopes (samples, genomes, appresults, ...) falling through to `UnknownItem`.
+# Type alias representing a single entry in the `Items` list returned by the `/search` endpoint
+# Pydantic resolves which model applies via the `_item_type` discriminator function
 SearchItem = Annotated[
     Union[
         Annotated[RunItem, Tag("run")],
@@ -123,44 +87,56 @@ SearchItem = Annotated[
     Discriminator(_item_type),
 ]
 
+
 # =========================================================================
 # Models for `/datasets` endpoint
 # =========================================================================
 
+
 class CommonFastqAttributes(BaseSpaceAPIModel):
+    """
+    Maps to the `Attributes.common_fastq` block in a single `DatasetItem` entry.
+    Describes attributes returned by the `/datasets` endpoint for datasets of type `common.fastq`.
+    """
+
     is_paired_end: Optional[bool] = None
     max_length_read1: Optional[int] = None
     max_length_read2: Optional[int] = None
-    # to_pascal turns "..._pf" into "...Pf", so the PF fields need explicit aliases.
-    total_clusters_pf: Optional[int] = Field(default=None, alias="TotalClustersPF")
+    total_clusters_pf: Optional[int] = Field(default=None, alias="TotalClustersPF") # explicit alias to match BaseSpace API
     total_clusters_raw: Optional[int] = None
-    total_reads_pf: Optional[int] = Field(default=None, alias="TotalReadsPF")
+    total_reads_pf: Optional[int] = Field(default=None, alias="TotalReadsPF") # explicit alias to match BaseSpace API
     total_reads_raw: Optional[int] = None
 
 
 class DatasetType(BaseSpaceAPIModel):
     """
-    The `DatasetType` key/dict nested inside a list of dict `Items` from the `/datasets` endpoint.
-    Can be used to filter datasets by type, e.g. `common.fastq`.
+    Maps to the `DatasetType` block in a single `DatasetItem` entry.
+    Describes the type of dataset, e.g. `common.fastq` returned by the `/datasets` endpoint.
     """
+
     id: str
     conforms_to_ids: List[str] = Field(default_factory=list)
 
 
 class DatasetItem(BaseSpaceAPIModel):
     """
-    A single `Items` entry from the `/datasets` endpoint when searching for datasets.
+    A single entry in the `Items` list returned by the `/datasets` endpoint when searching for datasets.
     """
+
     id: str
     name: Optional[str] = None
     dataset_type: Optional[DatasetType] = None
-    attributes: Optional[CommonFastqAttributes] = Field(validation_alias=AliasPath("Attributes", "common_fastq"))
+    attributes: Optional[CommonFastqAttributes] = Field(
+        default=None,
+        validation_alias=AliasPath("Attributes", "common_fastq") # maps to the nested path ("Attributes": {"common_fastq": ...})
+    )
 
 
 class DatasetFileItem(BaseSpaceAPIModel):
     """
-    A single `Items` entry from the `/datasets/{dataset_id}/files` endpoint when searching for dataset files.
+    A single entry in the `Items` list returned by the `/datasets/{dataset_id}/files` endpoint when searching for dataset files.
     """
+
     id: str
     name: str
     href_content: str
@@ -170,8 +146,11 @@ class DatasetFileItem(BaseSpaceAPIModel):
 # Models for all endpoints
 # =========================================================================
 
+
 class Paging(BaseSpaceAPIModel):
-    """The ``Paging`` block returned by v2 list/search endpoints."""
+    """
+    The `Paging` block returned by v2 list/search endpoints.
+    """
 
     offset: Optional[int] = None
     limit: Optional[int] = None
@@ -180,31 +159,20 @@ class Paging(BaseSpaceAPIModel):
 
 
 class PagingResponse(Paging):
-    """The full body of a paginated response"""
+    """
+    The full body of a paginated response.
+    """
+
     displayed_count: int
     total_count: int
 
 
 class BaseSpaceResponse[ItemType](BaseSpaceAPIModel):
     """
-    A generic response model for BaseSpace API calls, containing a list of `Items`
+    A generic response model for all BaseSpace API calls, containing a list of `Items`
     and a `Paging` block. The expected item type is specified per call, e.g.
     ``BaseSpaceResponse[DatasetItem].model_validate(...)``.
     """
 
     items: List[ItemType]
     paging: PagingResponse
-
-
-# Each `Item` has it's own unique structure and are discriminated by the
-# _item_type function, which looks for the presence of certain keys and values
-# to parse responses/results into distinct models.
-Item = Annotated[
-    Union[
-        Annotated[RunItem, Tag("run")],
-        Annotated[ProjectItem, Tag("project")],
-        Annotated[DatasetItem, Tag("dataset")],
-        Annotated[UnknownItem, Tag("unknown")],
-    ],
-    Discriminator(_item_type),
-]
