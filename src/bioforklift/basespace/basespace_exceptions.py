@@ -35,6 +35,11 @@ class BaseSpaceMissingReadError(BaseSpaceError):
     pass
 
 
+# =========================================================================
+# API Specific Errors
+# =========================================================================
+
+
 class BaseSpaceAPIError(BaseSpaceError):
     """Raised when BaseSpace API returns an error."""
 
@@ -68,6 +73,7 @@ class BaseSpaceNotFoundError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 404."""
     pass
 
+
 class BaseSpaceServerError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 500."""
     pass
@@ -81,7 +87,6 @@ _ERROR_MAPPING: Dict[int, Type[BaseSpaceAPIError]] = {
     404: BaseSpaceNotFoundError,
     500: BaseSpaceServerError,
 }
-
 
 def api_error_for_status(
     message: str,
