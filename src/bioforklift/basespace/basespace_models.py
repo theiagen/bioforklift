@@ -56,7 +56,7 @@ class UnknownItem(BaseSpaceAPIModel):
     )
 
 
-def _item_type(value: Any) -> str:
+def _search_item_type(value: Any) -> str:
     """
     Discriminator for a `SearchItem`. Serves as a map to model and distinguish raw `/search`
     result dicts to their corresponding model instances. Includes a fallback to `UnknownItem`.
@@ -77,14 +77,14 @@ def _item_type(value: Any) -> str:
 
 
 # Type alias representing a single entry in the `Items` list returned by the `/search` endpoint
-# Pydantic resolves which model applies via the `_item_type` discriminator function
+# Pydantic resolves which model applies via the `_search_item_type` discriminator function
 SearchItem = Annotated[
     Union[
         Annotated[RunItem, Tag("run")],
         Annotated[ProjectItem, Tag("project")],
         Annotated[UnknownItem, Tag("unknown")],
     ],
-    Discriminator(_item_type),
+    Discriminator(_search_item_type),
 ]
 
 

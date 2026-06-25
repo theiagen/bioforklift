@@ -9,9 +9,11 @@ from .basespace_endpoints import BaseSpaceEndpoints
 from .basespace_exceptions import (
     BaseSpaceCollectionIdError,
     BaseSpaceDatasetError,
+    BaseSpaceMissingReadError,
 )
 from .basespace_models import (
     BaseSpaceResponse,
+    DatasetFileItem,
     DatasetItem,
     Paging,
     SearchItem,
@@ -30,44 +32,71 @@ class BaseSpaceMethods:
         self.client = client
         self.endpoints = BaseSpaceEndpoints(client)
 
-
-    def filter_search_response(
+    def _fetch_all_items[ItemType](
         self,
-        search_response: BaseSpaceResponse[SearchItem],
-        criteria: dict,
-    ) -> List[SearchItem]:
+        endpoint_method: Callable[..., BaseSpaceResponse[ItemType]],
+        **kwargs,
+    ) -> List[ItemType]:
         """
-        Filter a search response's items for those whose data matches all field==value pairs exactly.
+        Page through any paginated BaseSpace endpoint and return every item.
+        Ensures that the caller receives a complete list of items, regardless of
+        how many pages the endpoint returns.
+
+        Endpoint-agnostic: works with any `BaseSpaceEndpoints` method that accepts a
+        `paging` kwarg and returns a `BaseSpaceResponse` (`.items` + `.paging`) -
+        e.g. `search`, `datasets`, `datasets_files`, or any future paginated
+        endpoint. The item type of the returned list is inferred from whichever
+        endpoint is passed. Any `paging` passed in `**kwargs` is ignored.
 
         Args:
-            search_response: The full body of a `/search` endpoint call.
-            criteria: A dictionary of field==value pairs to filter by.
+            endpoint_method: Any bound `BaseSpaceEndpoints` method returning a `BaseSpaceResponse`
+            **kwargs: Whatever query params that endpoint accepts, forwarded as-is
+
         Returns:
-            The items whose data matches all field==value pairs exactly.
+            Every item across all pages, typed to the endpoint's item type
+            (e.g. `List[SearchItem]` for `search`, `List[DatasetItem]` for `datasets`).
         """
-        matches = []
-        for item in search_response.items:
-            if all(getattr(item, field) == value for field, value in criteria.items()):
-                matches.append(item)
-        return matches
 
+        # Ignore caller-supplied value
+        kwargs.pop("paging", None)
 
-    def resolve_collection_id(self, collection_id: str) -> Tuple[str, str]:
+        all_items: List[ItemType] = []
+        offset = 0
+
+        while True:
+            # Build a fresh Paging each iteration; never mutate a shared instance.
+            response = endpoint_method(
+                paging=Paging(offset=offset, limit=1000),
+                **kwargs,
+            )
+
+            all_items.extend(response.items)
+
+            if (
+                not response.items or
+                (response.paging.displayed_count + response.paging.offset) >= response.paging.total_count
+            ):
+                break
+
+            offset = len(all_items)
+        return all_items
+
+    def resolve_collection_id(
+        self,
+        collection_id: str
+    ) -> SearchItem:
         """
-        Resolve an input "collection_id" to its BaseSpace project/run. A "collection_id"
+        Resolve an input "collection_id" to its BaseSpace project/run `SearchItem`. A "collection_id"
         can be a project/run ID or a project/run name. If no resource matches, or if
         more than one does, the input was not specific enough to be resolved, and an error is raised.
 
         Args:
             collection_id: The user-provided identifier for a project or run, which may be an ID or a name.
         Returns:
-            A tuple containing the matched project/run's BaseSpace `type` and `id`.
+            The matched project/run `SearchItem`.
         """
-        logger.info(f"Resolving BaseSpace collection ID: `{collection_id}`")
 
-        # Fields a collection_id could match, as (scope, field). Each `field` is
-        # both the search field and the data attribute we re-check for an exact
-        # match, since BaseSpace search is fuzzy and can return near-misses.
+        logger.info(f"Resolving BaseSpace collection ID: `{collection_id}`")
 
         # "run.Name"           refers to `Run ID` in BaseSpace UI
         # "run.ExperimentName" refers to `Run Name` in BaseSpace UI
@@ -75,6 +104,7 @@ class BaseSpaceMethods:
         # "project.Name"       refers to name under the Projects tab in BaseSpace UI
         # "project.Id"         refers to numerical ID found in the BaseSpace HTTP URL (ex https://basespace.illumina.com/projects/489069003/about)
 
+        # Represents the scope and field (snake_case model attribute of a `SearchItem`).
         search_fields = [
             ("runs", "id"),
             ("runs", "name"),
@@ -83,67 +113,69 @@ class BaseSpaceMethods:
             ("projects", "name"),
         ]
 
-        # Candidates keyed by (type, id) so one resource matched via several
-        # fields collapses to a single entry, while genuinely different resources
-        # stay separate and trip the ambiguity check below.
-        matches = {}
+        exact_matches: List[SearchItem] = []
 
         for scope, field in search_fields:
-            response = self.endpoints.search(
+            # Creates a Lucene query clause compatible with BaseSpace (e.g. "experiment_name" -> "ExperimentName";
+            query_clause = f'{to_pascal(field)}:"{collection_id}"'
+
+            all_search_items: List[SearchItem] = self._fetch_all_items(
+                endpoint_method=self.endpoints.search,
                 scope=scope,
-                query=SearchQuery(field=field, value=collection_id),
+                query=query_clause,
             )
 
-            exact_matches = self.filter_search_response(response, {field: collection_id})
+            # Sometimes the BaseSpace search endpoint can return items that are close matches but not exact matches.
+            # Filter out `SearchItem`s whose attribute/field doesn't match the input `collection_id` exactly.
+            for search_item in all_search_items:
+                if (
+                    getattr(search_item, field) == collection_id and
+                    search_item not in exact_matches
+                  ):
+                    exact_matches.append(search_item)
 
-            if response.items:
-                logger.info(f"Found {len(exact_matches)} hit(s) after exact match filtering. (Total returned: {len(response.items)})")
-                logger.debug(f"{response}")
+            if all_search_items:
+                logger.info(f"Found {len(exact_matches)} hit(s) after exact match filtering. (Total returned: {len(all_search_items)})")
 
-            for item in exact_matches:
-                matches[(item.type, item.id)] = item
-
-        if not matches:
+        if not exact_matches:
             raise BaseSpaceCollectionIdError(
-                f"Could not resolve input collection ID `{collection_id}`: no project or "
-                f"run exactly matches it by id or name."
+                f"Could not resolve input collection ID `{collection_id}`: no project or run exactly matches it by id or name."
             )
-        if len(matches) > 1:
-            described = ", ".join(
-                f"{item.type} {item.id} ({item.name})"
-                for item in matches.values()
-            )
+
+        if len(exact_matches) > 1:
             raise BaseSpaceCollectionIdError(
                 f"Input collection ID `{collection_id}` is ambiguous; it matches: "
-                f"{described}. Provide a more specific id or name."
+                f"{[item for item in exact_matches]}. Provide a more specific id or name."
             )
 
-        item = next(iter(matches.values()))
+        # Should be exactly one match at this point
+        search_item: SearchItem = next(iter(exact_matches))
         logger.info(
-            f"Input collection ID `{collection_id}` resolved to `{item.id}` ({item.type}.id)"
+            f"Input collection ID `{collection_id}` resolved to `{search_item.id}` ({search_item.type}.id)"
         )
-        return (item.type, item.id)
+        return search_item
 
-
-    def filter_datasets_response(
+    def filter_datasets(
         self,
-        sample_list: List[str],
+        samples: List[str],
         ds_items: List[DatasetItem],
     ) -> List[DatasetItem]:
         """
         Filter a list of DatasetItems to those whose `DatasetItem.Name`
-        has an exact match in the provided `sample_list`.
+        has an exact match in the provided input `samples`.
 
         Args:
-            sample_list: A list of sample names to filter by.
+            samples: A list of sample names to filter by.
             ds_items: A list of DatasetItems to filter.
+
         Returns:
-            A list of DatasetItems whose `DatasetItem.Name` is in the provided `sample_list`.
+            A list of DatasetItems whose `DatasetItem.Name` is in the provided `samples`.
         """
+
         all_items: list[DatasetItem] = []
         unmatched_samples = []
 
-        for sample in sample_list:
+        for sample in samples:
             matches = [
                 ds_item
                 for ds_item in ds_items
@@ -153,141 +185,127 @@ class BaseSpaceMethods:
                 unmatched_samples.append(sample)
 
             if len(matches) > 1:
-                logger.warning(
-                    f"Multiple datasets (n={len(matches)}) found for sample `{sample}`. "
-                    f"Returning all matches."
+                raise BaseSpaceDatasetError(
+                    f"Multiple datasets (n={len(matches)}) found for sample `{sample}`. Provide a more specific sample name."
                 )
 
             all_items.extend(matches)
 
         if unmatched_samples:
-            raise BaseSpaceDatasetError(f"No dataset match found for sample(s): {', '.join(unmatched_samples)}")
-
+            raise BaseSpaceDatasetError(
+                f"No dataset match found for sample(s): {', '.join(unmatched_samples)}"
+            )
         return all_items
-
 
     def list_datasets(
         self,
-        item_type: str,
-        item_id: str,
+        search_item: SearchItem,
         dataset_types: Optional[str] = "common.fastq",
-        paging: Paging = Paging(),
     ) -> list[DatasetItem]:
         """
-        Get a list of dataset IDs for a given project or run.
+        Get every dataset for a given project or run, paging through all results.
 
         Args:
-            item_type: The resolved type of the item ("project" or "run").
-            item_id: The resolved ID of the project or run.
+            search_item: The resolved SearchItem object ("project" or "run").
             dataset_types: Optional comma-separated list of dataset types to filter by.
+            page_size: Number of datasets to request per page.
+
         Returns:
-            A list of datasets associated with the specified project or run.
+            A list of all datasets associated with the specified project or run.
         """
-        all_items: list[DatasetItem] = []
 
-        params = {}
-        if item_type == "project":
-            params["projectid"] = item_id
-        if item_type == "run":
-            params["inputruns"] = item_id
+        return self._fetch_all_items(
+            self.endpoints.datasets,
+            project_id=search_item.id if search_item.type == "project" else None,
+            input_runs=search_item.id if search_item.type == "run" else None,
+            dataset_types=dataset_types,
+        )
 
-        # Overwrite paging any `offset` or `limit` to ensure we don't miss any datasets
-        paging.offset = 0
-        paging.limit = 1000
-
-        while True:
-            paging.offset = len(all_items)
-
-            ds = self.endpoints.datasets(
-                project_id=params.get("projectid"),
-                input_runs=params.get("inputruns"),
-                dataset_types=dataset_types,
-                paging=paging
-            )
-
-            all_items.extend(ds.items)
-
-            if not ds.items or (ds.paging.displayed_count + ds.paging.offset) >= ds.paging.total_count:
-                break
-
-        return all_items
-
-
-    def stream_fastq_file(
+    def _stream_fastq_file(
         self,
         response: requests.Response,
-        destination: Optional[Path] = None,
+        destination: Path,
         chunk_size: int = 8192,
-    ) -> Optional[bytes]:
+    ) -> None:
         """
-        Stream the content of a FASTQ file to a destination file or return it as bytes.
+        Stream the content of a FASTQ file to a destination file.
 
         Args:
             response: The `requests.Response` object to stream content from.
-            destination: Optional path to save the streamed content.
+            destination: Path to save the streamed content.
             chunk_size: The size of each chunk to read from the response.
-        Returns:
-            If `destination` is None, returns the content as bytes.
-            Otherwise, saves to the specified file and returns None.
         """
-        if destination:
-            with open(destination, "wb") as outfile:
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        outfile.write(chunk)
-        else:
-            content = bytearray()
+
+        with open(destination, "wb") as outfile:
             for chunk in response.iter_content(chunk_size=chunk_size):
                 if chunk:
-                    content.extend(chunk)
-            return bytes(content)
-
-
+                    outfile.write(chunk)
 
     def download_dataset_files(
         self,
         ds_items: List[DatasetItem],
-        dest_dir: Path = Path.cwd(),
-    ):
+        dest_dir: Optional[Path] = None,
+        dry_run: bool = False,
+    ) -> List[Tuple[str, Path]]:
         """
         Download the files for a list of DatasetItems.
 
         Args:
-            dest_dir: The directory to download files to.
             ds_items: A list of DatasetItems to download files for.
+            dest_dir: The directory to download files to (defaults to the current
+                working directory).
+            dry_run: If True, log what would be downloaded without fetching or
+                writing any files.
         Returns:
-            A list of DatasetFileItems representing the downloaded files.
+            A list of ``(file_name, dest_path)`` tuples that were (or, for a dry
+            run, would be) downloaded.
         """
 
-        for item in ds_items:
-            logger.info(f"Downloading FASTQ files for dataset `{item.name}`")
+        # Resolve the default at call time so it reflects the current cwd, then
+        # ensure the destination exists for real downloads.
+        dest_dir = dest_dir or Path.cwd()
+        if not dry_run:
+            dest_dir.mkdir(parents=True, exist_ok=True)
 
-            ds_file = self.endpoints.datasets_files(
+        download_files: List[Tuple[str, Path]] = []
+
+        for item in ds_items:
+            logger.info(f"Fetching FASTQ files for dataset `{item.name}`")
+
+            ds_files: List[DatasetFileItem] = self._fetch_all_items(
+                endpoint_method=self.endpoints.datasets_files,
                 dataset_id=item.id,
-                filehrefcontentresolution=True,
-                paging=Paging(limit=1000)
             )
 
-            if item.attributes.is_paired_end and (
-                len(ds_file.items) < 2 or
-                len(ds_file.items) % 2 != 0
-            ):
-                logger.warning(f"Dataset `{item.name}` is paired-end but has an unexpected number of files.")
+            # `attributes` is optional, so guard before reading the paired-end flag.
+            is_paired_end = bool(item.attributes and item.attributes.is_paired_end)
 
-            for file_item in ds_file.items:
-                logger.info(f"Downloading file `{file_item.name}` from dataset `{item.name}`")
-                response = self.endpoints.files_content(
-                    file_id=file_item.id,
-                    redirect=True,
-                    stream=True
+            # If the dataset is paired-end, we expect an even number of files (one for each read).
+            if is_paired_end and (len(ds_files) < 2 or len(ds_files) % 2 != 0):
+                raise BaseSpaceMissingReadError(
+                    f"Dataset `{item.name}` is paired-end but has an unexpected number of files."
                 )
 
+            for file_item in ds_files:
                 dest_path = dest_dir / file_item.name
-                self.stream_fastq_file(
-                    response=response,
-                    destination=dest_path,
-                    chunk_size=(1024 * 1024)
-                )
+                download_files.append((file_item.name, dest_path))
+
+                if dry_run:
+                    logger.info(f"[dry-run] Would download `{file_item.name}` to `{dest_path}`")
+                    continue
+
+                logger.info(f"Downloading FASTQ file `{file_item.name}` from dataset `{item.name}`")
+
+                # Stream the file straight to disk; `with` releases the connection even on a mid-stream error.
+                with self.endpoints.files_content(
+                    file_id=file_item.id,
+                    stream=True,
+                    redirect="true",
+                ) as response:
+                    self._stream_fastq_file(
+                        response=response,
+                        destination=dest_path,
+                        chunk_size=(1024 * 1024)
+                    )
                 logger.info(f"Saved file `{file_item.name}` to `{dest_path}`")
-            break
-        return
+        return download_files
