@@ -1,23 +1,21 @@
-import requests
-
-from pydantic import validate_call
 from typing import Literal, Optional
+
+import requests
+from pydantic import validate_call
+
 from .basespace_client import BaseSpaceClient
-from .basespace_exceptions import (
-  BaseSpaceServerError,
-)
+from .basespace_exceptions import BaseSpaceServerError
 from .basespace_models import (
     BaseSpaceResponse,
     DatasetFileItem,
     DatasetItem,
     Paging,
-    SearchItem,
-    SearchQuery,
+    SearchItem
 )
-
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
+
 
 class BaseSpaceEndpoints:
     """

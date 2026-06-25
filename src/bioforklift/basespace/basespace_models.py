@@ -1,6 +1,6 @@
 from typing import Annotated, Any, List, Literal, Optional, Union
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Field, Tag, Discriminator
+from pydantic import AliasPath, BaseModel, ConfigDict, Discriminator, Field, Tag
 from pydantic.alias_generators import to_pascal
 
 

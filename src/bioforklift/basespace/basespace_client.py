@@ -1,24 +1,28 @@
+from typing import Dict, Optional
+
 import requests
-from typing import Optional, Dict
-from bioforklift.forklift_logging import setup_logger
+
 from .basespace_exceptions import (
-    BaseSpaceInvalidResponseError,
     BaseSpaceConnectionError,
+    BaseSpaceInvalidResponseError,
     BaseSpaceTimeoutError,
-    api_error_for_status,
+    api_error_for_status
 )
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
 
 class BaseSpaceClient:
-    """Client for interacting with the BaseSpace API."""
+    """
+    Client for interacting with the BaseSpace API.
+    """
 
     def __init__(
         self,
         access_token: str,
         basespace_api_url: str = "https://api.basespace.illumina.com",
-        basespace_api_version: str = "v2", # optionally `v1pre3`
+        basespace_api_version: str = "v2",
     ):
         self.access_token = access_token
         self.base_url = basespace_api_url.rstrip("/")
@@ -26,14 +30,20 @@ class BaseSpaceClient:
 
     @property
     def _headers(self) -> Dict[str, str]:
-        """Helper property to construct headers for API requests."""
+        """
+        Helper property to construct headers for API requests.
+        """
+
         return {"x-access-token": self.access_token}
 
     def _build_url_path(
         self,
         endpoint: str,
     ) -> str:
-        """Helper method to construct full URL for API requests."""
+        """
+        Helper method to construct full URL for API requests.
+        """
+
         return f"{self.base_url}/{self.api_version}/{endpoint.lstrip('/')}"
 
     def _http_request(
@@ -109,6 +119,7 @@ class BaseSpaceClient:
         """
         Make a GET request to the BaseSpace API.
         """
+
         return self._http_request(
             "GET",
             endpoint,

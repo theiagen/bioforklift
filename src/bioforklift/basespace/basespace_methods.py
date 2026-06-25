@@ -1,20 +1,19 @@
+import requests
 from pathlib import Path
 from typing import List, Optional, Tuple
+from pydantic.alias_generators import to_pascal
 
-import requests
 from .basespace_client import BaseSpaceClient
 from .basespace_endpoints import BaseSpaceEndpoints
 from .basespace_exceptions import (
-  BaseSpaceCollectionIdError,
-  BaseSpaceDatasetError,
+    BaseSpaceCollectionIdError,
+    BaseSpaceDatasetError,
 )
 from .basespace_models import (
     BaseSpaceResponse,
-    DatasetFileItem,
     DatasetItem,
     Paging,
     SearchItem,
-    SearchQuery,
 )
 from bioforklift.forklift_logging import setup_logger
 
