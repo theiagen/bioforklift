@@ -25,25 +25,26 @@ class BaseSpaceEndpoints:
     def __init__(self, client: BaseSpaceClient):
         self.client = client
 
-
     @validate_call
     def search(
         self,
-        scope: Literal[None, "runs", "projects", "genomes", "samples", "appresults", "sample_files", "appresult_files"] = None,
-        query: SearchQuery = SearchQuery(),
+        scope: Literal["projects", "runs"],
+        query: str,
         paging: Paging = Paging(),
         **extra_params,
     ) -> BaseSpaceResponse[SearchItem]:
         """
-        Search BaseSpace within a scope for a single field/term.
+        Search BaseSpace within a scope using a raw Lucene query clause.
         https://developer.basespace.illumina.com/docs/content/documentation/rest-api/search-api-reference#SearchQueryqueryOptions
 
         Args:
-            scope: The scope of the search ("projects" or "runs")
-            query_field: The field to match (e.g., "run.Name", "run.ExperimentName", "run.Id", "project.Name", "project.Id")
-            query_value: The value to search for
+            scope: The scope of the search ("projects" or "runs").
+            query: A raw Lucene query string, e.g. `project.Id:"489069003"` or `ExperimentName:"My Run"`.
+                BaseSpace matches field names without case sensitivity; quote values that contain spaces.
+            paging: Optional paging parameters.
+            **extra_params: Any additional query params passed through to the endpoint.
         Returns:
-            The parsed v2 search body, e.g. {"Items": [...], "Paging": {...}}
+            The parsed v2 `/search` body, with items typed as `SearchItem`.
         """
 
         logger.info(f"Searching BaseSpace with: scope=`{scope}` & query=`{query}`")
@@ -52,15 +53,16 @@ class BaseSpaceEndpoints:
             response = self.client.get(
                 endpoint="search",
                 params={
-                    **({"scope": scope} if scope else {}),
-                    **({"query": query.as_string} if query.as_string else {}),
+                    "scope": scope,
+                    "query": query,
                     **paging.model_dump(by_alias=True, exclude_none=True),
                     **extra_params,
                 }
             )
         except BaseSpaceServerError:
+            # A 500 response here could be an indication of an invalid/unescaped query rather than an outage.
             logger.error(
-                f"BaseSpace returned a server error for query: `{query.as_string}`. "
+                f"BaseSpace returned a server error for query: `{query}`. "
                 f"This can happen when the query contains invalid special characters."
             )
             raise
