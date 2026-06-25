@@ -109,23 +109,20 @@ class BaseSpaceEndpoints:
             }
         )
 
-        displayed_count = response.json().get("Paging", {}).get("DisplayedCount", 0)
-        total_count = response.json().get("Paging", {}).get("TotalCount", 0)
-        offset = response.json().get("Paging", {}).get("Offset", 0)
-        limit = response.json().get("Paging", {}).get("Limit", 0)
-
+        body = response.json()
+        paging_info = body.get("Paging", {})
         logger.info(
-            f"Fetched {displayed_count} dataset(s) from BaseSpace "
-            f"(total_count={total_count}, offset={offset}, limit={limit})"
+            f"Fetched {paging_info.get('DisplayedCount', 0)} dataset(s) from BaseSpace "
+            f"(total_count={paging_info.get('TotalCount', 0)}, "
+            f"offset={paging_info.get('Offset', 0)}, limit={paging_info.get('Limit', 0)})"
         )
 
-        return BaseSpaceResponse[DatasetItem].model_validate(response.json())
+        return BaseSpaceResponse[DatasetItem].model_validate(body)
 
 
     def datasets_files(
         self,
         dataset_id: str,
-        filehrefcontentresolution: Optional[bool] = None,
         paging: Paging = Paging(),
         **extra_params,
     ) -> BaseSpaceResponse[DatasetFileItem]:
@@ -147,7 +144,6 @@ class BaseSpaceEndpoints:
         response = self.client.get(
             endpoint=f"datasets/{dataset_id}/files",
             params = {
-                **({"filehrefcontentresolution": filehrefcontentresolution} if filehrefcontentresolution else {}),
                 **paging.model_dump(by_alias=True, exclude_none=True),
                 **extra_params,
             }
@@ -159,8 +155,8 @@ class BaseSpaceEndpoints:
     def files_content(
         self,
         file_id: str,
-        redirect: Optional[bool] = None,
         stream: bool = True,
+        redirect: Optional[Literal["true", "meta"]] = "true",
     ) -> requests.Response:
         """
         Get the content of a file by its ID.
@@ -168,10 +164,14 @@ class BaseSpaceEndpoints:
 
         Args:
             file_id: The `DatasetFileItem.id` to fetch content for.
-            redirect: Optional flag to follow redirects.
-            stream: Whether to stream the response content.
+            stream: Whether to stream the response content (True) or immediately download (False).
+            redirect: Whether this method should return a standard 302 redirect or
+                a meta JSON response containing the redirect_uri.
+
         Returns:
-            The raw response from the BaseSpace API, which may be a redirect or the file content.
+            The raw `requests.Response`. Unlike the other endpoints, this returns
+            the response object (not a parsed model) so the caller can stream the
+            file bytes.
         """
 
         response = self.client.get(
