@@ -1,6 +1,7 @@
-import requests
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
+
+import requests
 from pydantic.alias_generators import to_pascal
 
 from .basespace_client import BaseSpaceClient
@@ -18,6 +19,7 @@ from .basespace_models import (
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
+
 
 class BaseSpaceMethods:
     """

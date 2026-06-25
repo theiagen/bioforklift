@@ -31,7 +31,7 @@ class BaseSpaceDatasetError(BaseSpaceError):
 
 
 class BaseSpaceMissingReadError(BaseSpaceError):
-    """Raised when a dataset is paired-end but no R2 files are present."""
+    """Raised when a dataset is paired-end but an unexpected number of reads are present."""
     pass
 
 

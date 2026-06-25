@@ -6,7 +6,7 @@ from .basespace_exceptions import (
     BaseSpaceConnectionError,
     BaseSpaceInvalidResponseError,
     BaseSpaceTimeoutError,
-    api_error_for_status
+    api_error_for_status,
 )
 from bioforklift.forklift_logging import setup_logger
 

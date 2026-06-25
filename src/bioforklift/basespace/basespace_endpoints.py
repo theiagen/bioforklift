@@ -10,7 +10,7 @@ from .basespace_models import (
     DatasetFileItem,
     DatasetItem,
     Paging,
-    SearchItem
+    SearchItem,
 )
 from bioforklift.forklift_logging import setup_logger
 
@@ -66,9 +66,7 @@ class BaseSpaceEndpoints:
                 f"This can happen when the query contains invalid special characters."
             )
             raise
-
         return BaseSpaceResponse[SearchItem].model_validate(response.json())
-
 
     def datasets(
         self,
@@ -91,6 +89,7 @@ class BaseSpaceEndpoints:
         Returns:
             The parsed `/datasets` body, with items typed as `DatasetItem`.
         """
+
         logger.info(
             f"Fetching BaseSpace datasets "
             f"{'project_id=' + project_id if project_id else ''}, "
@@ -116,9 +115,7 @@ class BaseSpaceEndpoints:
             f"(total_count={paging_info.get('TotalCount', 0)}, "
             f"offset={paging_info.get('Offset', 0)}, limit={paging_info.get('Limit', 0)})"
         )
-
         return BaseSpaceResponse[DatasetItem].model_validate(body)
-
 
     def datasets_files(
         self,
@@ -139,7 +136,7 @@ class BaseSpaceEndpoints:
             The parsed `/datasets/{dataset_id}/files` body, with items typed as `DatasetFileItem`.
         """
 
-        logger.info(f"Fetching BaseSpace files for dataset_id=`{dataset_id}`")
+        logger.info(f"Fetching BaseSpace dataset files for dataset_id=`{dataset_id}`")
 
         response = self.client.get(
             endpoint=f"datasets/{dataset_id}/files",
@@ -148,9 +145,7 @@ class BaseSpaceEndpoints:
                 **extra_params,
             }
         )
-
         return BaseSpaceResponse[DatasetFileItem].model_validate(response.json())
-
 
     def files_content(
         self,
@@ -174,6 +169,8 @@ class BaseSpaceEndpoints:
             file bytes.
         """
 
+        logger.info(f"Fetching BaseSpace file content for file_id=`{file_id}`")
+
         response = self.client.get(
             endpoint=f"files/{file_id}/content",
             params = {
@@ -181,5 +178,4 @@ class BaseSpaceEndpoints:
             },
             stream=stream,
         )
-
         return response
