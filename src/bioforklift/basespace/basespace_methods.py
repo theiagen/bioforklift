@@ -127,15 +127,17 @@ class BaseSpaceMethods:
 
             # Sometimes the BaseSpace search endpoint can return items that are close matches but not exact matches.
             # Filter out `SearchItem`s whose attribute/field doesn't match the input `collection_id` exactly.
+            hits = 0
             for search_item in all_search_items:
                 if (
                     getattr(search_item, field) == collection_id and
                     search_item not in exact_matches
                   ):
                     exact_matches.append(search_item)
+                    hits += 1
 
             if all_search_items:
-                logger.info(f"Found {len(exact_matches)} hit(s) after exact match filtering. (Total returned: {len(all_search_items)})")
+                logger.info(f"Found {hits} hit(s) after exact match filtering. (Total returned: {len(all_search_items)})")
 
         if not exact_matches:
             raise BaseSpaceCollectionIdError(
@@ -270,8 +272,6 @@ class BaseSpaceMethods:
         download_files: List[Tuple[str, Path]] = []
 
         for item in ds_items:
-            logger.info(f"Fetching FASTQ files for dataset `{item.name}`")
-
             ds_files: List[DatasetFileItem] = self._fetch_all_items(
                 endpoint_method=self.endpoints.datasets_files,
                 dataset_id=item.id,
@@ -307,5 +307,5 @@ class BaseSpaceMethods:
                         destination=dest_path,
                         chunk_size=(1024 * 1024)
                     )
-                logger.info(f"Saved file `{file_item.name}` to `{dest_path}`")
+        logger.info(f"Downloaded {len(download_files)} FASTQ file(s) from {len(ds_items)} dataset(s) to `{dest_dir}`")
         return download_files

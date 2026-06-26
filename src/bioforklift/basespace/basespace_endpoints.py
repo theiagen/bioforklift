@@ -91,10 +91,10 @@ class BaseSpaceEndpoints:
         """
 
         logger.info(
-            f"Fetching BaseSpace datasets "
-            f"{'project_id=' + project_id if project_id else ''}, "
-            f"{'input_runs=' + input_runs if input_runs else ''}, "
-            f"{'dataset_types=' + dataset_types if dataset_types else ''}"
+            f"Fetching BaseSpace datasets with: "
+            f"{'project_id=' + project_id + ' ' if project_id else ''}"
+            f"{'input_runs=' + input_runs + ' ' if input_runs else ''}"
+            f"{'dataset_types=' + dataset_types + ' ' if dataset_types else ''}"
         )
 
         response = self.client.get(
@@ -136,7 +136,7 @@ class BaseSpaceEndpoints:
             The parsed `/datasets/{dataset_id}/files` body, with items typed as `DatasetFileItem`.
         """
 
-        logger.info(f"Fetching BaseSpace dataset files for dataset_id=`{dataset_id}`")
+        logger.debug(f"Fetching BaseSpace dataset files for dataset_id=`{dataset_id}`")
 
         response = self.client.get(
             endpoint=f"datasets/{dataset_id}/files",
