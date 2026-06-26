@@ -44,7 +44,7 @@ class BaseSpaceClient:
         Helper method to construct full URL for API requests.
         """
 
-        return f"{self.base_url}/{self.api_version}/{endpoint.lstrip('/')}"
+        return f"{self.base_url}/{self.api_version}/{endpoint.strip('/')}"
 
     def _http_request(
         self,
