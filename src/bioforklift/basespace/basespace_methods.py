@@ -72,10 +72,9 @@ class BaseSpaceMethods:
 
             all_items.extend(response.items)
 
-            if (
-                not response.items or
-                (response.paging.displayed_count + response.paging.offset) >= response.paging.total_count
-            ):
+            # Same as checking the `displayed_count` + `offset` in the PagingResponse
+            # Stop iterating if the endpoint returned no items, or if we've already fetched all items.
+            if not response.items or len(all_items) >= response.paging.total_count:
                 break
 
             offset = len(all_items)
@@ -130,7 +129,7 @@ class BaseSpaceMethods:
             hits = 0
             for search_item in all_search_items:
                 if (
-                    getattr(search_item, field) == collection_id and
+                    getattr(search_item, field, None) == collection_id and
                     search_item not in exact_matches
                   ):
                     exact_matches.append(search_item)

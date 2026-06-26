@@ -97,8 +97,8 @@ def api_error_for_status(
     Return specific BaseSpaceAPIError for a given HTTP status code.
 
     Args:
-        status_code: HTTP status code returned by the API.
         message: error/message from the response body
+        status_code: HTTP status code returned by the API.
         response: The parsed error status as a dict, attached for inspection.
 
     Returns:

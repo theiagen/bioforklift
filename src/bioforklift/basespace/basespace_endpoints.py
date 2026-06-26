@@ -129,7 +129,6 @@ class BaseSpaceEndpoints:
 
         Args:
             dataset_id: The `DatasetItem.id` to fetch files for.
-            filehrefcontentresolution: Optional flag to include file href content resolution.
             paging: Optional paging parameters.
             **extra_params: Any additional query params passed through to the endpoint.
         Returns:
@@ -151,7 +150,7 @@ class BaseSpaceEndpoints:
         self,
         file_id: str,
         stream: bool = True,
-        redirect: Optional[Literal["true", "meta"]] = "true",
+        redirect: Literal["true", "meta"] = "true",
     ) -> requests.Response:
         """
         Get the content of a file by its ID.
@@ -174,7 +173,7 @@ class BaseSpaceEndpoints:
         response = self.client.get(
             endpoint=f"files/{file_id}/content",
             params = {
-                **({"redirect": redirect} if redirect is not None else {}),
+                "redirect": redirect,
             },
             stream=stream,
         )
