@@ -28,8 +28,8 @@ class BaseSpaceEndpoints:
     @validate_call
     def search(
         self,
-        scope: Literal["projects", "runs"],
         query: str,
+        scope: Literal["runs", "projects", "genomes", "samples", "appresults", "sample_files", "appresult_files", None] = None,
         paging: Paging = Paging(),
         **extra_params,
     ) -> BaseSpaceResponse[SearchItem]:
@@ -38,7 +38,7 @@ class BaseSpaceEndpoints:
         https://developer.basespace.illumina.com/docs/content/documentation/rest-api/search-api-reference#SearchQueryqueryOptions
 
         Args:
-            scope: The scope of the search ("projects" or "runs").
+            scope: The scope of the search ("projects", "runs", "genomes", "samples", "appresults", "sample_files", "appresult_files").
             query: A raw Lucene query string, e.g. `project.Id:"489069003"` or `ExperimentName:"My Run"`.
                 BaseSpace matches field names without case sensitivity; quote values that contain spaces.
             paging: Optional paging parameters.
