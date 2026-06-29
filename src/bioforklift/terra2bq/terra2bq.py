@@ -260,26 +260,28 @@ class Terra2BQ:
         #   - configured source column absent from the Terra data: we cannot match
         #     reliably, so surface an error rather than silently matching nothing.
         identifier_source_columns = self.sample_processor.get_identifier_source_columns()
+        identifier_column = None
         if identifier_source_columns:
             identifier_column = next(
                 (col for col in identifier_source_columns if col in terra_df.columns),
                 None,
             )
             if identifier_column is None:
-                message = (
+                # The configured source column is absent from the Terra data.
+                # This is expected when the identifier value IS the entity ID but
+                # is declared via use_field_name/column_mappings: the raw download
+                # holds it in the entity-ID column ('entity:<idName>', column 0),
+                # not under the configured name. Fall back to the entity-ID column
+                # rather than skipping the sync entirely. Only a genuinely missing
+                # attribute (value not in the entity-ID column either) will then
+                # fail to match, which is handled per-row below.
+                logger.warning(
                     f"Sample identifier '{sample_identifier_field}' maps from "
                     f"{identifier_source_columns}, but none of those columns are "
-                    f"present in the Terra data. Cannot match samples; skipping."
+                    f"present in the Terra data. Falling back to the entity-ID "
+                    f"column '{terra_df.columns[0]}' for matching."
                 )
-                logger.error(message)
-                return MetadataSyncResult(
-                    status=OperationStatus.ERROR,
-                    message=message,
-                    bq_updated_count=0,
-                    updated_entities={},
-                    failed_updates=[],
-                )
-        else:
+        if identifier_column is None:
             # Default mapping: identifier was renamed from the entity-ID column.
             identifier_column = terra_df.columns[0]
         logger.debug(

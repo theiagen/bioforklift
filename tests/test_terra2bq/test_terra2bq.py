@@ -1315,12 +1315,18 @@ def test_get_identifier_source_columns_use_field_name(tmp_path):
     assert processor.get_identifier_source_columns() == ["basespace_sample_name"]
 
 
-def test_update_bigquery_errors_when_configured_identifier_column_missing(t2bq, tmp_path):
+def test_update_bigquery_falls_back_to_entity_id_when_configured_column_missing(t2bq, tmp_path):
     """
-    When the sample_identifier declares a source column (use_field_name /
-    column_mappings) but that column is absent from the Terra data, sync must
-    surface an ERROR rather than silently falling back to the entity-ID column
-    and matching nothing.
+    Regression (0.4.1): when the sample_identifier declares a source column
+    (use_field_name / column_mappings) that is absent from the Terra data, the
+    identifier value lives in the entity-ID column instead. Sync must fall back
+    to matching on the entity-ID column rather than aborting the whole config.
+
+    This is the real-world case where the destination entities are keyed BY the
+    identifier value: 'basespace_sample_name' is the Terra entity name, so the
+    raw download holds it in 'entity:<type>_id' (column 0), not under a column
+    literally named 'basespace_sample_name'. 0.4.0 matched positionally and
+    worked; the name-based 0.4.1 match erroneously skipped these configs.
     """
     t2bq.sample_processor = _make_processor(tmp_path, """fields:
   id:
@@ -1337,7 +1343,10 @@ def test_update_bigquery_errors_when_configured_identifier_column_missing(t2bq, 
 """)
 
     t2bq.samples_ops.coerce_dataframe_types = MagicMock()
-    t2bq.samples_ops.bulk_update_samples = MagicMock()
+    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
+        "updated_count": 1,
+        "failed_updates": [],
+    })
 
     bq_samples = pd.DataFrame({
         "id": ["uuid1"],
@@ -1345,9 +1354,10 @@ def test_update_bigquery_errors_when_configured_identifier_column_missing(t2bq, 
         "assembly_status": [None],
     })
 
-    # The configured identifier column 'basespace_sample_name' is NOT in the Terra data
+    # The configured identifier column 'basespace_sample_name' is NOT present;
+    # its value lives in the entity-ID column (column 0) instead.
     terra_data = pd.DataFrame({
-        "entity:ohio_ar_test_id": ["t1"],
+        "entity:wastewater_covid_id": ["BS_A"],
         "assembly_status": ["PASS"],
     })
 
@@ -1360,9 +1370,12 @@ def test_update_bigquery_errors_when_configured_identifier_column_missing(t2bq, 
         overwrite_metadata=False,
     )
 
-    assert result.status == OperationStatus.ERROR
-    assert "basespace_sample_name" in result.message
-    t2bq.samples_ops.bulk_update_samples.assert_not_called()
+    assert result.status == OperationStatus.SUCCESS
+    assert result.bq_updated_count == 1
+
+    call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
+    updates_by_id = {u["id"]: u for u in call_args}
+    assert updates_by_id["uuid1"]["assembly_status"] == "PASS"
 
 
 def test_update_bigquery_matches_non_entity_identifier(t2bq, tmp_path):
