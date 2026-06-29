@@ -1,4 +1,4 @@
-from typing import Annotated, Any, List, Literal, Optional, Union
+from typing import Annotated, Any, Generic, List, Literal, Optional, TypeVar, Union
 
 from pydantic import AliasPath, BaseModel, ConfigDict, Discriminator, Field, Tag
 from pydantic.alias_generators import to_pascal
@@ -167,7 +167,10 @@ class PagingResponse(Paging):
     total_count: int
 
 
-class BaseSpaceResponse[ItemType](BaseSpaceAPIModel):
+ItemType = TypeVar("ItemType")
+
+
+class BaseSpaceResponse(BaseSpaceAPIModel, Generic[ItemType]):
     """
     A generic response model for all BaseSpace API calls, containing a list of `Items`
     and a `Paging` block. The expected item type is specified per call, e.g.

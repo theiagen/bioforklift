@@ -15,6 +15,7 @@ from .basespace_models import (
     BaseSpaceResponse,
     DatasetFileItem,
     DatasetItem,
+    ItemType,
     Paging,
     SearchItem,
 )
@@ -32,7 +33,7 @@ class BaseSpaceMethods:
         self.client = client
         self.endpoints = BaseSpaceEndpoints(client)
 
-    def _fetch_all_items[ItemType](
+    def _fetch_all_items(
         self,
         endpoint_method: Callable[..., BaseSpaceResponse[ItemType]],
         **kwargs,
