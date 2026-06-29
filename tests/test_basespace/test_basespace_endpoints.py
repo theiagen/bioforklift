@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -37,7 +37,7 @@ class TestSearchEndpoint:
         )
 
         # Create a Mock `mock_client.get` to control the response and assert how the endpoint called it.
-        mock_client.get = Mock()
+        mock_client.get = MagicMock()
         mock_client.get.return_value.json.return_value = bs_response
 
         result = mock_endpoints.search(
@@ -75,7 +75,7 @@ class TestSearchEndpoint:
         # The BaseSpace API returns a 500 error for an invalid query, which is mapped to a BaseSpaceServerError.
         # Not sure if there's a way to simulate an invalid query without hitting the actual API or creating a data model
         # that validates the query string. For now, we can just mock the client to raise the error.
-        mock_client.get = Mock(
+        mock_client.get = MagicMock(
             side_effect=BaseSpaceServerError("server error", status_code=500, response=None)
         )
         with pytest.raises(BaseSpaceServerError):
@@ -84,7 +84,7 @@ class TestSearchEndpoint:
 
 class TestDatasets:
     def test_datasets_valid_response(self, mock_endpoints, mock_client, bs_dataset_response):
-        mock_client.get = Mock()
+        mock_client.get = MagicMock()
         mock_client.get.return_value.json.return_value = bs_dataset_response
 
         result = mock_endpoints.datasets(
@@ -118,7 +118,7 @@ class TestDatasets:
 
 class TestDatasetsFiles:
     def test_datasets_files_valid_response(self, mock_endpoints, mock_client, bs_dataset_files_response):
-        mock_client.get = Mock()
+        mock_client.get = MagicMock()
         mock_client.get.return_value.json.return_value = bs_dataset_files_response
 
         result = mock_endpoints.datasets_files(
@@ -148,7 +148,7 @@ class TestDatasetsFiles:
 
 class TestFilesContent:
     def test_files_content_valid_response(self, mock_endpoints, mock_client):
-        mock_client.get = Mock()
+        mock_client.get = MagicMock()
 
         result = mock_endpoints.files_content(
             file_id="42",
