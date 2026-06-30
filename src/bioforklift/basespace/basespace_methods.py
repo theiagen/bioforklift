@@ -320,3 +320,49 @@ class BaseSpaceMethods:
                     )
         logger.info(f"Downloaded {len(download_files)} FASTQ file(s) from {len(ds_items)} dataset(s) to `{dest_dir}`")
         return download_files
+
+    def fetch_sample_fastqs(
+        self,
+        collection_id: str,
+        samples: List[str],
+        dest_dir: Optional[Path] = None,
+        dataset_types: str = "common.fastq",
+        dry_run: bool = False,
+    ) -> List[Tuple[str, Path]]:
+        """
+        Resolve a collection_id, find the datasets for the given sample(s), and
+        download their FASTQ files.
+
+        Args:
+            collection_id: A project/run ID or name to resolve.
+            samples: The sample name(s) to download; each must match exactly one dataset.
+            dest_dir: The directory to download files to (defaults to the current working directory).
+            dataset_types: Comma-separated dataset types to list, defaults to "common.fastq".
+            dry_run: If True, log what would be downloaded without fetching or writing any files.
+
+        Returns:
+            A list of ``(file_name, dest_path)`` tuples that were (or, for a dry
+            run, would be) downloaded.
+        """
+
+        if not samples:
+            raise BaseSpaceDatasetError("No samples provided; nothing to fetch.")
+
+        # Resolve the collection_id to a SearchItem (project/run)
+        search_item = self.resolve_collection_id(collection_id)
+
+        # List all datasets for the resolved project/run, filtering by dataset_types if provided.
+        all_ds_items = self.list_datasets(
+            search_item,
+            dataset_types=dataset_types
+        )
+
+        # Filter the datasets to those that match the provided sample names, error if any sample is unmatched or ambiguous.
+        matched_ds_items = self.filter_datasets(samples, all_ds_items)
+
+        # Download the files for the matched datasets, streaming them to disk (or logging if dry_run).
+        return self.download_dataset_files(
+            matched_ds_items,
+            dest_dir=dest_dir,
+            dry_run=dry_run,
+        )
