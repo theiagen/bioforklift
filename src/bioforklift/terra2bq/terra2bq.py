@@ -249,45 +249,6 @@ class Terra2BQ:
         # First let's coerce data types to not have issues with mismatches coming from Terra
         self.samples_ops.coerce_dataframe_types(terra_df)
 
-        # Resolve which Terra column actually holds the sample_identifier value.
-        # The configured sample_identifier is not always the Terra entity ID: when
-        # it is populated via column_mappings/use_field_name it maps to an attribute
-        # column instead, so matching against the entity-ID column would silently
-        # match nothing. Three cases:
-        #   - default mapping (no configured source columns): the identifier was
-        #     renamed from the entity-ID column, which is the first column here.
-        #   - configured source column present: match on it.
-        #   - configured source column absent from the Terra data: we cannot match
-        #     reliably, so surface an error rather than silently matching nothing.
-        identifier_source_columns = self.sample_processor.get_identifier_source_columns()
-        identifier_column = None
-        if identifier_source_columns:
-            identifier_column = next(
-                (col for col in identifier_source_columns if col in terra_df.columns),
-                None,
-            )
-            if identifier_column is None:
-                # The configured source column is absent from the Terra data.
-                # This is expected when the identifier value IS the entity ID but
-                # is declared via use_field_name/column_mappings: the raw download
-                # holds it in the entity-ID column ('entity:<idName>', column 0),
-                # not under the configured name. Fall back to the entity-ID column
-                # rather than skipping the sync entirely. Only a genuinely missing
-                # attribute (value not in the entity-ID column either) will then
-                # fail to match, which is handled per-row below.
-                logger.warning(
-                    f"Sample identifier '{sample_identifier_field}' maps from "
-                    f"{identifier_source_columns}, but none of those columns are "
-                    f"present in the Terra data. Falling back to the entity-ID "
-                    f"column '{terra_df.columns[0]}' for matching."
-                )
-        if identifier_column is None:
-            # Default mapping: identifier was renamed from the entity-ID column.
-            identifier_column = terra_df.columns[0]
-        logger.debug(
-            f"Matching BigQuery samples to Terra on column '{identifier_column}'"
-        )
-
         # For each sample in BigQuery, check if it exists in Terra
         # We've seen that the Terra data may have multiple rows for the same entity
         # Or that the entity may not exist in Terra at all because it was filtered out / deleted by user lab
@@ -296,7 +257,7 @@ class Terra2BQ:
             entity_id = bq_sample[sample_identifier_field]
 
             # Try to find this entity in the Terra data
-            terra_rows = terra_df[terra_df[identifier_column] == entity_id]
+            terra_rows = terra_df[terra_df.iloc[:, 0] == entity_id]
 
             if terra_rows.empty:
                 continue
@@ -2057,18 +2018,6 @@ class Terra2BQ:
             overwrite_metadata=overwrite_metadata,
             allow_null_overwrite=allow_null_overwrite,
         )
-
-        # Surface a failed identifier match (e.g. configured source column missing
-        # from the Terra data) instead of silently reporting no updates.
-        if bq_result.status == OperationStatus.ERROR:
-            return MetadataSyncResult(
-                status=OperationStatus.ERROR,
-                message=bq_result.message,
-                config_id=config_id,
-                bq_updated_count=0,
-                destination_updated_count=0,
-                failed_updates=bq_result.failed_updates,
-            )
 
         # Update destination Terra with updated entities
         destination_result = MetadataSyncResult(

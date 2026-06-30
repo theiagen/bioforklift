@@ -1264,13 +1264,10 @@ def test_allow_null_overwrite_requires_overwrite_metadata(t2bq, caplog):
 
 
 # ---------------------------------------------------------------------------
-# Identifier resolution for sync_metadata
+# Identifier source-column resolution
 #
-# Regression coverage for the case where the configured sample_identifier is
-# NOT the Terra entity ID (it is populated via column_mappings / use_field_name
-# from an attribute column). Before the fix, _update_bigquery_with_terra_metadata
-# always matched on the entity-ID column (terra_df.iloc[:, 0]) and silently
-# matched nothing for these configs.
+# get_identifier_source_columns reports the explicitly-configured source
+# columns for the sample_identifier (empty for the default entity-ID mapping).
 # ---------------------------------------------------------------------------
 
 from bioforklift.data_processing.sample_processor import SampleDataProcessor
@@ -1315,18 +1312,18 @@ def test_get_identifier_source_columns_use_field_name(tmp_path):
     assert processor.get_identifier_source_columns() == ["basespace_sample_name"]
 
 
-def test_update_bigquery_falls_back_to_entity_id_when_configured_column_missing(t2bq, tmp_path):
-    """
-    Regression (0.4.1): when the sample_identifier declares a source column
-    (use_field_name / column_mappings) that is absent from the Terra data, the
-    identifier value lives in the entity-ID column instead. Sync must fall back
-    to matching on the entity-ID column rather than aborting the whole config.
+# ---------------------------------------------------------------------------
+# Identifier matching in _update_bigquery_with_terra_metadata
+#
+# Samples are matched against the Terra entity-ID column (terra_df.iloc[:, 0]),
+# which holds the entity name in the raw download.
+# ---------------------------------------------------------------------------
 
-    This is the real-world case where the destination entities are keyed BY the
-    identifier value: 'basespace_sample_name' is the Terra entity name, so the
-    raw download holds it in 'entity:<type>_id' (column 0), not under a column
-    literally named 'basespace_sample_name'. 0.4.0 matched positionally and
-    worked; the name-based 0.4.1 match erroneously skipped these configs.
+
+def test_update_bigquery_matches_on_entity_id_column(t2bq, tmp_path):
+    """
+    BigQuery samples are matched to Terra rows on the entity-ID column (column 0)
+    and empty BigQuery sync fields are populated from the matched Terra row.
     """
     t2bq.sample_processor = _make_processor(tmp_path, """fields:
   id:
@@ -1354,8 +1351,7 @@ def test_update_bigquery_falls_back_to_entity_id_when_configured_column_missing(
         "assembly_status": [None],
     })
 
-    # The configured identifier column 'basespace_sample_name' is NOT present;
-    # its value lives in the entity-ID column (column 0) instead.
+    # The identifier value lives in the entity-ID column (column 0).
     terra_data = pd.DataFrame({
         "entity:wastewater_covid_id": ["BS_A"],
         "assembly_status": ["PASS"],
@@ -1376,112 +1372,6 @@ def test_update_bigquery_falls_back_to_entity_id_when_configured_column_missing(
     call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
     updates_by_id = {u["id"]: u for u in call_args}
     assert updates_by_id["uuid1"]["assembly_status"] == "PASS"
-
-
-def test_update_bigquery_matches_non_entity_identifier(t2bq, tmp_path):
-    """
-    Regression: when sample_identifier is a non-entity attribute (use_field_name),
-    BigQuery samples must still be matched against the correct Terra attribute
-    column rather than the entity-ID column.
-
-    With the previous iloc[:, 0] matching, none of these samples would be found
-    and bq_updated_count would be 0.
-    """
-    t2bq.sample_processor = _make_processor(tmp_path, """fields:
-  id:
-    type: string
-    primary_key: true
-    system_value: true
-  sample_id:
-    type: string
-    column_mappings: ["entity:ohio_ar_test_id"]
-  basespace_sample_name:
-    type: string
-    sample_identifier: true
-    use_field_name: true
-  assembly_status:
-    type: string
-    sync_field: true
-""")
-
-    t2bq.samples_ops.coerce_dataframe_types = MagicMock()
-    t2bq.samples_ops.bulk_update_samples = MagicMock(return_value={
-        "updated_count": 2,
-        "failed_updates": [],
-    })
-
-    # BigQuery samples: identifier holds BaseSpace names, NOT entity IDs
-    bq_samples = pd.DataFrame({
-        "id": ["uuid1", "uuid2"],
-        "basespace_sample_name": ["BS_A", "BS_B"],
-        "assembly_status": [None, None],  # empty -> eligible to be filled
-    })
-
-    # Terra data: entity-ID column is first and differs from the identifier values
-    terra_data = pd.DataFrame({
-        "entity:ohio_ar_test_id": ["t1", "t2"],
-        "basespace_sample_name": ["BS_A", "BS_B"],
-        "assembly_status": ["PASS", "FAIL"],
-    })
-
-    result = t2bq._update_bigquery_with_terra_metadata(
-        config_samples=bq_samples,
-        terra_df=terra_data,
-        sync_fields=["assembly_status"],
-        sample_identifier_field="basespace_sample_name",
-        update_bigquery=True,
-        overwrite_metadata=False,
-    )
-
-    assert result.status == OperationStatus.SUCCESS
-    assert result.bq_updated_count == 2
-
-    call_args = t2bq.samples_ops.bulk_update_samples.call_args[0][0]
-    updates_by_id = {u["id"]: u for u in call_args}
-    assert updates_by_id["uuid1"]["assembly_status"] == "PASS"
-    assert updates_by_id["uuid2"]["assembly_status"] == "FAIL"
-
-    # The destination-update map is keyed by the matched identifier value
-    assert set(result.updated_entities.keys()) == {"BS_A", "BS_B"}
-
-
-def test_sync_metadata_for_config_propagates_identifier_match_error(t2bq, sample_config):
-    """
-    An identifier-match ERROR from _update_bigquery_with_terra_metadata must
-    propagate out of sync_metadata_for_config (not be swallowed as NO_UPDATES),
-    and the destination update must be skipped.
-    """
-    sample_df = pd.DataFrame({
-        "id": ["sample1"],
-        "sample_id": ["BS_A"],
-        "config_id": ["test-config-id"],
-    })
-    terra_df = pd.DataFrame({"entity:ohio_ar_test_id": ["t1"], "attr1": ["val1"]})
-
-    t2bq.samples_ops.get_samples_by_timeframe.return_value = sample_df
-    t2bq._get_terra_data = MagicMock(
-        return_value=DataResult(status=OperationStatus.SUCCESS, data=terra_df)
-    )
-    t2bq._update_bigquery_with_terra_metadata = MagicMock(return_value=MetadataSyncResult(
-        status=OperationStatus.ERROR,
-        message="Sample identifier 'sample_id' maps from ['x'], but none ... present",
-        bq_updated_count=0,
-        updated_entities={},
-        failed_updates=[],
-    ))
-    t2bq._update_terra_with_synced_metadata = MagicMock()
-    t2bq._get_target_entity_from_config = MagicMock(return_value="sample")
-
-    result = t2bq.sync_metadata_for_config(
-        sample_config, days_back=7, sync_fields=["attr1"],
-        update_bigquery=True, update_destination=True,
-    )
-
-    assert result.status == OperationStatus.ERROR
-    assert result.config_id == sample_config["id"]
-    assert "sample_id" in result.message
-    # Destination Terra must not be touched when the source match failed
-    t2bq._update_terra_with_synced_metadata.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
