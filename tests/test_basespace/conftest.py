@@ -4,7 +4,6 @@ import pytest
 import requests
 
 from bioforklift.basespace import (
-    BaseSpace,
     BaseSpaceClient,
     BaseSpaceEndpoints,
     BaseSpaceResponse,
@@ -30,12 +29,6 @@ def mock_methods(mock_client):
 def mock_endpoints(mock_client):
     """A BaseSpaceEndpoints instance with a mock client."""
     return BaseSpaceEndpoints(mock_client)
-
-
-@pytest.fixture
-def mock_basespace(mock_client):
-    """A BaseSpace instance with a mock client, methods and endpoints."""
-    return BaseSpace.from_client(mock_client)
 
 
 @pytest.fixture

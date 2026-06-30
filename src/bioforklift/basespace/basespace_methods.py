@@ -148,7 +148,7 @@ class BaseSpaceMethods:
         if len(exact_matches) > 1:
             raise BaseSpaceCollectionIdError(
                 f"Input collection ID `{collection_id}` is ambiguous; it matches: "
-                f"{[item for item in exact_matches]}. Provide a more specific id or name."
+                f"{exact_matches}. Provide a more specific id or name."
             )
 
         # Should be exactly one match at this point
@@ -175,7 +175,7 @@ class BaseSpaceMethods:
             A list of DatasetItems whose `DatasetItem.Name` is in the provided `samples`.
         """
 
-        all_items: list[DatasetItem] = []
+        all_items: List[DatasetItem] = []
         unmatched_samples = []
 
         for sample in samples:
@@ -204,14 +204,13 @@ class BaseSpaceMethods:
         self,
         search_item: SearchItem,
         dataset_types: Optional[str] = "common.fastq",
-    ) -> list[DatasetItem]:
+    ) -> List[DatasetItem]:
         """
         Get every dataset for a given project or run, paging through all results.
 
         Args:
             search_item: The resolved SearchItem object ("project" or "run").
             dataset_types: Optional comma-separated list of dataset types to filter by.
-            page_size: Number of datasets to request per page.
 
         Returns:
             A list of all datasets associated with the specified project or run.
