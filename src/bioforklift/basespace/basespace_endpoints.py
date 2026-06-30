@@ -30,7 +30,7 @@ class BaseSpaceEndpoints:
         self,
         query: str,
         scope: Literal["runs", "projects", "genomes", "samples", "appresults", "sample_files", "appresult_files", None] = None,
-        paging: Paging = Paging(),
+        paging: Optional[Paging] = None,
         **extra_params,
     ) -> BaseSpaceResponse[SearchItem]:
         """
@@ -46,6 +46,8 @@ class BaseSpaceEndpoints:
         Returns:
             The parsed v2 `/search` body, with items typed as `SearchItem`.
         """
+
+        paging = paging or Paging()
 
         logger.info(f"Searching BaseSpace with: scope=`{scope}` & query=`{query}`")
 
@@ -68,12 +70,13 @@ class BaseSpaceEndpoints:
             raise
         return BaseSpaceResponse[SearchItem].model_validate(response.json())
 
+    @validate_call
     def datasets(
         self,
         project_id: Optional[str] = None,
         input_runs: Optional[str] = None,
         dataset_types: Optional[str] = None,
-        paging: Paging = Paging(),
+        paging: Optional[Paging] = None,
         **extra_params,
     ) -> BaseSpaceResponse[DatasetItem]:
         """
@@ -89,6 +92,8 @@ class BaseSpaceEndpoints:
         Returns:
             The parsed `/datasets` body, with items typed as `DatasetItem`.
         """
+
+        paging = paging or Paging()
 
         logger.info(
             f"Fetching BaseSpace datasets with: "
@@ -117,10 +122,11 @@ class BaseSpaceEndpoints:
         )
         return BaseSpaceResponse[DatasetItem].model_validate(body)
 
+    @validate_call
     def datasets_files(
         self,
         dataset_id: str,
-        paging: Paging = Paging(),
+        paging: Optional[Paging] = None,
         **extra_params,
     ) -> BaseSpaceResponse[DatasetFileItem]:
         """
@@ -135,6 +141,8 @@ class BaseSpaceEndpoints:
             The parsed `/datasets/{dataset_id}/files` body, with items typed as `DatasetFileItem`.
         """
 
+        paging = paging or Paging()
+
         logger.debug(f"Fetching BaseSpace dataset files for dataset_id=`{dataset_id}`")
 
         response = self.client.get(
@@ -146,6 +154,7 @@ class BaseSpaceEndpoints:
         )
         return BaseSpaceResponse[DatasetFileItem].model_validate(response.json())
 
+    @validate_call
     def files_content(
         self,
         file_id: str,
