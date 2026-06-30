@@ -1,6 +1,5 @@
 from .basespace_client import BaseSpaceClient
 from .basespace_methods import BaseSpaceMethods
-from .basespace_endpoints import BaseSpaceEndpoints
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -10,8 +9,8 @@ class BaseSpace:
     """
     Main interface for BaseSpace operations.
 
-    Wires up the HTTP client and methods, and exposes a single entry point for
-    downloading a sample's paired-end FASTQs.
+    Wires up the HTTP client, methods, and endpoints so callers can reach the
+    BaseSpace API through `client`, `methods`, and `endpoints`.
     """
 
     def __init__(
@@ -28,13 +27,12 @@ class BaseSpace:
             basespace_api_url: The base URL for the BaseSpace API.
             basespace_api_version: The version of the BaseSpace API to use.
         """
-        self.client = BaseSpaceClient(
+        client = BaseSpaceClient(
             access_token,
             basespace_api_url,
-            basespace_api_version
+            basespace_api_version,
         )
-        self.methods = BaseSpaceMethods(self.client)
-        self.endpoints = BaseSpaceEndpoints(self.client)
+        self._wire(client)
 
     @classmethod
     def from_client(cls, client: BaseSpaceClient) -> "BaseSpace":
@@ -45,11 +43,21 @@ class BaseSpace:
             client: An instance of BaseSpaceClient.
 
         Returns:
-            A BaseSpace instance initialized with the provided client.
+            A BaseSpace instance that reuses the provided client.
         """
 
-        return cls(
-            access_token=client.access_token,
-            basespace_api_url=client.base_url,
-            basespace_api_version=client.api_version
-        )
+        instance = cls.__new__(cls)
+        instance._wire(client)
+        return instance
+
+    def _wire(self, client: BaseSpaceClient) -> None:
+        """
+        Wire up the client, methods, and endpoints from a single client instance.
+
+        `endpoints` is shared with `methods` so exactly one `BaseSpaceEndpoints`
+        instance exists per `BaseSpace`.
+        """
+
+        self.client = client
+        self.methods = BaseSpaceMethods(client)
+        self.endpoints = self.methods.endpoints
