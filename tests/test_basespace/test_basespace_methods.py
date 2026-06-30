@@ -78,11 +78,23 @@ class TestResolveCollectionId:
         ],
     )
     def test_resolve_collection_id_unique_match(self, mock_methods, collection_id, items, expected_id):
-        mock_methods.endpoints.search = MagicMock(return_value=make_response(items, total_count=len(items)))
+        search_mock = mock_methods.endpoints.search = MagicMock(
+            return_value=make_response(items, total_count=len(items))
+        )
 
         result = mock_methods.resolve_collection_id(collection_id)
 
         assert result.id == expected_id
+
+        # Every (scope, field) pair is searched with a PascalCase Lucene clause for this collection_id.
+        clauses = [(call.kwargs["scope"], call.kwargs["query"]) for call in search_mock.call_args_list]
+        assert clauses == [
+            ("runs", f'Id:"{collection_id}"'),
+            ("runs", f'Name:"{collection_id}"'),
+            ("runs", f'ExperimentName:"{collection_id}"'),
+            ("projects", f'Id:"{collection_id}"'),
+            ("projects", f'Name:"{collection_id}"'),
+        ]
 
     @pytest.mark.parametrize(
         "collection_id, items, error_match",
