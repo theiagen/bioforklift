@@ -162,16 +162,34 @@ class TestDownloadDatasetFiles:
         with pytest.raises(BaseSpaceMissingReadError):
             mock_methods.download_dataset_files([item], dest_dir=tmp_path)
 
-    def test_single_end_skips_pair_validation(self, mock_methods, tmp_path):
-        files = [DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_L001_R1_001.fastq.gz", "HrefContent": "https://x/1"})]
+    def test_paired_end_with_unbalanced_reads_raises(self, mock_methods, tmp_path):
+        # Even file count (2) but both files are R1 with no R2 -> must still raise.
+        files = [
+            DatasetFileItem.model_validate({"Id": "1", "Name": "SampleA_S1_L001_R1_001.fastq.gz", "HrefContent": "https://x/1"}),
+            DatasetFileItem.model_validate({"Id": "2", "Name": "SampleB_S1_L002_R1_001.fastq.gz", "HrefContent": "https://x/2"}),
+        ]
         item = DatasetItem.model_validate(
-            {"Id": "ds.2", "Name": "Sample2", "Attributes": {"common_fastq": {"IsPairedEnd": False}}}
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
+        )
+        mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
+
+        with pytest.raises(BaseSpaceMissingReadError, match="not balanced"):
+            mock_methods.download_dataset_files([item], dest_dir=tmp_path)
+
+    def test_paired_end_balanced_downloads_both_reads(self, mock_methods, tmp_path):
+        files = [
+            DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_S1_L001_R1_001.fastq.gz", "HrefContent": "https://x/1"}),
+            DatasetFileItem.model_validate({"Id": "2", "Name": "Sample_S1_L001_R2_001.fastq.gz", "HrefContent": "https://x/2"}),
+        ]
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
         )
         mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
         mock_fc = mock_methods.endpoints.files_content = MagicMock()
-        mock_fc.return_value.__enter__.return_value.iter_content.return_value = [b"X"]
+        mock_fc.return_value.__enter__.return_value.iter_content.return_value = [b"DATA"]
 
         result = mock_methods.download_dataset_files([item], dest_dir=tmp_path)
 
-        assert len(result) == 1
-        assert (tmp_path / "Sample_L001_R1_001.fastq.gz").read_bytes() == b"X"
+        assert len(result) == 2
+        assert (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").read_bytes() == b"DATA"
+        assert (tmp_path / "Sample_S1_L001_R2_001.fastq.gz").read_bytes() == b"DATA"

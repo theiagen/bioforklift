@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -280,11 +281,22 @@ class BaseSpaceMethods:
             # `attributes` is optional, so guard before reading the paired-end flag.
             is_paired_end = bool(item.attributes and item.attributes.is_paired_end)
 
-            # If the dataset is paired-end, we expect an even number of files (one for each read).
-            if is_paired_end and (len(ds_files) < 2 or len(ds_files) % 2 != 0):
-                raise BaseSpaceMissingReadError(
-                    f"Dataset `{item.name}` is paired-end but has an unexpected number of files."
-                )
+            # If the dataset is paired-end, expect an even file count that splits into
+            # matched R1/R2 reads (one R2 for every R1, across lanes). Read number is
+            # parsed from the standard `_R{read}_001.fastq` token in the file name.
+            if is_paired_end:
+                read1_files = [file for file in ds_files if re.search(r"_R1_\d+\.fastq", file.name)]
+                read2_files = [file for file in ds_files if re.search(r"_R2_\d+\.fastq", file.name)]
+                if (
+                    len(ds_files) < 2
+                    or len(ds_files) % 2 != 0
+                    or len(read1_files) != len(read2_files)
+                    or len(read1_files) == 0
+                ):
+                    raise BaseSpaceMissingReadError(
+                        f"Dataset `{item.name}` is paired-end but its files are not balanced "
+                        f"R1/R2 (R1={len(read1_files)}, R2={len(read2_files)}, total={len(ds_files)})."
+                    )
 
             for file_item in ds_files:
                 dest_path = dest_dir / file_item.name
