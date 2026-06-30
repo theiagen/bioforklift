@@ -178,6 +178,8 @@ class BaseSpaceMethods:
         all_items: List[DatasetItem] = []
         unmatched_samples = []
 
+        logger.info(f"Filtering for {len(samples)} sample(s) against {len(ds_items)} dataset(s)")
+
         for sample in samples:
             matches = [
                 ds_item
@@ -198,6 +200,8 @@ class BaseSpaceMethods:
             raise BaseSpaceDatasetError(
                 f"No dataset match found for sample(s): {', '.join(unmatched_samples)}"
             )
+
+        logger.info(f"Found {len(all_items)} dataset(s) matching the provided sample(s)")
         return all_items
 
     def list_datasets(
