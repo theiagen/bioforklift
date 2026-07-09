@@ -276,12 +276,23 @@ class BaseSpaceMethods:
         """
         Download the files for a list of DatasetItems.
 
+        For paired-end datasets, every file is expected to be a standard Illumina
+        read file whose name carries the `_R1_` / `_R2_` nomenclature. The read number
+        is parsed from the `_R{read}_` file name. These R1/R2 specific read files are
+        effectively the only files allowed in a paired-end dataset. There has to be an
+        equal number of R1/R2 read files and no other type of file can be present in the
+        List[DatasetItem]'s (otherwise an error is raised).
+
         Args:
             ds_items: A list of DatasetItems to download files for.
             dest_dir: The directory to download files to (defaults to the current
                 working directory).
             dry_run: If True, log what would be downloaded without fetching or
                 writing any files.
+        Raises:
+            BaseSpaceMissingReadError: If a paired-end dataset's files are not a
+                balanced set of R1/R2 reads (no R1s, unequal R1/R2 counts, or any
+                non-R1/R2 file present).
         Returns:
             A list of ``(file_name, dest_path)`` tuples that were (or, for a dry
             run, would be) downloaded.
