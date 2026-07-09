@@ -11,9 +11,9 @@ from .basespace_models import (
     Paging,
     PagingResponse,
     ProjectItem,
+    OtherItem,
     RunItem,
     SearchItem,
-    UnknownItem,
 )
 from .basespace_exceptions import (
     BaseSpaceError,
@@ -46,7 +46,7 @@ __all__ = [
     "CommonFastqAttributes",
     "DatasetItem",
     "DatasetFileItem",
-    "UnknownItem",
+    "OtherItem",
     "SearchItem",
     "BaseSpaceResponse",
     # Exceptions

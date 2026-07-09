@@ -43,7 +43,7 @@ class ProjectItem(BaseSpaceAPIModel):
     name: Optional[str] = Field(default=None, validation_alias=AliasPath("Project", "Name"))
 
 
-class UnknownItem(BaseSpaceAPIModel):
+class OtherItem(BaseSpaceAPIModel):
     """
     Fallback for item shapes not yet modeled. Keeps the raw payload (extra='allow')
     instead of raising an error, so new scopes don't break.
@@ -59,21 +59,21 @@ class UnknownItem(BaseSpaceAPIModel):
 def _search_item_type(value: Any) -> str:
     """
     Discriminator for a `SearchItem`. Serves as a map to model and distinguish raw `/search`
-    result dicts to their corresponding model instances. Includes a fallback to `UnknownItem`.
+    result dicts to their corresponding model instances. Includes a fallback to `OtherItem`.
     """
     if isinstance(value, BaseModel):
         return {
             RunItem: "run",
             ProjectItem: "project",
-            UnknownItem: "unknown",
-        }.get(type(value), "unknown")
+            OtherItem: "other",
+        }.get(type(value), "other")
 
     if isinstance(value, dict):
         if "Project" in value and value.get("Type", "").lower() == "project":
             return "project"
         if "Run" in value and value.get("Type", "").lower() == "run":
             return "run"
-    return "unknown"
+    return "other"
 
 
 # Type alias representing a single entry in the `Items` list returned by the `/search` endpoint
@@ -82,7 +82,7 @@ SearchItem = Annotated[
     Union[
         Annotated[RunItem, Tag("run")],
         Annotated[ProjectItem, Tag("project")],
-        Annotated[UnknownItem, Tag("unknown")],
+        Annotated[OtherItem, Tag("other")],
     ],
     Discriminator(_search_item_type),
 ]

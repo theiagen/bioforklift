@@ -2,10 +2,10 @@ from bioforklift.basespace import (
     BaseSpaceResponse,
     CommonFastqAttributes,
     DatasetItem,
+    OtherItem,
     ProjectItem,
     RunItem,
     SearchItem,
-    UnknownItem,
 )
 
 
@@ -25,15 +25,15 @@ class TestSearchItemParsing:
         assert item.id == "1234567890"
         assert item.name == "My Project"
 
-    def test_unmodeled_type_falls_back_to_unknown_item(self):
-        # A scope/Type we don't model must route to UnknownItem, not raise.
+    def test_unmodeled_type_falls_back_to_other_item(self):
+        # A scope/Type we don't model must route to OtherItem, not raise.
         response = BaseSpaceResponse[SearchItem].model_validate(
             {
                 "Items": [{"Type": "sample", "Foo": "bar"}],
                 "Paging": {"DisplayedCount": 1, "TotalCount": 1},
             }
         )
-        assert isinstance(response.items[0], UnknownItem)
+        assert isinstance(response.items[0], OtherItem)
 
 
 class TestDatasetParsing:

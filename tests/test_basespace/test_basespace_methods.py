@@ -5,9 +5,9 @@ from bioforklift.basespace import (
     BaseSpaceResponse,
     DatasetFileItem,
     DatasetItem,
+    OtherItem,
     ProjectItem,
     RunItem,
-    UnknownItem,
 )
 from bioforklift.basespace.basespace_exceptions import (
     BaseSpaceCollectionIdError,
@@ -103,8 +103,8 @@ class TestResolveCollectionId:
             ("none", [RunItem.model_validate({"Type": "run", "Run": {"Id": "other"}})], "no project or run exactly matches"),
             # close but inexact match is filtered out
             ("ABC", [RunItem.model_validate({"Type": "run", "Run": {"Id": "ABCD"}})], "no project or run exactly matches"),
-            # an UnknownItem (no id/name) is skipped
-            ("unknown", [UnknownItem.model_validate({"Type": "sample", "Foo": "bar"})], "no project or run exactly matches"),
+            # an OtherItem (no id/name) is skipped
+            ("unknown", [OtherItem.model_validate({"Type": "sample", "Foo": "bar"})], "no project or run exactly matches"),
             # two distinct items both match
             (
                 "dup",
