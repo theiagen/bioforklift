@@ -214,6 +214,22 @@ class TestDownloadDatasetFiles:
         with pytest.raises(BaseSpaceMissingReadError, match="not balanced"):
             mock_methods.download_dataset_files([item], dest_dir=tmp_path)
 
+    def test_paired_end_with_extra_non_read_file_raises(self, mock_methods, tmp_path):
+        # A balanced R1/R2 pair plus an unexpected non-R1/R2 file (e.g. an index read)
+        # must raise: every file has to be accounted for as an R1 or R2 read.
+        files = [
+            DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_S1_L001_R1_001.fastq.gz"}),
+            DatasetFileItem.model_validate({"Id": "2", "Name": "Sample_S1_L001_R2_001.fastq.gz"}),
+            DatasetFileItem.model_validate({"Id": "3", "Name": "Sample_S1_L001_X1_001.fastq.gz"}),
+        ]
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
+        )
+        mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
+
+        with pytest.raises(BaseSpaceMissingReadError, match="Every file must be an R1 or R2 read"):
+            mock_methods.download_dataset_files([item], dest_dir=tmp_path)
+
     def test_paired_end_balanced_downloads_both_reads(self, mock_methods, tmp_path):
         files = [
             DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_S1_L001_R1_001.fastq.gz", "HrefContent": "https://x/1"}),

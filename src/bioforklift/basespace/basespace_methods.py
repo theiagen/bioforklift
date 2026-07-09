@@ -307,18 +307,20 @@ class BaseSpaceMethods:
             # If the dataset is paired-end, expect an even file count that splits into
             # matched R1/R2 reads (one R2 for every R1, across lanes). Read number is
             # parsed from the standard `_R{read}_001.fastq` token in the file name.
+            # Every file must be an R1/R2 read; anything else fails loudly rather
+            # than being silently downloaded or missed.
             if is_paired_end:
                 read1_files = [file for file in ds_files if re.search(r"_R1_\d+\.fastq", file.name)]
                 read2_files = [file for file in ds_files if re.search(r"_R2_\d+\.fastq", file.name)]
                 if (
-                    len(ds_files) < 2
-                    or len(ds_files) % 2 != 0
+                    len(read1_files) == 0
                     or len(read1_files) != len(read2_files)
-                    or len(read1_files) == 0
+                    or len(read1_files) + len(read2_files) != len(ds_files)
                 ):
                     raise BaseSpaceMissingReadError(
                         f"Dataset `{item.name}` is paired-end but its files are not balanced "
-                        f"R1/R2 (R1={len(read1_files)}, R2={len(read2_files)}, total={len(ds_files)})."
+                        f"R1/R2 (R1={len(read1_files)}, R2={len(read2_files)}, total={len(ds_files)}). "
+                        f"Every file must be an R1 or R2 read."
                     )
 
             for file_item in ds_files:
