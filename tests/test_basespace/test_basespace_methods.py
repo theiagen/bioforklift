@@ -1,4 +1,5 @@
 import pytest
+import requests
 from unittest.mock import MagicMock
 
 from bioforklift.basespace import (
@@ -159,6 +160,31 @@ class TestDownloadDatasetFiles:
         ]
         assert not (tmp_path / "Sample_L001_R1_001.fastq.gz").exists()
 
+    def test_download_interrupted_stream_leaves_no_partial_file(self, mock_methods, tmp_path):
+        # A stream that drops mid-download must not leave a truncated file at the final
+        # path, nor a leftover temp/.part file in the destination directory.
+        files = [
+            DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_S1_L001_R1_001.fastq.gz"}),
+            DatasetFileItem.model_validate({"Id": "2", "Name": "Sample_S1_L001_R2_001.fastq.gz"}),
+        ]
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
+        )
+        mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
+
+        def broken_stream(chunk_size=None):
+            yield b"PARTIAL"
+            raise requests.ConnectionError("stream dropped mid-download")
+
+        mock_fc = mock_methods.endpoints.files_content = MagicMock()
+        mock_fc.return_value.__enter__.return_value.iter_content.side_effect = broken_stream
+
+        with pytest.raises(requests.ConnectionError):
+            mock_methods.download_dataset_files([item], dest_dir=tmp_path)
+
+        # No file at the final destination and no partial temp file left behind.
+        assert not (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").exists()
+        assert list(tmp_path.iterdir()) == []
 
     @pytest.mark.parametrize("file_count", [1, 3, 0])
     def test_paired_end_with_bad_file_count_raises(self, mock_methods, tmp_path, file_count):

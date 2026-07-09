@@ -1,4 +1,6 @@
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -235,6 +237,10 @@ class BaseSpaceMethods:
     ) -> None:
         """
         Stream the content of a FASTQ file to a destination file.
+        First, streams to a temporary file in the destination's directory, then
+        renames it into place once the full body is written. A disrupted
+        stream will only ever leave the temp file (which will get cleaned up).
+        It will never leave a truncated file at the final path.
 
         Args:
             response: The `requests.Response` object to stream content from.
@@ -242,10 +248,24 @@ class BaseSpaceMethods:
             chunk_size: The size of each chunk to read from the response.
         """
 
-        with open(destination, "wb") as outfile:
-            for chunk in response.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    outfile.write(chunk)
+        # Create a temporary file in the same directory as the destination
+        tmp_file = tempfile.NamedTemporaryFile(
+            dir=destination.parent,
+            prefix=f".tmp.{destination.name}.",
+            delete=False,
+        )
+        tmp_path = Path(tmp_file.name)
+
+        try:
+            with tmp_file as outfile:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        outfile.write(chunk)
+            os.replace(tmp_path, destination)
+        except BaseException:
+            # Clean up the partial temp file on any failure (including interrupts).
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     def download_dataset_files(
         self,
