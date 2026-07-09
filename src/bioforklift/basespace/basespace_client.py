@@ -99,7 +99,11 @@ class BaseSpaceClient:
             except ValueError as json_error:
                 raise BaseSpaceInvalidResponseError("Response body was not valid JSON") from json_error
 
-            source = body.get("ResponseStatus") or body
+            # Error bodies are expected to be JSON objects; guard against list/scalar shapes.
+            if isinstance(body, dict):
+                source = body.get("ResponseStatus") or body
+            else:
+                source = {}
             message = source.get("Message") or str(e)
             raise api_error_for_status(
                 message, e.response.status_code, response=body,

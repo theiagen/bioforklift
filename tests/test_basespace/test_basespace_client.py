@@ -116,6 +116,25 @@ class TestBaseSpaceErrorMapping:
             with pytest.raises(BaseSpaceInvalidResponseError):
                 mock_client.get("search")
 
+    def test_http_error_with_non_dict_json_body(self, mock_client, mock_response):
+        # A valid-JSON error body that isn't an object (e.g. a list) must still map
+        # to the status-based exception rather than raising AttributeError on .get().
+        mock_response.status_code = 500
+        mock_response.json.return_value = [{"unexpected": "shape"}]
+
+        http_error = requests.HTTPError("500 error")
+        http_error.response = mock_response
+        mock_response.raise_for_status.side_effect = http_error
+
+        with patch("requests.request") as mock_request:
+            mock_request.return_value = mock_response
+            with pytest.raises(BaseSpaceServerError) as exc_info:
+                mock_client.get("search")
+
+        # No ResponseStatus.Message available, so the message falls back to str(e).
+        assert "500 error" in str(exc_info.value)
+        assert exc_info.value.response == [{"unexpected": "shape"}]
+
     @pytest.mark.parametrize(
         "status_code, expected_class",
         [
