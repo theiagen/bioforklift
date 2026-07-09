@@ -139,7 +139,6 @@ class DatasetFileItem(BaseSpaceAPIModel):
 
     id: str
     name: str
-    href_content: str
 
 
 # =========================================================================
