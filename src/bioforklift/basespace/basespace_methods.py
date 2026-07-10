@@ -70,7 +70,7 @@ class BaseSpaceMethods:
         while True:
             # Build a fresh Paging each iteration; never mutate a shared instance.
             response = endpoint_method(
-                paging=Paging(offset=offset, limit=1000),
+                paging=Paging(offset=offset, limit=1000), # Max limit is 1000 for BaseSpace v2 endpoints
                 **kwargs,
             )
 
