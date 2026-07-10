@@ -12,6 +12,9 @@ class BaseSpace:
 
     Wires up the HTTP client, methods, and endpoints so callers can reach the
     BaseSpace API through `client`, `methods`, and `endpoints`.
+
+    Contains links to top-level orchestrator functions for convenience, while still
+    providing access to the lower-level building blocks.
     """
 
     def __init__(
@@ -62,3 +65,6 @@ class BaseSpace:
         self.client = client
         self.endpoints = BaseSpaceEndpoints(self.client)
         self.methods = BaseSpaceMethods(self.endpoints)
+
+        # include links to top-level orchestrator functions for convenience
+        self.fetch_sample_fastqs = self.methods.fetch_sample_fastqs
