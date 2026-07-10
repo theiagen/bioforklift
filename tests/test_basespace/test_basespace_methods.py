@@ -299,6 +299,36 @@ class TestDownloadDatasetFiles:
         assert (tmp_path / "Sample_S1_L001_R2_001.fastq.gz").stat().st_size == 4
 
 
+class TestListDatasets:
+    def test_list_datasets_routes_project_scope(self, mock_methods):
+        # A project item must scope the /datasets query by project_id (not input_runs).
+        item = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1"}})
+        mock_methods._fetch_all_items = MagicMock(return_value=[])
+
+        mock_methods.list_datasets(item)
+
+        kwargs = mock_methods._fetch_all_items.call_args.kwargs
+        assert kwargs["project_id"] == "proj-1"
+        assert kwargs["input_runs"] is None
+
+    def test_list_datasets_routes_run_scope(self, mock_methods):
+        # A run item must scope the /datasets query by input_runs (not project_id).
+        item = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})
+        mock_methods._fetch_all_items = MagicMock(return_value=[])
+
+        mock_methods.list_datasets(item)
+
+        kwargs = mock_methods._fetch_all_items.call_args.kwargs
+        assert kwargs["input_runs"] == "run-1"
+        assert kwargs["project_id"] is None
+
+    def test_list_datasets_other_item_raises(self, mock_methods):
+        # An OtherItem (e.g. a sample) cannot be used to scope the /datasets query (currently).
+        item = OtherItem.model_validate({"Type": "sample", "Sample": {"Id": "sample-1"}})
+
+        with pytest.raises(BaseSpaceCollectionIdError, match="Cannot list datasets for OtherItem"):
+            mock_methods.list_datasets(item)
+
 
 class TestFetchSampleFastqs:
     def test_fetch_sample_fastqs_empty_samples_raises(self, mock_methods):

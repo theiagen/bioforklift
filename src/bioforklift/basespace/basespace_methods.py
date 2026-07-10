@@ -20,6 +20,8 @@ from .basespace_models import (
     DatasetItem,
     ItemType,
     Paging,
+    ProjectItem,
+    RunItem,
     SearchItem,
 )
 from bioforklift.forklift_logging import setup_logger
@@ -227,6 +229,11 @@ class BaseSpaceMethods:
         Returns:
             A list of all datasets associated with the specified project or run.
         """
+
+        if not isinstance(search_item, (RunItem, ProjectItem)):
+            raise BaseSpaceCollectionIdError(
+                f"Cannot list datasets for {type(search_item).__name__}; expected a run or project."
+            )
 
         return self._fetch_all_items(
             self.endpoints.datasets,
