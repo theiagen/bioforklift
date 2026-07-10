@@ -180,6 +180,13 @@ class BaseSpaceMethods:
         all_items: List[DatasetItem] = []
         unmatched_samples = []
 
+        # Reject duplicate sample names up front so we don't accidentally download the same dataset more than once.
+        duplicates = sorted({name for name in samples if samples.count(name) > 1})
+        if duplicates:
+            raise BaseSpaceDatasetError(
+                f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
+            )
+
         logger.info(f"Filtering for {len(samples)} sample(s) against {len(ds_items)} dataset(s)")
 
         for sample in samples:
@@ -384,6 +391,13 @@ class BaseSpaceMethods:
 
         if not samples:
             raise BaseSpaceDatasetError("No samples provided; nothing to fetch.")
+
+        # Reject duplicate sample names up front so we don't accidentally download the same dataset more than once.
+        duplicates = sorted({name for name in samples if samples.count(name) > 1})
+        if duplicates:
+            raise BaseSpaceDatasetError(
+                f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
+            )
 
         # Resolve the collection_id to a SearchItem (project/run)
         search_item = self.resolve_collection_id(collection_id)

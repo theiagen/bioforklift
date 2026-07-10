@@ -138,6 +138,13 @@ class TestFilterDatasets:
         with pytest.raises(BaseSpaceDatasetError, match="Multiple datasets"):
             mock_methods.filter_datasets(["sampleA"], [ds_a, ds_a2])
 
+    def test_filter_datasets_duplicate_sample_names_raises(self, mock_methods):
+        # A duplicated sample name must be rejected before any matching happens.
+        ds_a = DatasetItem.model_validate({"Id": "ds.a", "Name": "sampleA"})
+
+        with pytest.raises(BaseSpaceDatasetError, match="Duplicate sample name"):
+            mock_methods.filter_datasets(["sampleA", "sampleA"], [ds_a])
+
 
 class TestDownloadDatasetFiles:
     def test_download_dataset_files_dry_run(self, mock_methods, tmp_path):
@@ -247,3 +254,40 @@ class TestDownloadDatasetFiles:
         assert len(result) == 2
         assert (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").read_bytes() == b"DATA"
         assert (tmp_path / "Sample_S1_L001_R2_001.fastq.gz").read_bytes() == b"DATA"
+
+
+class TestFetchSampleFastqs:
+    def test_fetch_sample_fastqs_empty_samples_raises(self, mock_methods):
+        with pytest.raises(BaseSpaceDatasetError, match="No samples provided"):
+            mock_methods.fetch_sample_fastqs("collA", [])
+
+    def test_fetch_sample_fastqs_duplicate_samples_raises(self, mock_methods):
+        # The duplicate guard must fire before the pipeline (resolve/list/etc.) is reached.
+        mock_methods.resolve_collection_id = MagicMock()
+
+        with pytest.raises(BaseSpaceDatasetError, match="Duplicate sample name"):
+            mock_methods.fetch_sample_fastqs("collA", ["SampleA", "SampleA"])
+
+    def test_fetch_sample_fastqs_runs_pipeline_in_order(self, mock_methods, tmp_path):
+        # The orchestrator must chain resolve -> list -> filter -> download,
+        # threading each step's output into the next and returning the download result.
+        search_item = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})
+        ds_item = DatasetItem.model_validate({"Id": "ds.1", "Name": "SampleA"})
+        expected = [("SampleA_R1.fastq.gz", tmp_path / "SampleA_R1.fastq.gz")]
+
+        mock_methods.resolve_collection_id = MagicMock(return_value=search_item)
+        mock_methods.list_datasets = MagicMock(return_value=[ds_item])
+        mock_methods.filter_datasets = MagicMock(return_value=[ds_item])
+        mock_methods.download_dataset_files = MagicMock(return_value=expected)
+
+        result = mock_methods.fetch_sample_fastqs(
+            "collA", ["SampleA"], dest_dir=tmp_path, dry_run=True
+        )
+
+        assert result is expected
+        mock_methods.resolve_collection_id.assert_called_once_with("collA")
+        mock_methods.list_datasets.assert_called_once_with(search_item, dataset_types="common.fastq")
+        mock_methods.filter_datasets.assert_called_once_with(["SampleA"], [ds_item])
+        mock_methods.download_dataset_files.assert_called_once_with(
+            [ds_item], dest_dir=tmp_path, dry_run=True
+        )
