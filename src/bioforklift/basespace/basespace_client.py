@@ -1,6 +1,8 @@
 from typing import Dict, Optional
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from .basespace_exceptions import (
     BaseSpaceConnectionError,
@@ -23,10 +25,34 @@ class BaseSpaceClient:
         access_token: str,
         basespace_api_url: str = "https://api.basespace.illumina.com",
         basespace_api_version: str = "v2",
+        max_retries: int = 3,
     ):
         self.access_token = access_token
         self.base_url = basespace_api_url.rstrip("/")
         self.api_version = basespace_api_version
+        self.session = self._build_session(max_retries)
+
+    @staticmethod
+    def _build_session(max_retries: int) -> requests.Session:
+        """
+        Build a `requests.Session` with an automatic retry policy for transient failures.
+        """
+
+        # `raise_on_status=False` lets exhausted status retries fall through to
+        # `raise_for_status()` so they map to the usual `BaseSpace*` exceptions.
+        retry = Retry(
+            total=max_retries,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset({"GET"}),
+            respect_retry_after_header=True,
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session = requests.Session()
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session
 
     @property
     def _headers(self) -> Dict[str, str]:
@@ -75,7 +101,7 @@ class BaseSpaceClient:
             timeout = (30, 300)
 
         try:
-            response = requests.request(
+            response = self.session.request(
                 method=method.upper(),
                 url=url,
                 headers=self._headers,

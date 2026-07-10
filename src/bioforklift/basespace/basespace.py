@@ -16,8 +16,9 @@ class BaseSpace:
     def __init__(
         self,
         access_token: str,
-        basespace_api_url: str = "https://api.basespace.illumina.com",
-        basespace_api_version: str = "v2",
+        basespace_api_url: str,
+        basespace_api_version: str,
+        max_retries: int,
     ):
         """
         Initialize the BaseSpace interface.
@@ -26,11 +27,13 @@ class BaseSpace:
             access_token: The access token for authenticating with the BaseSpace API.
             basespace_api_url: The base URL for the BaseSpace API.
             basespace_api_version: The version of the BaseSpace API to use.
+            max_retries: Maximum number of automatic retries for transient failures.
         """
         client = BaseSpaceClient(
             access_token,
             basespace_api_url,
             basespace_api_version,
+            max_retries,
         )
         self._wire(client)
 

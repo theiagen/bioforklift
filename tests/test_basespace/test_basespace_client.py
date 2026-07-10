@@ -71,7 +71,7 @@ class TestBaseSpaceClient:
         )
 
     def test_http_request_calls_raises_for_status(self, mock_client, mock_response):
-        with patch("requests.request") as mock_request:
+        with patch.object(mock_client.session, "request") as mock_request:
             mock_request.return_value = mock_response
             mock_client.get("search", params={"scope": "projects"})
 
@@ -79,7 +79,7 @@ class TestBaseSpaceClient:
         mock_response.raise_for_status.assert_called_once()
 
     def test_http_request_custom_args(self, mock_client, mock_response):
-        with patch("requests.request") as mock_request:
+        with patch.object(mock_client.session, "request") as mock_request:
             mock_request.return_value = mock_response
             mock_client.get("search", timeout=(5, 10), stream=True)
 
@@ -89,17 +89,17 @@ class TestBaseSpaceClient:
 
 class TestBaseSpaceErrorMapping:
     def test_timeout_raises(self, mock_client):
-        with patch("requests.request", side_effect=requests.Timeout):
+        with patch.object(mock_client.session, "request", side_effect=requests.Timeout):
             with pytest.raises(BaseSpaceTimeoutError):
                 mock_client.get("search")
 
     def test_connection_error_raises(self, mock_client):
-        with patch("requests.request", side_effect=requests.ConnectionError):
+        with patch.object(mock_client.session, "request", side_effect=requests.ConnectionError):
             with pytest.raises(BaseSpaceConnectionError):
                 mock_client.get("search")
 
     def test_generic_requestexception_raises(self, mock_client):
-        with patch("requests.request", side_effect=requests.RequestException):
+        with patch.object(mock_client.session, "request", side_effect=requests.RequestException):
             with pytest.raises(BaseSpaceConnectionError):
                 mock_client.get("search")
 
@@ -111,7 +111,7 @@ class TestBaseSpaceErrorMapping:
         http_error.response = mock_response
         mock_response.raise_for_status.side_effect = http_error
 
-        with patch("requests.request") as mock_request:
+        with patch.object(mock_client.session, "request") as mock_request:
             mock_request.return_value = mock_response
             with pytest.raises(BaseSpaceInvalidResponseError):
                 mock_client.get("search")
@@ -126,7 +126,7 @@ class TestBaseSpaceErrorMapping:
         http_error.response = mock_response
         mock_response.raise_for_status.side_effect = http_error
 
-        with patch("requests.request") as mock_request:
+        with patch.object(mock_client.session, "request") as mock_request:
             mock_request.return_value = mock_response
             with pytest.raises(BaseSpaceServerError) as exc_info:
                 mock_client.get("search")
@@ -156,7 +156,7 @@ class TestBaseSpaceErrorMapping:
         http_error.response = mock_response
         mock_response.raise_for_status.side_effect = http_error
 
-        with patch("requests.request") as mock_request:
+        with patch.object(mock_client.session, "request") as mock_request:
             mock_request.return_value = mock_response
 
             with pytest.raises(expected_class) as exc_info:
