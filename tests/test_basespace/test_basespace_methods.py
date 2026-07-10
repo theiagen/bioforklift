@@ -13,6 +13,7 @@ from bioforklift.basespace import (
 from bioforklift.basespace.basespace_exceptions import (
     BaseSpaceCollectionIdError,
     BaseSpaceDatasetError,
+    BaseSpaceDownloadError,
     BaseSpaceMissingReadError,
 )
 
@@ -184,7 +185,8 @@ class TestDownloadDatasetFiles:
             raise requests.ConnectionError("stream dropped mid-download")
 
         mock_fc = mock_methods.endpoints.files_content = MagicMock()
-        mock_fc.return_value.__enter__.return_value.iter_content.side_effect = broken_stream
+        mock_response = mock_fc.return_value.__enter__.return_value
+        mock_response.iter_content.side_effect = broken_stream
 
         with pytest.raises(requests.ConnectionError):
             mock_methods.download_dataset_files([item], dest_dir=tmp_path)
@@ -247,13 +249,55 @@ class TestDownloadDatasetFiles:
         )
         mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
         mock_fc = mock_methods.endpoints.files_content = MagicMock()
-        mock_fc.return_value.__enter__.return_value.iter_content.return_value = [b"DATA"]
+        mock_response = mock_fc.return_value.__enter__.return_value
+        mock_response.iter_content.return_value = [b"DATA"]
 
         result = mock_methods.download_dataset_files([item], dest_dir=tmp_path)
 
         assert len(result) == 2
         assert (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").read_bytes() == b"DATA"
         assert (tmp_path / "Sample_S1_L001_R2_001.fastq.gz").read_bytes() == b"DATA"
+
+    def test_download_size_mismatch_raises(self, mock_methods, tmp_path):
+        # A completed-but-short body (bytes written != Size) must raise and leave
+        # nothing behind (no final file, no temp).
+        files = [
+            DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_S1_L001_R1_001.fastq.gz", "Size": 10}),
+            DatasetFileItem.model_validate({"Id": "2", "Name": "Sample_S1_L001_R2_001.fastq.gz", "Size": 10}),
+        ]
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
+        )
+        mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
+        mock_fc = mock_methods.endpoints.files_content = MagicMock()
+        mock_response = mock_fc.return_value.__enter__.return_value
+        mock_response.iter_content.return_value = [b"SHORT"]  # 5 bytes != Size of 10
+
+        with pytest.raises(BaseSpaceDownloadError, match="Incomplete download"):
+            mock_methods.download_dataset_files([item], dest_dir=tmp_path)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_download_size_match_succeeds(self, mock_methods, tmp_path):
+        # Bytes written across chunks equal Size -> the file is written.
+        files = [
+            DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_S1_L001_R1_001.fastq.gz", "Size": 4}),
+            DatasetFileItem.model_validate({"Id": "2", "Name": "Sample_S1_L001_R2_001.fastq.gz", "Size": 4}),
+        ]
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
+        )
+        mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
+        mock_fc = mock_methods.endpoints.files_content = MagicMock()
+        mock_response = mock_fc.return_value.__enter__.return_value
+        mock_response.iter_content.return_value = [b"DA", b"TA"]  # 4 bytes total == Size
+
+        result = mock_methods.download_dataset_files([item], dest_dir=tmp_path)
+
+        assert len(result) == 2
+        assert (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").read_bytes() == b"DATA"
+        assert (tmp_path / "Sample_S1_L001_R2_001.fastq.gz").stat().st_size == 4
+
 
 
 class TestFetchSampleFastqs:

@@ -35,6 +35,14 @@ class BaseSpaceMissingReadError(BaseSpaceError):
     pass
 
 
+class BaseSpaceDownloadError(BaseSpaceError):
+    """
+    Raised when a downloaded file fails an integrity check: the number of bytes
+    written does not match the file's expected `Size`.
+    """
+    pass
+
+
 # =========================================================================
 # API Specific Errors
 # =========================================================================

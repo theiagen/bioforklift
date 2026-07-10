@@ -139,6 +139,7 @@ class DatasetFileItem(BaseSpaceAPIModel):
 
     id: str
     name: str
+    size: Optional[int] = None  # bytes; used to verify a complete download
 
 
 # =========================================================================

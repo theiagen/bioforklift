@@ -12,6 +12,7 @@ from .basespace_endpoints import BaseSpaceEndpoints
 from .basespace_exceptions import (
     BaseSpaceCollectionIdError,
     BaseSpaceDatasetError,
+    BaseSpaceDownloadError,
     BaseSpaceMissingReadError,
 )
 from .basespace_models import (
@@ -240,6 +241,7 @@ class BaseSpaceMethods:
         self,
         response: requests.Response,
         destination: Path,
+        expected_size: Optional[int] = None,
         chunk_size: int = 8192,
     ) -> None:
         """
@@ -252,6 +254,7 @@ class BaseSpaceMethods:
         Args:
             response: The `requests.Response` object to stream content from.
             destination: Path to save the streamed content.
+            expected_size: Expected byte length (the file's `Size`); skipped if None.
             chunk_size: The size of each chunk to read from the response.
         """
 
@@ -264,10 +267,19 @@ class BaseSpaceMethods:
         tmp_path = Path(tmp_file.name)
 
         try:
+            bytes_written = 0
             with tmp_file as outfile:
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:
                         outfile.write(chunk)
+                        bytes_written += len(chunk)
+
+            if expected_size is not None and bytes_written != expected_size:
+                raise BaseSpaceDownloadError(
+                    f"Incomplete download for `{destination.name}`: wrote {bytes_written} byte(s), "
+                    f"expected {expected_size}."
+                )
+
             os.replace(tmp_path, destination)
         except BaseException:
             # Clean up the partial temp file on any failure (including interrupts).
@@ -360,7 +372,8 @@ class BaseSpaceMethods:
                     self._stream_fastq_file(
                         response=response,
                         destination=dest_path,
-                        chunk_size=(1024 * 1024)
+                        expected_size=file_item.size,
+                        chunk_size=(1024 * 1024),
                     )
         logger.info(f"Downloaded {len(download_files)} FASTQ file(s) from {len(ds_items)} dataset(s) to `{dest_dir}`")
         return download_files
