@@ -1,4 +1,5 @@
 from .basespace_client import BaseSpaceClient
+from .basespace_endpoints import BaseSpaceEndpoints
 from .basespace_methods import BaseSpaceMethods
 from bioforklift.forklift_logging import setup_logger
 
@@ -56,11 +57,8 @@ class BaseSpace:
     def _wire(self, client: BaseSpaceClient) -> None:
         """
         Wire up the client, methods, and endpoints from a single client instance.
-
-        `endpoints` is shared with `methods` so exactly one `BaseSpaceEndpoints`
-        instance exists per `BaseSpace`.
         """
 
         self.client = client
-        self.methods = BaseSpaceMethods(client)
-        self.endpoints = self.methods.endpoints
+        self.endpoints = BaseSpaceEndpoints(self.client)
+        self.methods = BaseSpaceMethods(self.endpoints)

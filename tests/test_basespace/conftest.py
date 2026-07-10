@@ -20,15 +20,15 @@ def mock_client():
 
 
 @pytest.fixture
-def mock_methods(mock_client):
-    """A BaseSpaceMethods instance with a mock client."""
-    return BaseSpaceMethods(mock_client)
-
-
-@pytest.fixture
 def mock_endpoints(mock_client):
     """A BaseSpaceEndpoints instance with a mock client."""
     return BaseSpaceEndpoints(mock_client)
+
+
+@pytest.fixture
+def mock_methods(mock_endpoints):
+    """A BaseSpaceMethods instance with a mock endpoint."""
+    return BaseSpaceMethods(mock_endpoints)
 
 
 @pytest.fixture

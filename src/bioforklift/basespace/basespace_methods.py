@@ -7,7 +7,6 @@ from typing import Callable, List, Optional, Tuple
 import requests
 from pydantic.alias_generators import to_pascal
 
-from .basespace_client import BaseSpaceClient
 from .basespace_endpoints import BaseSpaceEndpoints
 from .basespace_exceptions import (
     BaseSpaceCollectionIdError,
@@ -33,9 +32,8 @@ class BaseSpaceMethods:
     Class meant to handle BaseSpace API interactions for BioForklift
     """
 
-    def __init__(self, client: BaseSpaceClient):
-        self.client = client
-        self.endpoints = BaseSpaceEndpoints(client)
+    def __init__(self, endpoints: BaseSpaceEndpoints):
+        self.endpoints = endpoints
 
     def _fetch_all_items(
         self,
