@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 class BaseSpaceError(Exception):
     """Base exception for BaseSpace-related errors."""
@@ -55,7 +55,7 @@ class BaseSpaceAPIError(BaseSpaceError):
         self,
         message: str,
         status_code: int,
-        response: Optional[Dict],
+        response: Optional[Any],
     ):
         super().__init__(message)
         self.status_code = status_code
@@ -99,7 +99,7 @@ _ERROR_MAPPING: Dict[int, Type[BaseSpaceAPIError]] = {
 def api_error_for_status(
     message: str,
     status_code: int,
-    response: Optional[Dict] = None,
+    response: Optional[Any] = None,
 ) -> BaseSpaceAPIError:
     """
     Return specific BaseSpaceAPIError for a given HTTP status code.
@@ -107,7 +107,7 @@ def api_error_for_status(
     Args:
         message: error/message from the response body
         status_code: HTTP status code returned by the API.
-        response: The parsed error status as a dict, attached for inspection.
+        response: The parsed error body (usually a dict) from the API response
 
     Returns:
         An instance of the matching BaseSpaceAPIError subclass, or
