@@ -1,6 +1,8 @@
+from pathlib import Path
+import re
 from typing import Annotated, Any, Generic, List, Literal, Optional, TypeVar, Union
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Discriminator, Field, Tag
+from pydantic import AliasPath, BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 from pydantic.alias_generators import to_pascal
 
 
@@ -141,6 +143,30 @@ class DatasetFileItem(BaseSpaceAPIModel):
     name: str
     size: Optional[int] = None  # bytes; used to verify a complete download
 
+
+class DownloadedFileItem(DatasetFileItem):
+    """
+    A `DatasetFileItem` plus the local path it was downloaded to. `is_valid_read1` /
+    `is_valid_read2` / `lane` are parsed from `name` by `_parse_read_and_lane` after the
+    model is built (derived — not accepted as input).
+    """
+
+    local_path: Path
+    is_valid_read1: bool = False
+    is_valid_read2: bool = False
+    lane: Optional[int] = None  # Illumina lane number, or None if the name has no _L###_ token
+
+    @model_validator(mode="after")
+    def _parse_read_and_lane(self) -> "DownloadedFileItem":
+        """
+        Parse the Illumina R1/R2 nomenclature and lane token from `name`. Used to validate
+        paired-end read sets and to order files by lane before concatenation.
+        """
+        self.is_valid_read1 = bool(re.search(r"_R1_.*\.fastq\.gz$", self.name, re.IGNORECASE))
+        self.is_valid_read2 = bool(re.search(r"_R2_.*\.fastq\.gz$", self.name, re.IGNORECASE))
+        match = re.search(r"_L(\d+)_", self.name, re.IGNORECASE)
+        self.lane = int(match.group(1)) if match else None
+        return self
 
 # =========================================================================
 # Models for all endpoints

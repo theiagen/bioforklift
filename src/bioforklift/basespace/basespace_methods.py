@@ -18,6 +18,7 @@ from .basespace_models import (
     BaseSpaceResponse,
     DatasetFileItem,
     DatasetItem,
+    DownloadedFileItem,
     ItemType,
     Paging,
     ProjectItem,

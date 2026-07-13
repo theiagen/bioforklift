@@ -6,6 +6,7 @@ from bioforklift.basespace import (
     BaseSpaceResponse,
     DatasetFileItem,
     DatasetItem,
+    DownloadedFileItem,
     OtherItem,
     ProjectItem,
     RunItem,
