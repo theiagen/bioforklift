@@ -55,7 +55,7 @@ def run():
     """Main function to run bioforklift command-line tool"""
     init_parser = argparse.ArgumentParser(description="Bioforklift Command-Line Tool")
     init_parser.add_argument(
-        "-V", "--version", action="version", version=f"%(prog)s {__version__}"
+        "-v", "--version", action="version", version=f"%(prog)s {__version__}"
     )
     parser = bioforklift_args(init_parser)
     parser.add_argument("-b", "--bunkee", action="store_true", help=argparse.SUPPRESS)
