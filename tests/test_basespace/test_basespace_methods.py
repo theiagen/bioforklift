@@ -163,10 +163,14 @@ class TestDownloadDatasetFiles:
         result = mock_methods.download_dataset_files([item], dest_dir=tmp_path, dry_run=True)
 
         mock_fc.assert_not_called()
-        assert result == [
-            ("Sample_L001_R1_001.fastq.gz", tmp_path / "Sample_L001_R1_001.fastq.gz"),
-            ("Sample_L001_R2_001.fastq.gz", tmp_path / "Sample_L001_R2_001.fastq.gz"),
+        # Returns a dict of sample name -> its files, each with a resolved local path.
+        assert list(result.keys()) == ["Sample"]
+        assert [file.name for file in result["Sample"]] == [
+            "Sample_L001_R1_001.fastq.gz",
+            "Sample_L001_R2_001.fastq.gz",
         ]
+        assert result["Sample"][0].local_path == tmp_path / "Sample_L001_R1_001.fastq.gz"
+        # Nothing is actually written during a dry run.
         assert not (tmp_path / "Sample_L001_R1_001.fastq.gz").exists()
 
     def test_download_interrupted_stream_leaves_no_partial_file(self, mock_methods, tmp_path):
@@ -255,7 +259,8 @@ class TestDownloadDatasetFiles:
 
         result = mock_methods.download_dataset_files([item], dest_dir=tmp_path)
 
-        assert len(result) == 2
+        assert list(result.keys()) == ["Sample"]
+        assert len(result["Sample"]) == 2
         assert (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").read_bytes() == b"DATA"
         assert (tmp_path / "Sample_S1_L001_R2_001.fastq.gz").read_bytes() == b"DATA"
 
@@ -295,9 +300,102 @@ class TestDownloadDatasetFiles:
 
         result = mock_methods.download_dataset_files([item], dest_dir=tmp_path)
 
-        assert len(result) == 2
+        assert len(result["Sample"]) == 2
         assert (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").read_bytes() == b"DATA"
         assert (tmp_path / "Sample_S1_L001_R2_001.fastq.gz").stat().st_size == 4
+
+
+class TestValidatePairedEnd:
+    def test_balanced_returns_true(self, mock_methods, tmp_path):
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
+        )
+        files = [
+            DownloadedFileItem(id="1", name="Sample_S1_L001_R1_001.fastq.gz", local_path=tmp_path / "Sample_S1_L001_R1_001.fastq.gz"),
+            DownloadedFileItem(id="2", name="Sample_S1_L001_R2_001.fastq.gz", local_path=tmp_path / "Sample_S1_L001_R2_001.fastq.gz"),
+        ]
+
+        assert mock_methods._validate_paired_end(item, files) is True
+
+    def test_not_paired_end_raises(self, mock_methods, tmp_path):
+        # A dataset without IsPairedEnd (false or missing) is rejected: paired-end only.
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": False}}}
+        )
+        files = [
+            DownloadedFileItem(id="1", name="Sample_S1_L001_R1_001.fastq.gz", local_path=tmp_path / "Sample_S1_L001_R1_001.fastq.gz"),
+        ]
+
+        with pytest.raises(BaseSpaceMissingReadError, match="only paired-end datasets are supported"):
+            mock_methods._validate_paired_end(item, files)
+
+    def test_download_validate_false_skips_check(self, mock_methods, tmp_path):
+        # With validate=False, an unbalanced set (R1 only) is downloaded without raising.
+        files = [DatasetFileItem.model_validate({"Id": "1", "Name": "Sample_S1_L001_R1_001.fastq.gz"})]
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "Sample", "Attributes": {"common_fastq": {"IsPairedEnd": True}}}
+        )
+        mock_methods.endpoints.datasets_files = MagicMock(return_value=make_response(files, total_count=len(files)))
+        mock_fc = mock_methods.endpoints.files_content = MagicMock()
+        mock_fc.return_value.__enter__.return_value.iter_content.return_value = [b"DATA"]
+
+        result = mock_methods.download_dataset_files([item], dest_dir=tmp_path, validate=False)
+
+        assert list(result.keys()) == ["Sample"]
+        assert (tmp_path / "Sample_S1_L001_R1_001.fastq.gz").read_bytes() == b"DATA"
+
+
+class TestConcatenateReadSets:
+    def test_concatenates_lanes_in_order(self, mock_methods, tmp_path):
+        # Two lanes per read; output must be lane-ordered (L001 then L002) regardless of
+        # the order the files are passed in.
+        r1_l2 = DownloadedFileItem(id="1", name="Sample_S1_L002_R1_001.fastq.gz", size=2, local_path=tmp_path / "Sample_S1_L002_R1_001.fastq.gz")
+        r1_l1 = DownloadedFileItem(id="2", name="Sample_S1_L001_R1_001.fastq.gz", size=2, local_path=tmp_path / "Sample_S1_L001_R1_001.fastq.gz")
+        r2_l1 = DownloadedFileItem(id="3", name="Sample_S1_L001_R2_001.fastq.gz", size=2, local_path=tmp_path / "Sample_S1_L001_R2_001.fastq.gz")
+        r2_l2 = DownloadedFileItem(id="4", name="Sample_S1_L002_R2_001.fastq.gz", size=2, local_path=tmp_path / "Sample_S1_L002_R2_001.fastq.gz")
+        for file_item, data in [(r1_l2, b"22"), (r1_l1, b"11"), (r2_l1, b"aa"), (r2_l2, b"bb")]:
+            file_item.local_path.write_bytes(data)
+
+        # Deliberately unordered input.
+        read_sets = {"Sample": [r1_l2, r1_l1, r2_l1, r2_l2]}
+
+        outputs = mock_methods.concatenate_read_sets(read_sets)
+
+        assert (tmp_path / "Sample_R1.fastq.gz").read_bytes() == b"1122"
+        assert (tmp_path / "Sample_R2.fastq.gz").read_bytes() == b"aabb"
+        assert outputs == [
+            ("Sample_R1.fastq.gz", tmp_path / "Sample_R1.fastq.gz"),
+            ("Sample_R2.fastq.gz", tmp_path / "Sample_R2.fastq.gz"),
+        ]
+
+    def test_dry_run_writes_nothing(self, mock_methods, tmp_path):
+        r1 = DownloadedFileItem(id="1", name="Sample_S1_L001_R1_001.fastq.gz", local_path=tmp_path / "Sample_S1_L001_R1_001.fastq.gz")
+        r2 = DownloadedFileItem(id="2", name="Sample_S1_L001_R2_001.fastq.gz", local_path=tmp_path / "Sample_S1_L001_R2_001.fastq.gz")
+
+        outputs = mock_methods.concatenate_read_sets({"Sample": [r1, r2]}, dry_run=True)
+
+        assert outputs == [
+            ("Sample_R1.fastq.gz", tmp_path / "Sample_R1.fastq.gz"),
+            ("Sample_R2.fastq.gz", tmp_path / "Sample_R2.fastq.gz"),
+        ]
+        assert list(tmp_path.iterdir()) == []
+
+    def test_size_mismatch_raises_and_cleans_up(self, mock_methods, tmp_path):
+        # Source is 2 bytes on disk but the API Size says 99 -> mismatch must raise and
+        # leave no output or temp file behind (only the source files remain).
+        r1 = DownloadedFileItem(id="1", name="Sample_S1_L001_R1_001.fastq.gz", size=99, local_path=tmp_path / "Sample_S1_L001_R1_001.fastq.gz")
+        r2 = DownloadedFileItem(id="2", name="Sample_S1_L001_R2_001.fastq.gz", size=99, local_path=tmp_path / "Sample_S1_L001_R2_001.fastq.gz")
+        for file_item in (r1, r2):
+            file_item.local_path.write_bytes(b"XX")  # 2 bytes != 99
+
+        with pytest.raises(BaseSpaceDownloadError, match="Concatenated size mismatch"):
+            mock_methods.concatenate_read_sets({"Sample": [r1, r2]})
+
+        assert not (tmp_path / "Sample_R1.fastq.gz").exists()
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "Sample_S1_L001_R1_001.fastq.gz",
+            "Sample_S1_L001_R2_001.fastq.gz",
+        ]
 
 
 class TestListDatasets:
@@ -344,16 +442,18 @@ class TestFetchSampleFastqs:
             mock_methods.fetch_sample_fastqs("collA", ["SampleA", "SampleA"])
 
     def test_fetch_sample_fastqs_runs_pipeline_in_order(self, mock_methods, tmp_path):
-        # The orchestrator must chain resolve -> list -> filter -> download,
-        # threading each step's output into the next and returning the download result.
+        # The orchestrator must chain resolve -> list -> filter -> download -> concatenate,
+        # threading each step's output into the next and returning the concatenation result.
         search_item = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})
         ds_item = DatasetItem.model_validate({"Id": "ds.1", "Name": "SampleA"})
+        downloaded = {"SampleA": []}
         expected = [("SampleA_R1.fastq.gz", tmp_path / "SampleA_R1.fastq.gz")]
 
         mock_methods.resolve_collection_id = MagicMock(return_value=search_item)
         mock_methods.list_datasets = MagicMock(return_value=[ds_item])
         mock_methods.filter_datasets = MagicMock(return_value=[ds_item])
-        mock_methods.download_dataset_files = MagicMock(return_value=expected)
+        mock_methods.download_dataset_files = MagicMock(return_value=downloaded)
+        mock_methods.concatenate_read_sets = MagicMock(return_value=expected)
 
         result = mock_methods.fetch_sample_fastqs(
             "collA", ["SampleA"], dest_dir=tmp_path, dry_run=True
@@ -364,5 +464,28 @@ class TestFetchSampleFastqs:
         mock_methods.list_datasets.assert_called_once_with(search_item, dataset_types="common.fastq")
         mock_methods.filter_datasets.assert_called_once_with(["SampleA"], [ds_item])
         mock_methods.download_dataset_files.assert_called_once_with(
-            [ds_item], dest_dir=tmp_path, dry_run=True
+            [ds_item], dest_dir=tmp_path, dry_run=True, validate=True
         )
+        mock_methods.concatenate_read_sets.assert_called_once_with(downloaded, dry_run=True)
+
+    def test_fetch_sample_fastqs_no_concatenate_returns_lane_files(self, mock_methods, tmp_path):
+        # concatenate=False returns the individual per-lane files as (name, path) tuples
+        # and never calls the concatenation step.
+        search_item = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})
+        ds_item = DatasetItem.model_validate({"Id": "ds.1", "Name": "SampleA"})
+        lane_file = DownloadedFileItem(id="1", name="SampleA_L001_R1_001.fastq.gz", local_path=tmp_path / "SampleA_L001_R1_001.fastq.gz")
+
+        mock_methods.resolve_collection_id = MagicMock(return_value=search_item)
+        mock_methods.list_datasets = MagicMock(return_value=[ds_item])
+        mock_methods.filter_datasets = MagicMock(return_value=[ds_item])
+        mock_methods.download_dataset_files = MagicMock(return_value={"SampleA": [lane_file]})
+        mock_methods.concatenate_read_sets = MagicMock()
+
+        result = mock_methods.fetch_sample_fastqs(
+            "collA", ["SampleA"], dest_dir=tmp_path, concatenate=False
+        )
+
+        assert result == [
+            ("SampleA_L001_R1_001.fastq.gz", tmp_path / "SampleA_L001_R1_001.fastq.gz")
+        ]
+        mock_methods.concatenate_read_sets.assert_not_called()
