@@ -43,7 +43,7 @@ class BaseSpaceClient:
         retry = Retry(
             total=max_retries,
             backoff_factor=0.5,
-            status_forcelist=(429, 500, 502, 503, 504),
+            status_forcelist=(429,),
             allowed_methods=frozenset({"GET"}),
             respect_retry_after_header=True,
             raise_on_status=False,
