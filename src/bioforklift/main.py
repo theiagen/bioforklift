@@ -9,6 +9,7 @@ main script for command-line bioforklift tool
 import sys
 import argparse
 from pathlib import Path
+from bioforklift import __version__
 from bioforklift.scripts.launch import launch, launch_args
 from bioforklift.scripts.upload import upload, upload_args
 from bioforklift.scripts.download import download, download_args
@@ -53,6 +54,9 @@ def bioforklift_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 def run():
     """Main function to run bioforklift command-line tool"""
     init_parser = argparse.ArgumentParser(description="Bioforklift Command-Line Tool")
+    init_parser.add_argument(
+        "-V", "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     parser = bioforklift_args(init_parser)
     parser.add_argument("-b", "--bunkee", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
