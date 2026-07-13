@@ -162,6 +162,18 @@ class BaseSpaceMethods:
         )
         return search_item
 
+    def _reject_duplicate_samples(self, samples: List[str]) -> None:
+        """
+        Raise if any sample name appears more than once, so we never accidentally
+        download the same dataset twice.
+        """
+
+        duplicates = sorted({name for name in samples if samples.count(name) > 1})
+        if duplicates:
+            raise BaseSpaceDatasetError(
+                f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
+            )
+
     def filter_datasets(
         self,
         samples: List[str],
@@ -183,11 +195,7 @@ class BaseSpaceMethods:
         unmatched_samples = []
 
         # Reject duplicate sample names up front so we don't accidentally download the same dataset more than once.
-        duplicates = sorted({name for name in samples if samples.count(name) > 1})
-        if duplicates:
-            raise BaseSpaceDatasetError(
-                f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
-            )
+        self._reject_duplicate_samples(samples)
 
         logger.info(f"Filtering for {len(samples)} sample(s) against {len(ds_items)} dataset(s)")
 
@@ -463,12 +471,8 @@ class BaseSpaceMethods:
         if not samples:
             raise BaseSpaceDatasetError("No samples provided; nothing to fetch.")
 
-        # Reject duplicate sample names up front so we don't accidentally download the same dataset more than once.
-        duplicates = sorted({name for name in samples if samples.count(name) > 1})
-        if duplicates:
-            raise BaseSpaceDatasetError(
-                f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
-            )
+        # Fail fast on duplicates before any network calls (also enforced in filter_datasets).
+        self._reject_duplicate_samples(samples)
 
         # Resolve the collection_id to a SearchItem (project/run)
         search_item = self.resolve_collection_id(collection_id)
