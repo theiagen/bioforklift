@@ -24,12 +24,15 @@ from bioforklift.terra2bq.models import (
 @pytest.fixture(autouse=True)
 def mock_google_auth():
     """Mock Google Cloud authentication to avoid credential errors"""
-    # client.py does `from google.auth import default`, binding the name into
-    # its own module namespace, so we must patch it where it is looked up.
-    with patch('bioforklift.terra.client.default') as mock_auth:
-        # Return a mock credentials object and project ID
-        mock_credentials = MagicMock()
+    mock_credentials = MagicMock()
+    # Patch both the module attribute (used by BigQuery and other consumers)
+    # and the name imported directly into terra.client via
+    # `from google.auth import default`, which patching google.auth.default
+    # alone does not affect.
+    with patch('google.auth.default') as mock_auth, \
+         patch('bioforklift.terra.client.default') as mock_client_auth:
         mock_auth.return_value = (mock_credentials, "test-project")
+        mock_client_auth.return_value = (mock_credentials, "test-project")
         yield mock_auth
 
 @pytest.fixture
