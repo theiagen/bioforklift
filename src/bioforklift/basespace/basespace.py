@@ -20,9 +20,9 @@ class BaseSpace:
     def __init__(
         self,
         access_token: str,
-        basespace_api_url: str,
-        basespace_api_version: str,
-        max_retries: int,
+        basespace_api_url: str = "https://api.basespace.illumina.com",
+        basespace_api_version: str = "v2",
+        max_retries: int = 3,
     ):
         """
         Initialize the BaseSpace interface.
