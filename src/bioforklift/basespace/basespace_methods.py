@@ -243,6 +243,58 @@ class BaseSpaceMethods:
             dataset_types=dataset_types,
         )
 
+
+    def _validate_paired_end(
+        self,
+        ds_item: DatasetItem,
+        ds_files: List[DownloadedFileItem],
+    ) -> bool:
+        """
+        Validate that a dataset's files form a balanced paired-end read set.
+
+        Every file must be a standard Illumina read file carrying the `_R1_` / `_R2_`
+        nomenclature, and the dataset must contain an equal, non-zero number of R1 and
+        R2 files (nothing else is allowed).
+
+        Args:
+            ds_item: The dataset the fastq files belong to.
+            ds_files: The files listed for the dataset.
+
+        Returns:
+            True if the files are a valid, balanced paired-end read set.
+
+        Raises:
+            BaseSpaceMissingReadError: If the dataset is not flagged paired-end, if any
+                file breaks the `_R[1|2]_` naming convention, or the R1/R2 files are not
+                balanced (no R1s or unequal R1/R2 counts).
+        """
+
+        # `attributes` is optional, so guard before reading the paired-end flag.
+        is_paired_end = bool(ds_item.attributes and ds_item.attributes.is_paired_end)
+        if not is_paired_end:
+            raise BaseSpaceMissingReadError(
+                f"DatasetItem `{ds_item.name}` is missing `paired_end` attribute; only paired-end datasets are supported."
+            )
+
+        # Expect an even file count that splits into matched R1/R2 reads (one R2 for
+        # every R1, across lanes). Read number is parsed from the standard
+        # `_R{read}_001.fastq` token in the file name. Every file must be an R1/R2
+        # read; anything else fails loudly rather than being silently downloaded or missed.
+        read1_files = [file for file in ds_files if file.is_valid_read1]
+        read2_files = [file for file in ds_files if file.is_valid_read2]
+        if (
+            len(read1_files) == 0
+            or len(read1_files) != len(read2_files)
+            or len(read1_files) + len(read2_files) != len(ds_files)
+        ):
+            raise BaseSpaceMissingReadError(
+                f"Dataset `{ds_item.name}` is paired-end but its files are not balanced "
+                f"R1/R2 (R1={len(read1_files)}, R2={len(read2_files)}, total={len(ds_files)}). "
+                f"Every file must be an R1 or R2 read."
+            )
+
+        return True
+
     def _stream_fastq_file(
         self,
         response: requests.Response,
