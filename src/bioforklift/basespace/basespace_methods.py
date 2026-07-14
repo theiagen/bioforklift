@@ -174,22 +174,50 @@ class BaseSpaceMethods:
                 f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
             )
 
+    def _matches_dataset_type(
+        self,
+        ds_item: DatasetItem,
+        dataset_types: List[str]
+    ) -> bool:
+        """
+        True if `ds_item` matches any requested dataset type, either directly by
+        `DatasetType.Id` or by conformance (`ConformsToIds`). The conformance check
+        catches typed variants like `illumina.fastq.v1.8`, which conform to
+        `common.fastq` but do not match it by Id.
+        """
+        if ds_item.dataset_type is None:
+            return False
+        requested = set(dataset_types)
+        return (
+            ds_item.dataset_type.id in requested
+            or bool(requested.intersection(ds_item.dataset_type.conforms_to_ids))
+        )
+
     def filter_datasets(
         self,
         samples: List[str],
         ds_items: List[DatasetItem],
+        dataset_types: Optional[List[str]] = ["common.fastq"],
     ) -> List[DatasetItem]:
         """
-        Filter a list of DatasetItems to those whose `DatasetItem.Name`
-        has an exact match in the provided input `samples`.
+        Filter a list of DatasetItems down to those of the requested dataset type(s)
+        whose `DatasetItem.Name` has an exact match in the provided input `samples`.
+
+        The dataset-type filter is applied first (matching on `DatasetType.Id` or
+        `ConformsToIds`, see `_matches_dataset_type`); the sample-name match then runs
+        over that narrowed set.
 
         Args:
             samples: A list of sample names to filter by.
             ds_items: A list of DatasetItems to filter.
+            dataset_types: Dataset types to keep, defaults to `["common.fastq"]`.
 
         Returns:
             A list of DatasetItems whose `DatasetItem.Name` is in the provided `samples`.
         """
+
+        # Resolve the default here so this stays the single owner of the default dataset_types
+        dataset_types = dataset_types or ["common.fastq"]
 
         all_items: List[DatasetItem] = []
         unmatched_samples = []
@@ -197,12 +225,21 @@ class BaseSpaceMethods:
         # Reject duplicate sample names up front so we don't accidentally download the same dataset more than once.
         self._reject_duplicate_samples(samples)
 
-        logger.info(f"Filtering for {len(samples)} sample(s) against {len(ds_items)} dataset(s)")
+        # Narrow to the requested dataset type(s) before matching on sample name, so
+        # same-named datasets of other types can't trip the ambiguity check below.
+        typed_items = [
+            ds_item for ds_item in ds_items if self._matches_dataset_type(ds_item, dataset_types)
+        ]
+
+        logger.info(
+            f"Filtering for {len(samples)} sample(s) against {len(typed_items)} dataset(s) "
+            f"of type {dataset_types} (out of {len(ds_items)} total)"
+        )
 
         for sample in samples:
             matches = [
                 ds_item
-                for ds_item in ds_items
+                for ds_item in typed_items
                 if ds_item.name == sample
             ]
             if not matches:
@@ -226,14 +263,12 @@ class BaseSpaceMethods:
     def list_datasets(
         self,
         search_item: SearchItem,
-        dataset_types: Optional[str] = "common.fastq",
     ) -> List[DatasetItem]:
         """
         Get every dataset for a given project or run, paging through all results.
 
         Args:
             search_item: The resolved SearchItem object ("project" or "run").
-            dataset_types: Optional comma-separated list of dataset types to filter by.
 
         Returns:
             A list of all datasets associated with the specified project or run.
@@ -248,7 +283,6 @@ class BaseSpaceMethods:
             self.endpoints.datasets,
             project_id=search_item.id if search_item.type == "project" else None,
             input_runs=search_item.id if search_item.type == "run" else None,
-            dataset_types=dataset_types,
         )
 
 
@@ -529,7 +563,7 @@ class BaseSpaceMethods:
         collection_id: str,
         samples: List[str],
         dest_dir: Optional[Path] = None,
-        dataset_types: str = "common.fastq",
+        dataset_types: Optional[List[str]] = None,
         dry_run: bool = False,
         validate: bool = True,
         concatenate: bool = True,
@@ -542,7 +576,7 @@ class BaseSpaceMethods:
             collection_id: A project/run ID or name to resolve.
             samples: The sample name(s) to download; each must match exactly one dataset.
             dest_dir: The directory to download files to (defaults to the current working directory).
-            dataset_types: Comma-separated dataset types to list, defaults to "common.fastq".
+            dataset_types: Dataset types to keep when filtering, defaults to ["common.fastq"].
             dry_run: If True, log what would be downloaded/concatenated without fetching or writing any files.
             validate: If True (default), require each dataset to be a balanced paired-end
                 read set before downloading. Set False to skip the check.
@@ -564,14 +598,15 @@ class BaseSpaceMethods:
         # Resolve the collection_id to a SearchItem (project/run)
         search_item = self.resolve_collection_id(collection_id)
 
-        # List all datasets for the resolved project/run, filtering by dataset_types if provided.
-        all_ds_items = self.list_datasets(
-            search_item,
+        # List every dataset for the resolved project/run (all types)
+        all_ds_items = self.list_datasets(search_item)
+
+        # Filter the datasets to the requested type(s) and provided sample names, error if any sample is unmatched or ambiguous.
+        matched_ds_items = self.filter_datasets(
+            samples=samples,
+            ds_items=all_ds_items,
             dataset_types=dataset_types
         )
-
-        # Filter the datasets to those that match the provided sample names, error if any sample is unmatched or ambiguous.
-        matched_ds_items = self.filter_datasets(samples, all_ds_items)
 
         # Download the per-lane files for the matched datasets (or log if dry_run).
         read_sets = self.download_dataset_files(

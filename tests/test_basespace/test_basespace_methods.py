@@ -28,6 +28,15 @@ def make_response(items, total_count):
         }
     )
 
+def make_dataset(ds_id, name, type_id="common.fastq", conforms_to=("common.files",)):
+    """A DatasetItem carrying a DatasetType, mirroring the /datasets response shape."""
+    return DatasetItem.model_validate(
+        {
+            "Id": ds_id,
+            "Name": name,
+            "DatasetType": {"Id": type_id, "ConformsToIds": list(conforms_to)},
+        }
+    )
 
 class TestFetchAllItems:
     def test_fetch_all_items_single_page(self, mock_methods):
@@ -126,26 +135,77 @@ class TestResolveCollectionId:
             mock_methods.resolve_collection_id(collection_id)
 
 
+class TestMatchesDatasetType:
+    def test_matches_by_id(self, mock_methods):
+        ds = make_dataset("ds.a", "sampleA", type_id="common.fastq")
+        assert mock_methods._matches_dataset_type(ds, ["common.fastq"]) is True
+
+    def test_matches_by_conforms_to(self, mock_methods):
+        # Id is a typed variant, but it conforms to the requested common.fastq.
+        ds = make_dataset(
+            "ds.a", "sampleA", type_id="illumina.fastq.v1.8",
+            conforms_to=("common.files", "common.fastq"),
+        )
+        assert mock_methods._matches_dataset_type(ds, ["common.fastq"]) is True
+
+    def test_no_match(self, mock_methods):
+        ds = make_dataset("ds.a", "sampleA", type_id="common.bam", conforms_to=("common.files",))
+        assert mock_methods._matches_dataset_type(ds, ["common.fastq"]) is False
+
+    def test_no_dataset_type_is_not_a_match(self, mock_methods):
+        ds = DatasetItem.model_validate({"Id": "ds.a", "Name": "sampleA"})
+        assert mock_methods._matches_dataset_type(ds, ["common.fastq"]) is False
+
+
 class TestFilterDatasets:
     def test_filter_datasets_unmatched_raises(self, mock_methods):
-        ds_a = DatasetItem.model_validate({"Id": "ds.a", "Name": "sampleA"})
+        ds_a = make_dataset("ds.a", "sampleA")
 
         with pytest.raises(BaseSpaceDatasetError, match="No dataset match"):
             mock_methods.filter_datasets(["sampleC"], [ds_a])
 
     def test_filter_datasets_ambiguous_raises(self, mock_methods):
-        ds_a = DatasetItem.model_validate({"Id": "ds.a", "Name": "sampleA"})
-        ds_a2 = DatasetItem.model_validate({"Id": "ds.a2", "Name": "sampleA"})
+        ds_a = make_dataset("ds.a", "sampleA")
+        ds_a2 = make_dataset("ds.a2", "sampleA")
 
         with pytest.raises(BaseSpaceDatasetError, match="Multiple datasets"):
             mock_methods.filter_datasets(["sampleA"], [ds_a, ds_a2])
 
     def test_filter_datasets_duplicate_sample_names_raises(self, mock_methods):
         # A duplicated sample name must be rejected before any matching happens.
-        ds_a = DatasetItem.model_validate({"Id": "ds.a", "Name": "sampleA"})
+        ds_a = make_dataset("ds.a", "sampleA")
 
         with pytest.raises(BaseSpaceDatasetError, match="Duplicate sample name"):
             mock_methods.filter_datasets(["sampleA", "sampleA"], [ds_a])
+
+    def test_filter_datasets_matches_conforming_type(self, mock_methods):
+        # The core fix: a dataset whose Id is a typed variant (illumina.fastq.v1.8) but
+        # which conforms to common.fastq must still be matched under the default filter.
+        ds_a = make_dataset(
+            "ds.a", "sampleA", type_id="illumina.fastq.v1.8",
+            conforms_to=("common.files", "common.fastq"),
+        )
+
+        result = mock_methods.filter_datasets(["sampleA"], [ds_a])
+
+        assert result == [ds_a]
+
+    def test_filter_datasets_drops_non_matching_type(self, mock_methods):
+        # A dataset of an unrelated type is dropped, leaving the requested sample unmatched.
+        ds_a = make_dataset("ds.a", "sampleA", type_id="common.bam", conforms_to=("common.files",))
+
+        with pytest.raises(BaseSpaceDatasetError, match="No dataset match"):
+            mock_methods.filter_datasets(["sampleA"], [ds_a])
+
+    def test_filter_datasets_same_name_across_types_resolves_to_matching(self, mock_methods):
+        # Two datasets share a Name but differ in type; narrowing by type first must
+        # resolve to the single common.fastq dataset instead of raising "Multiple datasets".
+        ds_fastq = make_dataset("ds.a", "sampleA", type_id="common.fastq")
+        ds_bam = make_dataset("ds.a.bam", "sampleA", type_id="common.bam", conforms_to=("common.files",))
+
+        result = mock_methods.filter_datasets(["sampleA"], [ds_bam, ds_fastq])
+
+        assert result == [ds_fastq]
 
 
 class TestDownloadDatasetFiles:
@@ -461,8 +521,11 @@ class TestFetchSampleFastqs:
 
         assert result is expected
         mock_methods.resolve_collection_id.assert_called_once_with("collA")
-        mock_methods.list_datasets.assert_called_once_with(search_item, dataset_types="common.fastq")
-        mock_methods.filter_datasets.assert_called_once_with(["SampleA"], [ds_item])
+        mock_methods.list_datasets.assert_called_once_with(search_item)
+        # The driver forwards its own default (None); filter_datasets resolves it to the default type.
+        mock_methods.filter_datasets.assert_called_once_with(
+            samples=["SampleA"], ds_items=[ds_item], dataset_types=None
+        )
         mock_methods.download_dataset_files.assert_called_once_with(
             [ds_item], dest_dir=tmp_path, dry_run=True, validate=True
         )
