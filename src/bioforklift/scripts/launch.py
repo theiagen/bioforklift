@@ -46,7 +46,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "-rs",
         "--reuse_set",
         action="store_true",
-        default=False,
+        default=None,
         help="Reuse set defined by '--entity_name' - overrides '--samples'; DEFAULT: append current time to existing set",
     )
     tbl_parser.add_argument(
@@ -66,12 +66,14 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "-M",
         "--exact_match",
         action="store_true",
+        default=None,
         help="Require exact match rather than substring match for filter(s)",
     )
     tbl_parser.add_argument(
         "-e",
         "--exclusion_filter",
         action="store_true",
+        default=None,
         help="Exclude rows matching the filter(s)",
     )
     tbl_parser.add_argument(
@@ -84,6 +86,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "-R",
         "--randomize",
         action="store_true",
+        default=None,
         help="Randomize extraction of filtered rows",
     )
 
@@ -92,7 +95,8 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "-cc",
         "--call_cache",
         action="store_true",
-        help="Enable call caching",
+        default=None,
+        help="Enable call caching; DEFAULT: config setting",
     )
     launch_parser.add_argument(
         "-C",
@@ -104,7 +108,8 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "-ie",
         "--ignore_empty",
         action="store_true",
-        help="Ignore empty outputs",
+        default=None,
+        help="Ignore empty outputs; DEFAULT: config setting",
     )
     launch_parser.add_argument(
         "--sleep",
@@ -160,7 +165,7 @@ def launch_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     ws_parser.add_argument(
         "--preexisting_config",
         action="store_true",
-        default=False,
+        default=None,
         help="Use pre-existing method configuration in the workspace; DEFAULT: False",
     )
 
@@ -260,7 +265,7 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
         "branch": True,
         "call_cache": True,
         "ignore_empty": True,
-        "preexisting_config": True,
+        "preexisting_config": False,
         "filter": False,
         "filter_column": False,
         "exact_match": False,
@@ -443,13 +448,13 @@ def prepare_workflow_config(
         "expression": (
             None if set_mode else f"this.{job_data['table']}s"
         ),  # if rootEntityType is a set table, expression must be None. Otherwise, use this.{table_name}s format.
-        "useCallCache": config.call_cache,
+        "useCallCache": job_data.get("call_cache", config.call_cache),
         "deleteIntermediateOutputFiles": False,
         "useReferenceDisks": False,
         "memoryRetryMultiplier": 1.0,
         "workflowFailureMode": "NoNewCalls",
         "userComment": job_data.get("comment", job_data.get("branch", "")),
-        "ignoreEmptyOutputs": config.ignore_empty,
+        "ignoreEmptyOutputs": job_data.get("ignore_empty", config.ignore_empty),
     }
 
     # Workflow operations
@@ -555,7 +560,7 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             # determine if table name exists and do we need to reuse this
             clean_table_name = job_data["table"].removesuffix("_set")
             clean_entity_name, entity_exists = prepare_entity_name(
-                terra, entity_name, clean_table_name, job_data["reuse_set"]
+                terra, entity_name, clean_table_name, job_data.get("reuse_set", False)
             )
 
             # create the set if it does not exist
