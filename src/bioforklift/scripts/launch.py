@@ -201,7 +201,7 @@ def arg_handling(args: argparse.Namespace) -> None:
 
 def check_entity_exists(terra: Terra, entity_name: str, table_name: str) -> bool:
     """Check if a specific entity (set) exists in the Terra workspace"""
-    entity_type = f"{table_name.removesuffix("_set")}_set"  # entity type is always the set table, even if the user is referencing an existing non-set table
+    entity_type = f"{table_name.removesuffix('_set')}_set"  # entity type is always the set table, even if the user is referencing an existing non-set table
     try:
         entity = terra.entities.get_entity(
             entity_type=entity_type,
@@ -370,9 +370,8 @@ def prepare_entity_set(
     ):
         logger.info(f"Filtering table {table_name}")
         samples = filter_mngr(new_table_df, job_data, terra)
-        logger.info(
-            f"Samples filtered for submission:\n\t{'\n\t'.join(sorted(samples))}"
-        )
+        sample_list = "\n\t".join(sorted(samples))
+        logger.info(f"Samples filtered for submission:\n\t{sample_list}")
         result = terra.entities.create_entity_set(entity_name, table_name, samples)
     else:
         result = terra.entities.create_entity_set(entity_name, table_name, new_table_df)
@@ -439,7 +438,7 @@ def prepare_workflow_config(
     wf_config_params = {
         "methodConfigurationNamespace": terra.client.destination_project,
         "methodConfigurationName": mod_method_config.name,
-        "entityType": f"{job_data['table'].removesuffix("_set")}_set",  # entityType will always be the name of the set table
+        "entityType": f"{job_data['table'].removesuffix('_set')}_set",  # entityType will always be the name of the set table
         "entityName": f"{entity_name}",  # entityName is name of specific row in table
         "expression": (
             None if set_mode else f"this.{job_data['table']}s"
