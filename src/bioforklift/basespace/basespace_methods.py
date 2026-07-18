@@ -1,8 +1,9 @@
 import os
 import shutil
 import tempfile
+from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, List, Optional
 
 import requests
 from pydantic.alias_generators import to_pascal
@@ -12,13 +13,12 @@ from .basespace_exceptions import (
     BaseSpaceCollectionIdError,
     BaseSpaceDatasetError,
     BaseSpaceDownloadError,
-    BaseSpaceMissingReadError,
 )
 from .basespace_models import (
     BaseSpaceResponse,
     DatasetFileItem,
     DatasetItem,
-    DownloadedFileItem,
+    StagedDatasetFile,
     ItemType,
     Paging,
     ProjectItem,
@@ -162,104 +162,6 @@ class BaseSpaceMethods:
         )
         return search_item
 
-    def _reject_duplicate_samples(self, samples: List[str]) -> None:
-        """
-        Raise if any sample name appears more than once, so we never accidentally
-        download the same dataset twice.
-        """
-
-        duplicates = sorted({name for name in samples if samples.count(name) > 1})
-        if duplicates:
-            raise BaseSpaceDatasetError(
-                f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
-            )
-
-    def _matches_dataset_type(
-        self,
-        ds_item: DatasetItem,
-        dataset_types: List[str]
-    ) -> bool:
-        """
-        True if `ds_item` matches any requested dataset type, either directly by
-        `DatasetType.Id` or by conformance (`ConformsToIds`). The conformance check
-        catches typed variants like `illumina.fastq.v1.8`, which conform to
-        `common.fastq` but do not match it by Id.
-        """
-        if ds_item.dataset_type is None:
-            return False
-        requested = set(dataset_types)
-        return (
-            ds_item.dataset_type.id in requested
-            or bool(requested.intersection(ds_item.dataset_type.conforms_to_ids))
-        )
-
-    def filter_datasets(
-        self,
-        samples: List[str],
-        ds_items: List[DatasetItem],
-        dataset_types: Optional[List[str]] = ["common.fastq"],
-    ) -> List[DatasetItem]:
-        """
-        Filter a list of DatasetItems down to those of the requested dataset type(s)
-        whose `DatasetItem.Name` has an exact match in the provided input `samples`.
-
-        The dataset-type filter is applied first (matching on `DatasetType.Id` or
-        `ConformsToIds`, see `_matches_dataset_type`); the sample-name match then runs
-        over that narrowed set.
-
-        Args:
-            samples: A list of sample names to filter by.
-            ds_items: A list of DatasetItems to filter.
-            dataset_types: Dataset types to keep, defaults to `["common.fastq"]`.
-
-        Returns:
-            A list of DatasetItems whose `DatasetItem.Name` is in the provided `samples`.
-        """
-
-        # Resolve the default here so this stays the single owner of the default dataset_types
-        dataset_types = dataset_types or ["common.fastq"]
-
-        all_items: List[DatasetItem] = []
-        unmatched_samples = []
-
-        # Reject duplicate sample names up front so we don't accidentally download the same dataset more than once.
-        self._reject_duplicate_samples(samples)
-
-        # Narrow to the requested dataset type(s) before matching on sample name, so
-        # same-named datasets of other types can't trip the ambiguity check below.
-        typed_items = [
-            ds_item for ds_item in ds_items if self._matches_dataset_type(ds_item, dataset_types)
-        ]
-
-        logger.info(
-            f"Filtering for {len(samples)} sample(s) against {len(typed_items)} dataset(s) "
-            f"of type {dataset_types} (out of {len(ds_items)} total)"
-        )
-
-        for sample in samples:
-            matches = [
-                ds_item
-                for ds_item in typed_items
-                if ds_item.name == sample
-            ]
-            if not matches:
-                unmatched_samples.append(sample)
-
-            if len(matches) > 1:
-                raise BaseSpaceDatasetError(
-                    f"Multiple datasets (n={len(matches)}) found for sample `{sample}`. Provide a more specific sample name."
-                )
-
-            all_items.extend(matches)
-
-        if unmatched_samples:
-            raise BaseSpaceDatasetError(
-                f"No dataset match found for sample(s): {', '.join(unmatched_samples)}"
-            )
-
-        logger.info(f"Found {len(all_items)} dataset(s) matching the provided sample(s)")
-        return all_items
-
     def list_datasets(
         self,
         search_item: SearchItem,
@@ -279,63 +181,115 @@ class BaseSpaceMethods:
                 f"Cannot list datasets for {type(search_item).__name__}; expected a run or project."
             )
 
+        # Capture and validate DatasetItems from API response
         return self._fetch_all_items(
             self.endpoints.datasets,
             project_id=search_item.id if search_item.type == "project" else None,
             input_runs=search_item.id if search_item.type == "run" else None,
         )
 
-
-    def _validate_paired_end(
-        self,
-        ds_item: DatasetItem,
-        ds_files: List[DownloadedFileItem],
-    ) -> bool:
+    def _reject_duplicate_samples(self, samples: List[str]) -> None:
         """
-        Validate that a dataset's files form a balanced paired-end read set.
+        Raise if any sample name appears more than once, so we never accidentally
+        download the same dataset twice.
+        """
 
-        Every file must be a standard Illumina read file carrying the `_R1_` / `_R2_`
-        nomenclature, and the dataset must contain an equal, non-zero number of R1 and
-        R2 files (nothing else is allowed).
+        duplicates = sorted({name for name in samples if samples.count(name) > 1})
+        if duplicates:
+            raise BaseSpaceDatasetError(
+                f"Duplicate sample name(s) provided: {', '.join(duplicates)}. Provide each sample once."
+            )
+
+    def filter_datasets(
+        self,
+        samples: List[str],
+        ds_items: List[DatasetItem],
+        dataset_types: Optional[List[str]] = ["common.fastq"],
+    ) -> List[DatasetItem]:
+        """
+        Filter a list of DatasetItems down to those of the requested dataset type(s)
+        whose `DatasetItem.Name` has an exact match in the provided input `samples`.
 
         Args:
-            ds_item: The dataset the fastq files belong to.
-            ds_files: The files listed for the dataset.
+            samples: A list of sample names to filter by.
+            ds_items: A list of DatasetItems to filter.
+            dataset_types: Dataset types to keep (default `["common.fastq"]`); pass `None` to keep all types.
 
         Returns:
-            True if the files are a valid, balanced paired-end read set.
-
-        Raises:
-            BaseSpaceMissingReadError: If the dataset is not flagged paired-end, if any
-                file breaks the `_R[1|2]_` naming convention, or the R1/R2 files are not
-                balanced (no R1s or unequal R1/R2 counts).
+            A list of DatasetItems whose `DatasetItem.Name` is in the provided `samples`.
         """
+        all_items: List[DatasetItem] = []
+        unmatched_samples = []
 
-        # `attributes` is optional, so guard before reading the paired-end flag.
-        is_paired_end = bool(ds_item.attributes and ds_item.attributes.is_paired_end)
-        if not is_paired_end:
-            raise BaseSpaceMissingReadError(
-                f"DatasetItem `{ds_item.name}` is missing `paired_end` attribute; only paired-end datasets are supported."
+        # Reject duplicate sample names up front so we don't accidentally download the same dataset more than once.
+        self._reject_duplicate_samples(samples)
+
+        # Narrow to the requested dataset type(s) before matching on sample name, so
+        # same-named datasets of other types can't trip the ambiguity check below.
+        typed_items = [
+            ds_item for ds_item in ds_items if ds_item.matches_any_dataset_type(dataset_types)
+        ]
+
+        logger.info(
+            f"Attempting to match {len(samples)} sample(s) to {len(typed_items)} dataset(s) "
+            f"of type {dataset_types} (out of {len(ds_items)} total)"
+        )
+
+        # Check if any sample names match in the list of filtered DatasetItem(s)
+        for sample in samples:
+            matches = [ds_item for ds_item in typed_items if ds_item.name == sample]
+
+            if not matches:
+                unmatched_samples.append(sample)
+
+            if len(matches) > 1:
+                raise BaseSpaceDatasetError(
+                    f"Multiple datasets (n={len(matches)}) found for sample `{sample}`. Provide a more specific sample name."
+                )
+
+            all_items.extend(matches)
+
+        if unmatched_samples:
+            raise BaseSpaceDatasetError(
+                f"No dataset match found for sample(s): {', '.join(unmatched_samples)}"
             )
 
-        # Expect an even file count that splits into matched R1/R2 reads (one R2 for
-        # every R1, across lanes). Read number is parsed from the standard
-        # `_R{read}_001.fastq` token in the file name. Every file must be an R1/R2
-        # read; anything else fails loudly rather than being silently downloaded or missed.
-        read1_files = [file for file in ds_files if file.is_valid_read1]
-        read2_files = [file for file in ds_files if file.is_valid_read2]
-        if (
-            len(read1_files) == 0
-            or len(read1_files) != len(read2_files)
-            or len(read1_files) + len(read2_files) != len(ds_files)
-        ):
-            raise BaseSpaceMissingReadError(
-                f"Dataset `{ds_item.name}` is paired-end but its files are not balanced "
-                f"R1/R2 (R1={len(read1_files)}, R2={len(read2_files)}, total={len(ds_files)}). "
-                f"Every file must be an R1 or R2 read."
+        logger.info(f"Matched {len(samples)} samples to {len(all_items)} dataset(s)")
+        return all_items
+
+    def prepare_dataset_files(
+        self,
+        ds_items: List[DatasetItem],
+        validate: bool = True,
+    ) -> List[StagedDatasetFile]:
+        """
+        Fetch each DatasetItem's files and pair them into StagedDatasetFiles.
+
+        When `validate` is True, each pairing runs the paired-end model validators;
+        `validate=False` uses `model_construct` to skip them.
+        """
+        all_staged_files: List[StagedDatasetFile] = []
+
+        logger.info("Preparing dataset files for download")
+
+        for item in ds_items:
+            ds_files: List[DatasetFileItem] = self._fetch_all_items(
+                endpoint_method=self.endpoints.datasets_files,
+                dataset_id=item.id,
             )
 
-        return True
+            if validate:
+                sdf = StagedDatasetFile(dataset_item=item, dataset_file_items=ds_files)
+            else:
+                sdf = StagedDatasetFile.model_construct(dataset_item=item, dataset_file_items=ds_files)
+
+            logger.info(
+                f"{'Validated' if validate else 'Unvalidated'} "
+                f"dataset: `{item.name}` with {len(ds_files)} file(s) available for download"
+            )
+
+            all_staged_files.append(sdf)
+        return all_staged_files
 
     def _stream_fastq_file(
         self,
@@ -388,68 +342,44 @@ class BaseSpaceMethods:
 
     def download_dataset_files(
         self,
-        ds_items: List[DatasetItem],
+        staged_dataset_files: List[StagedDatasetFile],
         dest_dir: Optional[Path] = None,
         dry_run: bool = False,
-        validate: bool = True,
-    ) -> Dict[str, List[DownloadedFileItem]]:
+    ) -> List[StagedDatasetFile]:
         """
-        Download the FASTQ files for a list of paired-end DatasetItems.
-
-        Unless `validate` is False, each dataset is validated as a balanced paired-end
-        read set (see `_validate_paired_end`) before anything is downloaded. Files are
-        streamed to `dest_dir/{file.name}` under their original Illumina names and kept
-        in place; `concatenate_read_sets` merges them across lanes afterwards.
+        Stream each staged file's FASTQs to `dest_dir` under their original Illumina names,
+        setting each `DatasetFileItem._local_path` so `concatenate_read_sets` can find them.
 
         Args:
-            ds_items: A list of DatasetItems to download files for.
-            dest_dir: The directory to download files to (defaults to the current
-                working directory).
-            dry_run: If True, log what would be downloaded without fetching or
-                writing any files.
-            validate: If True (default), require each dataset to be a balanced
-                paired-end read set before downloading. Set False to skip the check.
-        Raises:
-            BaseSpaceMissingReadError: If `validate` is True and a dataset's files are
-                not a balanced set of R1/R2 reads (no R1s, unequal R1/R2 counts, or any
-                non-R1/R2 file present).
-        Returns:
-            A dict mapping DatasetItem names to lists of DownloadedFileItems (each
-            carrying its `local_path`) for the downloaded FASTQ files of each dataset.
-        """
+            staged_dataset_files: The StagedDatasetFiles to download, from `prepare_dataset_files`.
+            dest_dir: Destination directory (defaults to the current working directory).
+            dry_run: If True, log what would be downloaded without fetching or writing anything.
 
+        Returns:
+            The same StagedDatasetFiles, with `_local_path` set on each file.
+        """
         # Resolve the default at call time so it reflects the current cwd, then
         # ensure the destination exists for real downloads.
         dest_dir = dest_dir or Path.cwd()
         if not dry_run:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
-        read_sets: Dict[str, List[DownloadedFileItem]] = {}
+        for sdf in staged_dataset_files:
+            ds_item_name = sdf.dataset_item.name
+            ds_file_items: List[DatasetFileItem] = sdf.dataset_file_items
 
-        for item in ds_items:
-            ds_files: List[DatasetFileItem] = self._fetch_all_items(
-                endpoint_method=self.endpoints.datasets_files,
-                dataset_id=item.id,
-            )
+            # For each `DatasetItem.id` present, download all fastq files (`DatasetFileItem.id`)
+            for file_item in ds_file_items:
 
-            # Wrap each raw API file in a DownloadedFileItem carrying its resolved local path
-            downloaded_files = [
-                DownloadedFileItem(
-                    **file_item.model_dump(),
-                    local_path=dest_dir / file_item.name
-                ) for file_item in ds_files
-            ]
+                # Create and assign _local_path to `DatasetFileItem` for download/concatenation
+                local_path = dest_dir / file_item.name
+                file_item._local_path = local_path
 
-            # Validate the dataset is a balanced paired-end read set before downloading
-            if validate:
-                self._validate_paired_end(item, downloaded_files)
-
-            for file_item in downloaded_files:
                 if dry_run:
-                    logger.info(f"[dry-run] Would download `{file_item.name}` to `{file_item.local_path}`")
+                    logger.info(f"[dry-run] Would download FASTQ file `{file_item.name}` from dataset `{ds_item_name}`")
                     continue
 
-                logger.info(f"Downloading FASTQ file `{file_item.name}` from dataset `{item.name}`")
+                logger.info(f"Downloading FASTQ file `{file_item.name}` from dataset `{ds_item_name}`")
 
                 # Stream the file straight to disk; `with` releases the connection even on a mid-stream error.
                 with self.endpoints.files_content(
@@ -459,118 +389,137 @@ class BaseSpaceMethods:
                 ) as response:
                     self._stream_fastq_file(
                         response=response,
-                        destination=file_item.local_path,
+                        destination=file_item._local_path,
                         expected_size=file_item.size,
                         chunk_size=(1024 * 1024),
                     )
 
-            # Keep every file (each with its resolved `local_path`) so concatenation can group by read/lane.
-            read_sets[item.name] = downloaded_files
-
-        total_files = sum(len(files) for files in read_sets.values())
-        logger.info(f"Downloaded {total_files} FASTQ file(s) from {len(ds_items)} dataset(s) to `{dest_dir}`")
-        return read_sets
-
+        total_files = sum(len(sdf.dataset_file_items) for sdf in staged_dataset_files)
+        verb = "Would download" if dry_run else "Downloaded"
+        logger.info(f"{verb} {total_files} FASTQ file(s) from {len(staged_dataset_files)} dataset(s) to `{dest_dir}`")
+        return staged_dataset_files
 
     def concatenate_read_sets(
         self,
-        read_sets: Dict[str, List[DownloadedFileItem]],
+        staged_dataset_files: List[StagedDatasetFile],
         dry_run: bool = False,
-    ) -> List[Tuple[str, Path]]:
+    ) -> None:
         """
         Concatenate each read set's per-lane files into clean `{name}_R1.fastq.gz` /
         `{name}_R2.fastq.gz` outputs.
 
-        The per-lane files produced by `download_dataset_files` are expected to already
-        be on disk. For each read, the lane files are ordered by lane and joined at the
-        byte level. Each output is written to a temp file first and renamed into place, so an
-        interrupted concatenation never leaves a truncated file at the final path.
+        Requires a prior `download_dataset_files` (or dry-run) pass: it reads each file's
+        `_local_path`, which that step sets. For each read, the lane files are ordered by
+        lane and joined at the byte level. Each output is written to a temp file first and
+        renamed into place, so an interrupted concatenation never leaves a truncated file
+        at the final path.
 
         Args:
-            read_sets: A mapping of sample name -> its downloaded DownloadedFileItems (each
-                carrying a `local_path`), as returned by `download_dataset_files`.
+            staged_dataset_files: The StagedDatasetFiles whose files are already on disk
+                (each `DatasetFileItem._local_path` set by `download_dataset_files`).
             dry_run: If True, log the outputs that would be written without reading or
                 writing any files.
 
         Raises:
             BaseSpaceDownloadError: If a concatenated output's size does not match the
                 combined `Size` of its source files.
-
-        Returns:
-            A list of ``(output_name, output_path)`` tuples for each concatenated read.
         """
+        merged_dataset_files = defaultdict(list)
 
-        outputs: List[Tuple[str, Path]] = []
+        # Combine/merge the read files of datasets with the same basename
+        for sdf in staged_dataset_files:
+            merged_dataset_files[sdf.read1_output_filename].extend(sdf.read1_files)
+            merged_dataset_files[sdf.read2_output_filename].extend(sdf.read2_files)
 
-        for sample_name, ds_files in read_sets.items():
-            read1_files = [file for file in ds_files if file.is_valid_read1]
-            read2_files = [file for file in ds_files if file.is_valid_read2]
+        # Track only outputs we actually process (past both guards) so the summary
+        # reflects real writes rather than every merged key.
+        output_count = 0
+        source_file_count = 0
 
-            for read_number, read_files in ((1, read1_files), (2, read2_files)):
-                if not read_files:
-                    continue
+        # Concatenate read files with the same basename
+        for output_filename, read_files in merged_dataset_files.items():
+            if not read_files:
+                continue
 
-                # Lane ordering only matters for the concatenated output, so sort here.
-                ordered_files = sorted(read_files, key=lambda file: file.lane or 0)
-                source_paths = [file.local_path for file in ordered_files]
-                output_path = source_paths[0].parent / f"{sample_name}_R{read_number}.fastq.gz"
-                outputs.append((output_path.name, output_path))
-
-                if dry_run:
-                    logger.info(
-                        f"[dry-run] Would concatenate {len(source_paths)} lane file(s) into `{output_path}`"
-                    )
-                    continue
-
-                logger.info(f"Concatenating {len(source_paths)} lane file(s) into `{output_path.name}`")
-
-                # Write to a temp file in the destination dir, then atomically rename.
-                tmp_file = tempfile.NamedTemporaryFile(
-                    dir=output_path.parent,
-                    prefix=f".tmp.{output_path.name}.",
-                    delete=False,
+            # Sort and filter for "laned" (`_LANE_PATTERN`) fastq files
+            laned_files = sorted(
+                (file_item for file_item in read_files if file_item.lane is not None),
+                key=lambda file_item: file_item.lane or 0,
+            )
+            # Without lane tokens the files can't be ordered, so concatenation is skipped.
+            # Warn rather than skip silently: these reads passed validation and were downloaded,
+            # so a missing `{output_filename}` output would otherwise be invisible.
+            if not laned_files:
+                logger.warning(
+                    f"No laned FASTQ files found for `{output_filename}` "
+                    f"({len(read_files)} non-laned read file(s)); skipping concatenation for this output."
                 )
-                tmp_path = Path(tmp_file.name)
+                continue
 
-                try:
-                    with tmp_file as outfile:
-                        for source_path in source_paths:
-                            with open(source_path, "rb") as infile:
-                                shutil.copyfileobj(infile, outfile, 1024 * 1024)
+            source_paths = [file_item._local_path for file_item in laned_files]
+            output_path = source_paths[0].parent / output_filename
 
-                    # Verify the concatenated output matches the combined size the API
-                    # reported (skipped if any source is missing a Size).
-                    sizes = [file.size for file in ordered_files]
-                    if all(size is not None for size in sizes):
-                        bytes_written = tmp_path.stat().st_size
-                        if bytes_written != sum(sizes):
-                            raise BaseSpaceDownloadError(
-                                f"Concatenated size mismatch for `{output_path.name}`: wrote {bytes_written} "
-                                f"byte(s), expected {sum(sizes)}."
-                            )
+            output_count += 1
+            source_file_count += len(source_paths)
 
-                    os.replace(tmp_path, output_path)
-                except BaseException:
-                    # Clean up the partial temp file on any failure (including interrupts).
-                    tmp_path.unlink(missing_ok=True)
-                    raise
+            if dry_run:
+                logger.info(
+                    f"[dry-run] Would concatenate {len(source_paths)} laned FASTQ file(s) into `{output_path}`"
+                )
+                continue
 
-        logger.info(f"Wrote {len(outputs)} concatenated FASTQ output(s)")
-        return outputs
+            logger.info(f"Concatenating {len(source_paths)} laned FASTQ file(s) into `{output_path.name}`")
+
+            # Write to a temp file in the destination dir, then atomically rename.
+            tmp_file = tempfile.NamedTemporaryFile(
+                dir=output_path.parent,
+                prefix=f".tmp.{output_path.name}.",
+                delete=False,
+            )
+            tmp_path = Path(tmp_file.name)
+
+            try:
+                with tmp_file as outfile:
+                    for source_path in source_paths:
+                        with open(source_path, "rb") as infile:
+                            shutil.copyfileobj(infile, outfile, 1024 * 1024)
+
+                # Verify the concatenated output matches the combined size the API
+                # reported (skipped if any source is missing a Size).
+                sizes = [file_item.size for file_item in laned_files]
+                if all(size is not None for size in sizes):
+                    bytes_written = tmp_path.stat().st_size
+                    if bytes_written != sum(sizes):
+                        raise BaseSpaceDownloadError(
+                            f"Concatenated size mismatch for `{output_path.name}`: wrote {bytes_written} "
+                            f"byte(s), expected {sum(sizes)}."
+                        )
+
+                os.replace(tmp_path, output_path)
+            except BaseException:
+                # Clean up the partial temp file on any failure (including interrupts).
+                tmp_path.unlink(missing_ok=True)
+                raise
+
+        verb = "Would write" if dry_run else "Wrote"
+        logger.info(
+            f"{verb} {output_count} concatenated FASTQ output(s) "
+            f"from {source_file_count} total FASTQ file(s)"
+        )
 
     def fetch_sample_fastqs(
         self,
         collection_id: str,
         samples: List[str],
         dest_dir: Optional[Path] = None,
-        dataset_types: Optional[List[str]] = None,
+        dataset_types: Optional[List[str]] = ["common.fastq"],
         dry_run: bool = False,
         validate: bool = True,
-        concatenate: bool = True,
-    ) -> List[Tuple[str, Path]]:
+        concatenate: bool = False,
+    ):
         """
         Resolve a collection_id, find the datasets for the given sample(s), download
-        their per-lane FASTQ files, and (by default) concatenate them across lanes.
+        their per-lane FASTQ files, and optionally concatenate them across lanes.
 
         Args:
             collection_id: A project/run ID or name to resolve.
@@ -580,13 +529,8 @@ class BaseSpaceMethods:
             dry_run: If True, log what would be downloaded/concatenated without fetching or writing any files.
             validate: If True (default), require each dataset to be a balanced paired-end
                 read set before downloading. Set False to skip the check.
-            concatenate: If True (default), merge each sample's lane files into
-                ``{sample}_R1/_R2.fastq.gz``. If False, leave the per-lane files as-is.
-
-        Returns:
-            A list of ``(name, path)`` tuples: the concatenated ``{sample}_R1/_R2.fastq.gz``
-            outputs when ``concatenate`` is True, otherwise the individual per-lane files.
-            For a dry run these are the files/outputs that would have been written.
+            concatenate: If True, merge each sample's lane files into
+                ``{sample}_R1/_R2.fastq.gz``. Defaults to False, leaving the per-lane files as-is.
         """
 
         if not samples:
@@ -605,24 +549,26 @@ class BaseSpaceMethods:
         matched_ds_items = self.filter_datasets(
             samples=samples,
             ds_items=all_ds_items,
-            dataset_types=dataset_types
+            dataset_types=dataset_types,
         )
 
-        # Download the per-lane files for the matched datasets (or log if dry_run).
-        read_sets = self.download_dataset_files(
-            matched_ds_items,
-            dest_dir=dest_dir,
-            dry_run=dry_run,
+        # Prepare datasets for download by validating/linking DatasetItem(s) and DatasetFileItem(s)
+        # into a list of corresponding StagedDatasetFile(s)
+        staged_ds_files = self.prepare_dataset_files(
+            ds_items=matched_ds_items,
             validate=validate,
         )
 
-        if not concatenate:
-            # Return the individual per-lane files as (name, path) tuples.
-            return [
-                (file_item.name, file_item.local_path)
-                for ds_files in read_sets.values()
-                for file_item in ds_files
-            ]
+        # Download the per-lane files for the matched datasets (or log if dry_run).
+        self.download_dataset_files(
+            staged_dataset_files=staged_ds_files,
+            dest_dir=dest_dir,
+            dry_run=dry_run,
+        )
 
         # Concatenate the per-lane files into clean {sample}_R1/_R2.fastq.gz outputs.
-        return self.concatenate_read_sets(read_sets, dry_run=dry_run)
+        if concatenate:
+            self.concatenate_read_sets(
+                staged_dataset_files=staged_ds_files,
+                dry_run=dry_run,
+            )
