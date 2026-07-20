@@ -495,7 +495,7 @@ class TestFetchSampleFastqs:
         )
         mock_methods.prepare_dataset_files.assert_called_once_with(ds_items=[ds_item], validate=True)
         mock_methods.download_dataset_files.assert_called_once_with(
-            staged_dataset_files=[staged], dest_dir=tmp_path, dry_run=True
+            staged_dataset_files=[staged], dest_dir=tmp_path, dry_run=True, progress=True
         )
         mock_methods.concatenate_read_sets.assert_called_once_with(
             staged_dataset_files=[staged], dry_run=True

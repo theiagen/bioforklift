@@ -177,7 +177,7 @@ class BaseSpaceEndpoints:
             file bytes.
         """
 
-        logger.info(f"Fetching BaseSpace file content for file_id=`{file_id}`")
+        logger.debug(f"Fetching BaseSpace file content for file_id=`{file_id}`")
 
         response = self.client.get(
             endpoint=f"files/{file_id}/content",

@@ -1,12 +1,15 @@
 import os
 import shutil
+import sys
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, List, Optional
 
 import requests
 from pydantic.alias_generators import to_pascal
+from tqdm import tqdm
 
 from .basespace_endpoints import BaseSpaceEndpoints
 from .basespace_exceptions import (
@@ -297,6 +300,7 @@ class BaseSpaceMethods:
         destination: Path,
         expected_size: Optional[int] = None,
         chunk_size: int = 8192,
+        progress: bool = True,
     ) -> None:
         """
         Stream the content of a FASTQ file to a destination file.
@@ -310,7 +314,12 @@ class BaseSpaceMethods:
             destination: Path to save the streamed content.
             expected_size: Expected byte length (the file's `Size`); skipped if None.
             chunk_size: The size of each chunk to read from the response.
+            progress: If True (default), draw the tqdm progress bar on a TTY. Set False to disable.
         """
+
+        # Only draw the animated bar on a real terminal; tqdm defaults to stderr, so the
+        # bar and the stdout log handler stay on separate streams and don't clobber each other.
+        show_bar = progress and sys.stderr.isatty()
 
         # Create a temporary file in the same directory as the destination
         tmp_file = tempfile.NamedTemporaryFile(
@@ -322,11 +331,21 @@ class BaseSpaceMethods:
 
         try:
             bytes_written = 0
-            with tmp_file as outfile:
+            bar = tqdm(
+                total=expected_size,
+                desc=destination.name,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                disable=not show_bar,
+                leave=False,
+            )
+            with tmp_file as outfile, bar:
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:
                         outfile.write(chunk)
                         bytes_written += len(chunk)
+                        bar.update(len(chunk))
 
             if expected_size is not None and bytes_written != expected_size:
                 raise BaseSpaceDownloadError(
@@ -345,6 +364,7 @@ class BaseSpaceMethods:
         staged_dataset_files: List[StagedDatasetFile],
         dest_dir: Optional[Path] = None,
         dry_run: bool = False,
+        progress: bool = True,
     ) -> List[StagedDatasetFile]:
         """
         Stream each staged file's FASTQs to `dest_dir` under their original Illumina names,
@@ -354,6 +374,7 @@ class BaseSpaceMethods:
             staged_dataset_files: The StagedDatasetFiles to download, from `prepare_dataset_files`.
             dest_dir: Destination directory (defaults to the current working directory).
             dry_run: If True, log what would be downloaded without fetching or writing anything.
+            progress: If True (default), draw the tqdm progress bar on a TTY. Set False to disable.
 
         Returns:
             The same StagedDatasetFiles, with `_local_path` set on each file.
@@ -379,7 +400,8 @@ class BaseSpaceMethods:
                     logger.info(f"[dry-run] Would download FASTQ file `{file_item.name}` from dataset `{ds_item_name}`")
                     continue
 
-                logger.info(f"Downloading FASTQ file `{file_item.name}` from dataset `{ds_item_name}`")
+                # Time the transfer so we can log a single persistent completion line.
+                start = time.monotonic()
 
                 # Stream the file straight to disk; `with` releases the connection even on a mid-stream error.
                 with self.endpoints.files_content(
@@ -392,7 +414,18 @@ class BaseSpaceMethods:
                         destination=file_item._local_path,
                         expected_size=file_item.size,
                         chunk_size=(1024 * 1024),
+                        progress=progress,
                     )
+
+                elapsed = time.monotonic() - start
+                size_str = (
+                    f"{file_item.size / (1024 * 1024):.1f} MB"
+                    if file_item.size is not None else "unknown size"
+                )
+                logger.info(
+                    f"Downloaded FASTQ file `{file_item.name}` from dataset `{ds_item_name}` "
+                    f"({size_str} in {elapsed:.1f}s)"
+                )
 
         total_files = sum(len(sdf.dataset_file_items) for sdf in staged_dataset_files)
         verb = "Would download" if dry_run else "Downloaded"
@@ -516,6 +549,7 @@ class BaseSpaceMethods:
         dry_run: bool = False,
         validate: bool = True,
         concatenate: bool = False,
+        progress: bool = True,
     ):
         """
         Resolve a collection_id, find the datasets for the given sample(s), download
@@ -531,6 +565,7 @@ class BaseSpaceMethods:
                 read set before downloading. Set False to skip the check.
             concatenate: If True, merge each sample's lane files into
                 ``{sample}_R1/_R2.fastq.gz``. Defaults to False, leaving the per-lane files as-is.
+            progress: If True (default), draw the tqdm progress bar on a TTY. Set False to disable.
         """
 
         if not samples:
@@ -564,6 +599,7 @@ class BaseSpaceMethods:
             staged_dataset_files=staged_ds_files,
             dest_dir=dest_dir,
             dry_run=dry_run,
+            progress=progress,
         )
 
         # Concatenate the per-lane files into clean {sample}_R1/_R2.fastq.gz outputs.

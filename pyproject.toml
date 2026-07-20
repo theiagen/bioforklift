@@ -30,6 +30,7 @@ google-cloud-storage = "^3.1.0"
 pandas-gbq = "^0.28.0"
 sentry-sdk = "^2.33.2"
 sqlalchemy = "^2.0.41"
+tqdm = "^4.69.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
