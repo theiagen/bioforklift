@@ -548,7 +548,7 @@ class BaseSpaceMethods:
         dataset_types: Optional[List[str]] = ["common.fastq"],
         dry_run: bool = False,
         validate: bool = True,
-        concatenate: bool = False,
+        concatenate: bool = True,
         progress: bool = True,
     ):
         """
@@ -563,8 +563,7 @@ class BaseSpaceMethods:
             dry_run: If True, log what would be downloaded/concatenated without fetching or writing any files.
             validate: If True (default), require each dataset to be a balanced paired-end
                 read set before downloading. Set False to skip the check.
-            concatenate: If True, merge each sample's lane files into
-                ``{sample}_R1/_R2.fastq.gz``. Defaults to False, leaving the per-lane files as-is.
+            concatenate: If True, merge each sample's lane files into `{sample}_R1/_R2.fastq.gz`.
             progress: If True (default), draw the tqdm progress bar on a TTY. Set False to disable.
         """
 

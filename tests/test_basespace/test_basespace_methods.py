@@ -501,8 +501,8 @@ class TestFetchSampleFastqs:
             staged_dataset_files=[staged], dry_run=True
         )
 
-    def test_fetch_sample_fastqs_default_skips_concatenate(self, mock_methods, tmp_path):
-        # concatenate defaults to False, so the concatenation step is never called.
+    def test_fetch_sample_fastqs_default_concatenates(self, mock_methods, tmp_path):
+        # concatenate defaults to True, so the concatenation step runs by default.
         search_item = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})
         ds_item = DatasetItem.model_validate({"Id": "ds.1", "Name": "SampleA"})
         staged = StagedDatasetFile.model_construct(dataset_item=ds_item, dataset_file_items=[])
@@ -511,4 +511,6 @@ class TestFetchSampleFastqs:
         result = mock_methods.fetch_sample_fastqs("collA", ["SampleA"], dest_dir=tmp_path)
 
         assert result is None
-        mock_methods.concatenate_read_sets.assert_not_called()
+        mock_methods.concatenate_read_sets.assert_called_once_with(
+            staged_dataset_files=[staged], dry_run=False
+        )
