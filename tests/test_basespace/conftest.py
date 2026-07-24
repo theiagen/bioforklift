@@ -8,6 +8,7 @@ from bioforklift.basespace import (
     BaseSpaceEndpoints,
     BaseSpaceResponse,
     BaseSpaceMethods,
+    DatasetFileItem,
     DatasetItem,
     SearchItem,
 )
@@ -38,6 +39,54 @@ def mock_response():
     response.status_code = 200
     response.url = "https://api.basespace.illumina.com/v2/search"
     return response
+
+
+@pytest.fixture
+def make_response():
+    """Factory for a `BaseSpaceResponse` page wrapping the given items and total count."""
+
+    def _make_response(items, total_count):
+        return BaseSpaceResponse.model_validate(
+            {
+                "items": items,
+                "paging": {"DisplayedCount": len(items), "TotalCount": total_count},
+            }
+        )
+
+    return _make_response
+
+
+@pytest.fixture
+def make_dataset():
+    """Factory for a `DatasetItem` carrying a `DatasetType` (and optional paired-end attribute)."""
+
+    def _make_dataset(
+        ds_id,
+        name,
+        type_id="common.fastq",
+        conforms_to=("common.files",),
+        paired_end=None,
+    ):
+        payload = {
+            "Id": ds_id,
+            "Name": name,
+            "DatasetType": {"Id": type_id, "ConformsToIds": list(conforms_to)},
+        }
+        if paired_end is not None:
+            payload["Attributes"] = {"common_fastq": {"IsPairedEnd": paired_end}}
+        return DatasetItem.model_validate(payload)
+
+    return _make_dataset
+
+
+@pytest.fixture
+def make_file():
+    """Factory for a `DatasetFileItem` as returned by `/datasets/{id}/files`."""
+
+    def _make_file(file_id, name, size=None):
+        return DatasetFileItem.model_validate({"Id": file_id, "Name": name, "Size": size})
+
+    return _make_file
 
 
 @pytest.fixture

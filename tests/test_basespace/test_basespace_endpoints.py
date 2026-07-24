@@ -11,7 +11,48 @@ from bioforklift.basespace import (
     ProjectItem,
     RunItem,
 )
+from bioforklift.basespace.basespace_endpoints import fetch_all_items
 from bioforklift.basespace.basespace_exceptions import BaseSpaceServerError
+
+
+class TestFetchAllItems:
+    """`fetch_all_items` — the module-level pagination helper used by every endpoint read."""
+
+    def test_single_page(self, make_response):
+        # The endpoint returns all items in a single page, so only one call is made.
+        endpoint = MagicMock(side_effect=[make_response([0, 1], total_count=2)])
+
+        result = fetch_all_items(endpoint)
+
+        assert result == [0, 1]
+        assert endpoint.call_count == 1
+        paging_1 = endpoint.call_args_list[0].kwargs["paging"]
+        assert paging_1.offset == 0
+        assert paging_1.limit == 1000
+
+    def test_multiple_pages(self, make_response):
+        pages = [
+            make_response(list(range(0, 1000)), total_count=2500),
+            make_response(list(range(1000, 2000)), total_count=2500),
+            make_response(list(range(2000, 2500)), total_count=2500),
+        ]
+        endpoint = MagicMock(side_effect=pages)
+
+        result = fetch_all_items(endpoint)
+
+        assert len(result) == 2500
+        assert endpoint.call_count == 3
+        offsets = [call.kwargs["paging"].offset for call in endpoint.call_args_list]
+        assert offsets == [0, 1000, 2000]
+        assert all(call.kwargs["paging"].limit == 1000 for call in endpoint.call_args_list)
+
+    def test_empty_first_page(self, make_response):
+        endpoint = MagicMock(side_effect=[make_response([], total_count=0)])
+
+        result = fetch_all_items(endpoint)
+
+        assert result == []
+        assert endpoint.call_count == 1
 
 
 class TestSearchEndpoint:
@@ -116,12 +157,12 @@ class TestDatasets:
         )
 
 
-class TestDatasetsFiles:
-    def test_datasets_files_valid_response(self, mock_endpoints, mock_client, bs_dataset_files_response):
+class TestDatasetFiles:
+    def test_dataset_files_valid_response(self, mock_endpoints, mock_client, bs_dataset_files_response):
         mock_client.get = MagicMock()
         mock_client.get.return_value.json.return_value = bs_dataset_files_response
 
-        result = mock_endpoints.datasets_files(
+        result = mock_endpoints.dataset_files(
             dataset_id="ds.12345",
             paging=Paging(
                 offset=1,
@@ -146,11 +187,11 @@ class TestDatasetsFiles:
         )
 
 
-class TestFilesContent:
-    def test_files_content_valid_response(self, mock_endpoints, mock_client):
+class TestFileContent:
+    def test_file_content_valid_response(self, mock_endpoints, mock_client):
         mock_client.get = MagicMock()
 
-        result = mock_endpoints.files_content(
+        result = mock_endpoints.file_content(
             file_id="42",
             redirect="true",
             stream=True,
