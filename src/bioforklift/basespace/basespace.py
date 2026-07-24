@@ -68,3 +68,4 @@ class BaseSpace:
 
         # include links to top-level orchestrator functions for convenience
         self.fetch_sample_fastqs = self.methods.fetch_sample_fastqs
+        self.build_sample_sheet = self.methods.build_sample_sheet
