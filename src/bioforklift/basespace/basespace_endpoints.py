@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Callable, List, Literal, Optional
 
 import requests
 from pydantic import validate_call
@@ -11,10 +11,54 @@ from .basespace_models import (
     DatasetItem,
     Paging,
     SearchItem,
+    ItemType,
 )
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
+
+
+def fetch_all_items(
+    endpoint_method: Callable[..., BaseSpaceResponse[ItemType]],
+    **kwargs,
+) -> List[ItemType]:
+    """
+    Page through any paginated BaseSpace endpoint and return every item.
+    Ensures that the caller receives a complete list of items, regardless of
+    how many pages the endpoint returns.
+
+    Endpoint-agnostic: works with any `BaseSpaceEndpoints` method that accepts a
+    `paging` kwarg and returns a `BaseSpaceResponse` (`.items` + `.paging`) -
+    e.g. `search`, `datasets`, `datasets_files`, or any future paginated
+    endpoint. The item type of the returned list is inferred from whichever
+    endpoint is passed. Any `paging` passed in `**kwargs` is ignored.
+
+    Args:
+        endpoint_method: Any bound `BaseSpaceEndpoints` method returning a `BaseSpaceResponse`
+        **kwargs: Whatever query params that endpoint accepts, forwarded as-is
+
+    Returns:
+        Every item across all pages, typed to the endpoint's item type
+        (e.g. `List[SearchItem]` for `search`, `List[DatasetItem]` for `datasets`).
+    """
+
+    # Ignore caller-supplied value
+    kwargs.pop("paging", None)
+    all_items: List[ItemType] = []
+    offset = 0
+    while True:
+        # Build a fresh Paging each iteration; never mutate a shared instance.
+        response = endpoint_method(
+            paging=Paging(offset=offset, limit=1000), # Max limit is 1000 for BaseSpace v2 endpoints
+            **kwargs,
+        )
+        all_items.extend(response.items)
+        # Same as checking the `displayed_count` + `offset` in the PagingResponse
+        # Stop iterating if the endpoint returned no items, or if we've already fetched all items.
+        if not response.items or len(all_items) >= response.paging.total_count:
+            break
+        offset = len(all_items)
+    return all_items
 
 
 class BaseSpaceEndpoints:
@@ -123,7 +167,7 @@ class BaseSpaceEndpoints:
         return BaseSpaceResponse[DatasetItem].model_validate(body)
 
     @validate_call
-    def datasets_files(
+    def dataset_files(
         self,
         dataset_id: str,
         paging: Optional[Paging] = None,
@@ -155,7 +199,7 @@ class BaseSpaceEndpoints:
         return BaseSpaceResponse[DatasetFileItem].model_validate(response.json())
 
     @validate_call
-    def files_content(
+    def file_content(
         self,
         file_id: str,
         stream: bool = True,
