@@ -88,6 +88,49 @@ class TestConfigBuilder:
         assert config_builder.default_values == {"test_default": "value"}
         assert config_builder.template_config == {}
 
+    def test_init_default_location(self, mock_schema_yaml):
+        """Test that BigQuery uses the default location when none is provided."""
+        with patch('bioforklift.terra2bq.config_builder.BigQuery') as mock_bigquery_class, \
+             patch('bioforklift.terra2bq.config_builder.Terra'), \
+             patch('builtins.open', mock_open(read_data=mock_schema_yaml)):
+
+            ConfigBuilder(
+                bigquery_project="test-project",
+                bigquery_dataset="test-dataset",
+                bigquery_config_table_name="test_config_table",
+                bigquery_config_schema_yaml="test_schema.yaml",
+                terra_source_project="test-project",
+                terra_source_workspace="test-workspace",
+            )
+
+            mock_bigquery_class.assert_called_once_with(
+                project="test-project",
+                dataset="test-dataset",
+                location="us-central1",
+            )
+
+    def test_init_custom_location(self, mock_schema_yaml):
+        """Test that a provided bigquery_location is forwarded to BigQuery."""
+        with patch('bioforklift.terra2bq.config_builder.BigQuery') as mock_bigquery_class, \
+             patch('bioforklift.terra2bq.config_builder.Terra'), \
+             patch('builtins.open', mock_open(read_data=mock_schema_yaml)):
+
+            ConfigBuilder(
+                bigquery_project="test-project",
+                bigquery_dataset="test-dataset",
+                bigquery_config_table_name="test_config_table",
+                bigquery_config_schema_yaml="test_schema.yaml",
+                terra_source_project="test-project",
+                terra_source_workspace="test-workspace",
+                bigquery_location="us-east1",
+            )
+
+            mock_bigquery_class.assert_called_once_with(
+                project="test-project",
+                dataset="test-dataset",
+                location="us-east1",
+            )
+
     def test_init_with_template(self, mock_schema_yaml):
         """Test initialization with a template config file."""
         mock_template = {"template_key": "template_value"}

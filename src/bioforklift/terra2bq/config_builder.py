@@ -26,6 +26,7 @@ class ConfigBuilder:
         bigquery_config_schema_yaml: str,
         terra_source_project: str,
         terra_source_workspace: str,
+        bigquery_location: str = "us-central1",
         template_config_path: Optional[Union[str, Path]] = None,
         default_values: Optional[Dict[str, Any]] = None,
     ):
@@ -38,11 +39,12 @@ class ConfigBuilder:
             config_schema_yaml (str): The path to the YAML schema file for the configuration.
             terra_source_project (str): The source project in Terra.
             terra_source_workspace (str): The source workspace in Terra.
+            bigquery_location (str): The BigQuery dataset location (default: "us-central1").
             template_config_path (Optional[Union[str, Path]]): The path to the template config file (JSON).
             default_values (Optional[Dict[str, Any]]): Optional dictionary of default values to use for the configuration.
         """
 
-        self.bigquery = BigQuery(project=bigquery_project, dataset=bigquery_dataset)
+        self.bigquery = BigQuery(project=bigquery_project, dataset=bigquery_dataset, location=bigquery_location)
         self.config_table_name = bigquery_config_table_name
         self.config_schema_yaml = bigquery_config_schema_yaml
         self.terra = Terra(
