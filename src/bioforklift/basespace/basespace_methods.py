@@ -325,11 +325,15 @@ class BaseSpaceMethods:
             for ds_item in matched_ds_items:
                 ds_files.extend(self.get_dataset_files(ds_item))
 
+            logger.info(f"Found {len(ds_files)} FASTQ files across {len(matched_ds_items)} matching datasets")
+
             if validate_paired_end:
                 validate_paired_end_datasets(
                     ds_items=matched_ds_items,
                     ds_files=ds_files,
                 )
+
+            logger.info(f"Preparing to download {len(ds_files)} FASTQ files")
 
             # Download all dataset file items for each matching dataset (or log if dry_run).
             for ds_file in ds_files:

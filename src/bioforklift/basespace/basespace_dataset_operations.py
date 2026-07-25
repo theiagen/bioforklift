@@ -88,6 +88,9 @@ def validate_paired_end_datasets(
             f"Every file must be an R1 or R2 read."
         )
 
+    logger.info(f"Validated {len(ds_files)} FASTQ files across {len(ds_items)} matching datasets")
+
+
 def filter_dataset_types(
     ds_items: List[DatasetItem],
     dataset_types: Optional[List[str]] = None,
@@ -197,22 +200,23 @@ def match_datasets_by_sample(
         if siblings:
             logger.warning(
                 f"Exact dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-                f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together."
+                f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together"
             )
+        else:
+            logger.info(f"Exact dataset match for `{sample}` found")
         return exact_match
 
     elif siblings and group_by_lane:
         logger.info(
             f"Partial dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-            f"({', '.join(s.name for s in siblings)}) exist and will be grouped together."
+            f"({', '.join(s.name for s in siblings)}) exist and will be grouped together"
         )
         return siblings
 
     elif siblings and not group_by_lane:
         raise BaseSpaceDatasetError(
             f"Partial dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-            f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together. "
-            f"Lane grouping disabled (group_by_lane=False)."
+            f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together (group_by_lane=False)"
         )
     else:
         raise BaseSpaceDatasetError(
