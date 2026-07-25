@@ -114,7 +114,7 @@ class TestMatchDatasetsBySample:
     def test_lane_only_raises_when_grouping_disabled(self, make_dataset):
         # With group_by_lane=False (default), a lane-less name matching only siblings raises.
         lanes = self._lane_datasets(make_dataset)
-        with pytest.raises(BaseSpaceDatasetError, match="Lane grouping disabled"):
+        with pytest.raises(BaseSpaceDatasetError, match="(group_by_lane=False)"):
             match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=False)
 
     def test_exact_wins_and_warns_on_siblings(self, make_dataset, caplog):
