@@ -283,6 +283,47 @@ class TestConcatenateDatasetFiles:
         assert (tmp_path / "NA12878-3_4_R1.fastq.gz").read_bytes() == b"1234"
         assert (tmp_path / "NA12878-3_4_R2.fastq.gz").read_bytes() == b"abcd"
 
+    def test_removes_source_files_after_concatenation(self, make_file, tmp_path):
+        # Every source has a Size, so both outputs are size-verified and the per-lane files go.
+        files = self._write_files(
+            make_file, tmp_path,
+            [
+                ("Sample_S1_L001_R1_001.fastq.gz", b"11", 2),
+                ("Sample_S1_L002_R1_001.fastq.gz", b"22", 2),
+                ("Sample_S1_L001_R2_001.fastq.gz", b"aa", 2),
+                ("Sample_S1_L002_R2_001.fastq.gz", b"bb", 2),
+            ],
+        )
+
+        concatenate_dataset_files("Sample", files, dest_dir=tmp_path)
+
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "Sample_R1.fastq.gz",
+            "Sample_R2.fastq.gz",
+        ]
+
+    def test_keeps_source_files_when_remove_sources_false(self, make_file, tmp_path):
+        files = self._write_files(
+            make_file, tmp_path,
+            [
+                ("Sample_S1_L001_R1_001.fastq.gz", b"11", 2),
+                ("Sample_S1_L002_R1_001.fastq.gz", b"22", 2),
+                ("Sample_S1_L001_R2_001.fastq.gz", b"aa", 2),
+                ("Sample_S1_L002_R2_001.fastq.gz", b"bb", 2),
+            ],
+        )
+
+        concatenate_dataset_files("Sample", files, dest_dir=tmp_path, remove_sources=False)
+
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "Sample_R1.fastq.gz",
+            "Sample_R2.fastq.gz",
+            "Sample_S1_L001_R1_001.fastq.gz",
+            "Sample_S1_L001_R2_001.fastq.gz",
+            "Sample_S1_L002_R1_001.fastq.gz",
+            "Sample_S1_L002_R2_001.fastq.gz",
+        ]
+
 
 class TestWriteDatasetSampleSheet:
     def test_writes_csv_with_row_per_dataset(self, make_dataset, make_file, tmp_path):

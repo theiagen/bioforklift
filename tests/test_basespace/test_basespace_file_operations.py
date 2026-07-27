@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -111,3 +112,87 @@ class TestConcatenateFiles:
 
         assert not destination.exists()
         assert sorted(path.name for path in tmp_path.iterdir()) == ["a.fastq.gz"]
+
+    def test_removes_sources_after_verified_size(self, tmp_path):
+        # A verified output means the sources are redundant, so only the output is left behind.
+        first = tmp_path / "a.fastq.gz"
+        first.write_bytes(b"11")
+        second = tmp_path / "b.fastq.gz"
+        second.write_bytes(b"22")
+        destination = tmp_path / "out.fastq.gz"
+
+        concatenate_files([first, second], destination, expected_total_size=4)
+
+        assert destination.read_bytes() == b"1122"
+        assert list(tmp_path.iterdir()) == [destination]
+
+    def test_keeps_sources_when_remove_sources_false(self, tmp_path):
+        first = tmp_path / "a.fastq.gz"
+        first.write_bytes(b"11")
+        second = tmp_path / "b.fastq.gz"
+        second.write_bytes(b"22")
+        destination = tmp_path / "out.fastq.gz"
+
+        concatenate_files(
+            [first, second], destination, expected_total_size=4, remove_sources=False
+        )
+
+        assert destination.read_bytes() == b"1122"
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "a.fastq.gz",
+            "b.fastq.gz",
+            "out.fastq.gz",
+        ]
+
+    def test_keeps_sources_when_no_expected_size(self, tmp_path):
+        # No expected size means no verification ran, so the sources are never deleted.
+        first = tmp_path / "a.fastq.gz"
+        first.write_bytes(b"11")
+        second = tmp_path / "b.fastq.gz"
+        second.write_bytes(b"22")
+        destination = tmp_path / "out.fastq.gz"
+
+        concatenate_files([first, second], destination)
+
+        assert destination.read_bytes() == b"1122"
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "a.fastq.gz",
+            "b.fastq.gz",
+            "out.fastq.gz",
+        ]
+
+    def test_does_not_remove_destination_when_source_is_destination(self, tmp_path):
+        # A source already carrying the output name is overwritten in place by the rename;
+        # cleanup must not then delete the verified output.
+        destination = tmp_path / "Sample_R1.fastq.gz"
+        destination.write_bytes(b"11")
+        second = tmp_path / "b.fastq.gz"
+        second.write_bytes(b"22")
+
+        concatenate_files([destination, second], destination, expected_total_size=4)
+
+        assert destination.read_bytes() == b"1122"
+        assert list(tmp_path.iterdir()) == [destination]
+
+    def test_unlink_failure_does_not_raise(self, tmp_path, monkeypatch):
+        # The output is already in place, so a source that can't be deleted is warned about
+        # rather than raised on.
+        first = tmp_path / "a.fastq.gz"
+        first.write_bytes(b"11")
+        second = tmp_path / "b.fastq.gz"
+        second.write_bytes(b"22")
+        destination = tmp_path / "out.fastq.gz"
+
+        def raise_oserror(self, missing_ok=False):
+            raise OSError("permission denied")
+
+        monkeypatch.setattr(Path, "unlink", raise_oserror)
+
+        concatenate_files([first, second], destination, expected_total_size=4)
+
+        assert destination.read_bytes() == b"1122"
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "a.fastq.gz",
+            "b.fastq.gz",
+            "out.fastq.gz",
+        ]

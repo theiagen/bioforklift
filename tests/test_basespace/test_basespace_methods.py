@@ -238,6 +238,7 @@ class TestFetchSampleFastqs:
             dest_dir=tmp_path,
             dry_run=True,
             validate_lane_naming=False,
+            remove_sources=True,
         )
 
     def test_default_concatenates(self, mock_methods, tmp_path, monkeypatch, make_dataset, make_file):
@@ -253,6 +254,7 @@ class TestFetchSampleFastqs:
             dest_dir=tmp_path,
             dry_run=False,
             validate_lane_naming=False,
+            remove_sources=True,
         )
 
     def test_no_concatenate_skips_concat(self, mock_methods, tmp_path, monkeypatch, make_dataset, make_file):
@@ -263,3 +265,14 @@ class TestFetchSampleFastqs:
         mock_methods.fetch_sample_fastqs("collA", ["SampleA"], dest_dir=tmp_path, concatenate=False)
 
         wiring["concat"].assert_not_called()
+
+    def test_remove_sources_forwarded(self, mock_methods, tmp_path, monkeypatch, make_dataset, make_file):
+        # The opt-out reaches the concatenation step so per-lane files are kept.
+        search_item = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})
+        wiring = self._wire_pipeline(mock_methods, monkeypatch, make_dataset, make_file, search_item)
+
+        mock_methods.fetch_sample_fastqs(
+            "collA", ["SampleA"], dest_dir=tmp_path, remove_sources=False
+        )
+
+        assert wiring["concat"].call_args.kwargs["remove_sources"] is False
