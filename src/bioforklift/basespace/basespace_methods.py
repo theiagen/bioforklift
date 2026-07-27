@@ -265,9 +265,10 @@ class BaseSpaceMethods:
         dest_dir: Optional[Path] = None,
         dataset_types: Optional[List[str]] = ["common.fastq"],
         concatenate: bool = True,
-        group_by_lane: bool = False,
+        remove_sources: bool = True,
         validate_paired_end: bool = True,
         validate_lane_naming: bool = False,
+        group_by_lane: bool = False,
         dry_run: bool = False,
         progress: bool = True,
     ):
@@ -288,6 +289,9 @@ class BaseSpaceMethods:
                 dataset group before downloading. Set False to skip the check.
             validate_lane_naming: If True, verify that all FASTQ files being concatenated
                 share the same lane-stripped filename (per `_LANE_PATTERN`) before merging.
+            remove_sources: If True (default), delete the downloaded per-lane FASTQ files once they
+                have been concatenated into a size-verified output. Only applies when `concatenate`
+                is True, and sources are kept if the API did not report a `Size` for every file.
             dry_run: If True, log what would be downloaded/concatenated without fetching or writing any files.
             progress: If True (default), draw the tqdm progress bar on a TTY. Set False to disable.
         """
@@ -352,6 +356,7 @@ class BaseSpaceMethods:
                     dest_dir=dest_dir,
                     dry_run=dry_run,
                     validate_lane_naming=validate_lane_naming,
+                    remove_sources=remove_sources,
                 )
 
     def build_sample_sheet(

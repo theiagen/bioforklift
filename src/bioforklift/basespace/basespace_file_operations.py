@@ -85,6 +85,7 @@ def concatenate_files(
     sources: List[Path],
     destination: Path,
     expected_total_size: Optional[int] = None,
+    remove_sources: bool = True,
 ) -> None:
     """
     Byte-concatenate `sources` into `destination` in order.
@@ -95,6 +96,9 @@ def concatenate_files(
         sources: The files to concatenate, in output order.
         destination: Path to write the concatenated output to.
         expected_total_size: Combined byte length the output must match; skipped if None.
+        remove_sources: If True (default), delete `sources` once the output has passed the size
+            check and been renamed into place. Skipped entirely when `expected_total_size` is None.
+            A source that cannot be deleted logs a warning rather than failing the call.
 
     Raises:
         BaseSpaceDownloadError: If `expected_total_size` is given and the output does not match it.
@@ -128,3 +132,30 @@ def concatenate_files(
         # Clean up the partial temp file on any failure (including interrupts).
         tmp_path.unlink(missing_ok=True)
         raise
+
+    # After verifying final output destination, it's safe to remove source paths if specified
+    if remove_sources:
+        if expected_total_size is None:
+            logger.warning(
+                f"Keeping source file(s) for `{destination.name}`: no expected_total_size was "
+                "provided, so the concatenated output could not be size-verified."
+            )
+        else:
+            final_path = destination.resolve()
+            removed_count = 0
+            for source_path in sources:
+                # Don't accidently delete the final concatenated file if it has the same name as a source path
+                if source_path.resolve() == final_path:
+                    continue
+                try:
+                    source_path.unlink(missing_ok=True)
+                    removed_count += 1
+                except OSError as error:
+                    logger.warning(
+                        f"Could not remove source file `{source_path.name}` after "
+                        f"concatenating into `{destination.name}`: {error}"
+                    )
+            logger.info(
+                f"Removed {removed_count} source file(s) after concatenating "
+                f"into `{destination.name}`."
+            )

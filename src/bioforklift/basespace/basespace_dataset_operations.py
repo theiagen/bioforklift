@@ -229,6 +229,7 @@ def concatenate_dataset_files(
     dest_dir: Path,
     dry_run: bool = False,
     validate_lane_naming: bool = False,
+    remove_sources: bool = True,
 ) -> None:
     """
     Concatenate one sample's per-lane files into clean `{samplename}_R1.fastq.gz` /
@@ -246,6 +247,8 @@ def concatenate_dataset_files(
         dry_run: If True, log the outputs that would be written without reading or writing files.
         validate_lane_naming: If True, verify that all FASTQ files being concatenated share the
             same lane-stripped filename (per `_LANE_PATTERN`) before merging.
+        remove_sources: If True (default), delete each output's per-lane source files once the
+            concatenated output has been size-verified and written.
 
     Raises:
         BaseSpaceDownloadError: If a concatenated output's size does not match the combined
@@ -287,8 +290,10 @@ def concatenate_dataset_files(
         source_file_count += len(source_paths)
 
         if dry_run:
+            removal_note = " (removing the source file(s) afterward)" if remove_sources else ""
             logger.info(
-                f"[dry-run] Would concatenate {len(source_paths)} FASTQ file(s) into `{output_path}`:\n" +
+                f"[dry-run] Would concatenate {len(source_paths)} FASTQ file(s) into "
+                f"`{output_path}`{removal_note}:\n" +
                 "\n".join([path.name for path in source_paths])
             )
             continue
@@ -306,7 +311,12 @@ def concatenate_dataset_files(
             else None
         )
 
-        concatenate_files(source_paths, output_path, expected_total_size=expected_total_size)
+        concatenate_files(
+            sources=source_paths,
+            destination=output_path,
+            expected_total_size=expected_total_size,
+            remove_sources=remove_sources,
+        )
 
     verb = "would generate" if dry_run else "generated"
     logger.info(
