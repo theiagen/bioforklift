@@ -51,15 +51,14 @@ class BaseSpaceMethods:
         scope: Optional[str] = None,
     ) -> List[SearchItem]:
         """
-        Run one `/search` (paging through all results) and keep only project/run items.
-        Unmodeled results (`OtherItem`) are dropped, so callers only ever see runs/projects.
+        Run one `/search` (paging through all results)
 
         Args:
             scope: The search scope, e.g. "projects" or "runs".
             query: A Lucene query clause, or "" to match everything in the scope.
 
         Returns:
-            The project/run items returned by this search.
+            The list of SearchItems returned by this search.
         """
 
         search_items: List[SearchItem] = fetch_all_items(
