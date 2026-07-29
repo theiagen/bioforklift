@@ -59,6 +59,28 @@ class TestReadPartitioning:
         assert len(read1_files(files)) == 2
         assert len(read2_files(files)) == 2
 
+    def test_partitions_are_filename_sorted(self, make_file):
+        # Shuffled input comes back in lane order on both sides, so R1/R2 concatenate in
+        # matching order downstream.
+        files = [
+            make_file("1", "S_L003_R2_001.fastq.gz"),
+            make_file("2", "S_L002_R1_001.fastq.gz"),
+            make_file("3", "S_L001_R2_001.fastq.gz"),
+            make_file("4", "S_L003_R1_001.fastq.gz"),
+            make_file("5", "S_L001_R1_001.fastq.gz"),
+            make_file("6", "S_L002_R2_001.fastq.gz"),
+        ]
+        assert [file.name for file in read1_files(files)] == [
+            "S_L001_R1_001.fastq.gz",
+            "S_L002_R1_001.fastq.gz",
+            "S_L003_R1_001.fastq.gz",
+        ]
+        assert [file.name for file in read2_files(files)] == [
+            "S_L001_R2_001.fastq.gz",
+            "S_L002_R2_001.fastq.gz",
+            "S_L003_R2_001.fastq.gz",
+        ]
+
 
 class TestFilterDatasetTypes:
     def test_matches_by_id(self, make_dataset):
@@ -203,7 +225,7 @@ class TestConcatenateDatasetFiles:
         return files
 
     def test_concatenates_reads(self, make_file, tmp_path):
-        # R1s merge into {name}_R1 and R2s into {name}_R2, in file order.
+        # R1s merge into {name}_R1 and R2s into {name}_R2, in filename order.
         files = self._write_files(
             make_file, tmp_path,
             [
@@ -218,6 +240,29 @@ class TestConcatenateDatasetFiles:
 
         assert (tmp_path / "Sample_R1.fastq.gz").read_bytes() == b"1122"
         assert (tmp_path / "Sample_R2.fastq.gz").read_bytes() == b"aabb"
+
+    def test_lane_order_matches_between_reads_when_api_order_is_shuffled(self, make_file, tmp_path):
+        # The absolute lane order doesn't matter, but R1 and R2 must agree or the output read
+        # pairs are misaligned. The API returns these in two different shuffles (R1: 2,4,1,3 /
+        # R2: 3,1,4,2), so both sides must still land in lane order.
+        files = self._write_files(
+            make_file, tmp_path,
+            [
+                ("Sample_S1_L002_R1_001.fastq.gz", b"2", 1),
+                ("Sample_S1_L004_R1_001.fastq.gz", b"4", 1),
+                ("Sample_S1_L001_R1_001.fastq.gz", b"1", 1),
+                ("Sample_S1_L003_R1_001.fastq.gz", b"3", 1),
+                ("Sample_S1_L003_R2_001.fastq.gz", b"c", 1),
+                ("Sample_S1_L001_R2_001.fastq.gz", b"a", 1),
+                ("Sample_S1_L004_R2_001.fastq.gz", b"d", 1),
+                ("Sample_S1_L002_R2_001.fastq.gz", b"b", 1),
+            ],
+        )
+
+        concatenate_dataset_files("Sample", files, dest_dir=tmp_path)
+
+        assert (tmp_path / "Sample_R1.fastq.gz").read_bytes() == b"1234"
+        assert (tmp_path / "Sample_R2.fastq.gz").read_bytes() == b"abcd"
 
     def test_dry_run_writes_nothing(self, make_file, tmp_path):
         files = self._write_files(
@@ -263,7 +308,7 @@ class TestConcatenateDatasetFiles:
             concatenate_dataset_files("Sample", files, dest_dir=tmp_path, validate_lane_naming=True)
 
     def test_group_spanning_lanes_concatenates(self, make_file, tmp_path):
-        # One sample spanning four lanes merges all R1s (and all R2s), in file order.
+        # One sample spanning four lanes merges all R1s (and all R2s), in filename order.
         files = self._write_files(
             make_file, tmp_path,
             [

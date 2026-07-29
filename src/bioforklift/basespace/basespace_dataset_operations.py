@@ -38,12 +38,18 @@ def _is_valid_read2(name: str) -> bool:
     return bool(_R2_PATTERN.search(name))
 
 def read1_files(ds_files: List[DatasetFileItem]) -> List[DatasetFileItem]:
-    """Return the R1 files among `ds_files` (by filename pattern)."""
-    return [file for file in ds_files if _is_valid_read1(file.name)]
+    """Return the R1 files among `ds_files` (by filename pattern), sorted by filename."""
+    return sorted(
+        [file for file in ds_files if _is_valid_read1(file.name)],
+        key=lambda file: file.name,
+    )
 
 def read2_files(ds_files: List[DatasetFileItem]) -> List[DatasetFileItem]:
-    """Return the R2 files among `ds_files` (by filename pattern)."""
-    return [file for file in ds_files if _is_valid_read2(file.name)]
+    """Return the R2 files among `ds_files` (by filename pattern), sorted by filename."""
+    return sorted(
+        [file for file in ds_files if _is_valid_read2(file.name)],
+        key=lambda file: file.name,
+    )
 
 def _is_paired_end(ds_item: DatasetItem) -> bool:
     """True only if the dataset is flagged paired-end (`attributes` is optional)."""
@@ -261,8 +267,9 @@ def concatenate_dataset_files(
     output_count = 0
     source_file_count = 0
 
-    # Concatenation only occurs within one sample's files.
-    # Assuming the files were validated, there should be no empty, unbalanced, or invalid reads.
+    # Concatenation only occurs within one sample's dataset files. Assuming the files were validated,
+    # there should be no empty, unbalanced, or invalid reads. Both helpers return filename-sorted
+    # lists, so R1/R2 are concatenated in matching lane order no matter what order the API returned.
     for output_filename, read_files in (
         (f"{samplename}_R1.fastq.gz", read1_files(ds_files)),
         (f"{samplename}_R2.fastq.gz", read2_files(ds_files)),
@@ -311,6 +318,7 @@ def concatenate_dataset_files(
             else None
         )
 
+        # The absolute lane order doesn't matter as long as it's consistent between R1/R2
         concatenate_files(
             sources=source_paths,
             destination=output_path,
