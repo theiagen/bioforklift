@@ -29,6 +29,14 @@ The Terra module provides classes for:
 - **TerraSubmissions**: Operations for Terra workflow submissions
 - **TerraToTerraTransfer**: Transfer samples between Terra workspaces with deduplication
 
+### BaseSpace
+
+The BaseSpace module provides classes for:
+
+- **BaseSpaceClient**: Base client for BaseSpace API interactions
+- **BaseSpaceEndpoints**: Typed wrappers over the BaseSpace v2 REST endpoints
+- **BaseSpaceMethods**: Collection resolution, dataset discovery, and FASTQ download/concatenation
+
 ### Data Processing
 
 The Data Processing module provides classes for:
@@ -108,6 +116,18 @@ Terra Data Table → Terra Entities → **SampleDataProcessor** → BigQuery Sam
 3. **Type Coercion**: Data types converted to match BigQuery schema
 4. **System Values**: UUIDs and timestamps automatically generated
 5. **Deduplication**: Existing samples filtered out based on identifiers
+
+### Downloading Sequencing Data from BaseSpace
+
+BaseSpace Project/Run → **resolve_collection_id** → Datasets → Dataset Files → Local FASTQ → **Concatenated `{sample}_R1/_R2.fastq.gz`**
+
+**Processing Steps:**
+1. **Collection Resolution**: A project/run ID or name is resolved to exactly one BaseSpace collection
+2. **Dataset Filtering**: Datasets are filtered by type (`common.fastq`, including conforming variants)
+3. **Sample Matching**: Each requested sample name resolves to an exact dataset, or to its `_L###` lane siblings
+4. **Validation**: Datasets are checked for the paired-end flag and balanced R1/R2 files before any transfer
+5. **Download**: Files stream to disk atomically and are size-verified against the API's reported `Size`
+6. **Concatenation**: Per-lane files merge into one R1/R2 pair per sample, in matching lane order
 
 ### Configuration Processing
 
