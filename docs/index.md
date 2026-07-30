@@ -1,6 +1,6 @@
 # bioforklift
 
-**bioforklift** is a Python library meant for seamlessly integrating data transfer between Biguery and Terra bioinformatics platform. Our goal is to simplify data automation for large scale sample processing worklfows for pathogen detection. 
+**bioforklift** is a Python library meant for seamlessly integrating data transfer between Biguery and Terra bioinformatics platform. Our goal is to simplify data automation for large scale sample processing worklfows for pathogen detection.
 
 <div style="text-align: center;">
   <img src="assets/bioforklift_py.png" alt="bioforklift.py" width="450" height="450" style="border-radius: 15px;">
@@ -15,6 +15,7 @@ bioforklift provides a comprehensive solution for managing the flow of genomic s
 - Upload data from BigQuery to Terra
 - Transfer data between Terra workspaces
 - Submit and monitor Terra workflows
+- Download sequencing data from Illumina BaseSpace
 - Synchronize metadata between platforms
 - Generate alerts and reports
 
@@ -36,6 +37,7 @@ The key modules for bioforklift include the following:
 - **Terra2BQ**: Integration layer that combines BigQuery and Terra operations
 - **BigQuery**: Interface with Google BigQuery for data storage and retrieval, generalizing common retrieval patterns
 - **Terra**: Connect to Terra for bioinformatics workflow execution
+- **BaseSpace**: Download and concatenate FASTQ files from Illumina BaseSpace projects and runs
 - **Data Processing**: Schema-based data validation, transformation, and type coercion for samples and configurations
 - **Alerting**: Send notifications and reports to Slack, error monitoring with Sentry
 
