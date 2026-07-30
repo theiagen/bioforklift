@@ -1,0 +1,14 @@
+# ignore everything
+*
+
+# allow only what's needed for the build
+!src
+!tests
+!pyproject.toml
+!poetry.lock
+!README.md
+
+# re-exclude junk living inside src/ and tests/
+**/__pycache__
+**/*.py[cod]
+**/*.log
