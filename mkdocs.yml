@@ -65,6 +65,7 @@ nav:
   - Interfaces:
     - Command-Line: interfaces/cli_interface.md
     - Terra: interfaces/terra_interface.md
+    - BaseSpace: interfaces/basespace_interface.md
     - BigQuery: interfaces/bigquery_interface.md
     - Terra2BQ: interfaces/terra2bq_interface.md
     - Data Processing: interfaces/data_processing_classes.md
