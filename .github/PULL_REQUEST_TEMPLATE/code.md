@@ -2,7 +2,7 @@
 Thank you for contributing to bioforklift!
 
 Fill in the sections below and delete anything that doesn't apply. Text inside
-<!-- --> is a hint for you and won't render in the PR.
+
 -->
 
 <!-- Indicate the issue number if applicable; otherwise, delete -->
