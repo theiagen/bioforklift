@@ -671,7 +671,7 @@ These are pure functions that decide *what* to download and *how* to group it: r
 !!! info "Filename patterns"
     Three case-insensitive regexes drive all filename logic in this module:
 
-    - **Lane token**: `[_-]L\d{1,3}(?=[_-]R[12]|$)` — `_L` (or `-L`) plus **one to three digits**, so `_L1`, `_L01`, and `_L001` are all recognized as lanes. A lane token is only recognized in the two places: at the **end of a dataset name** (`NA12878-3_4_L001`), or **directly before the read token** in a FASTQ filename (`Sample_S1_L001_R1_001.fastq.gz`). A mid-name `_L1` such as `CA-2024-001_L1_extra` is left alone
+    - **Lane token**: `[_-]L\d{1,3}(?=[_-]R[12]|$)` — `_L` (or `-L`) plus **one to three digits**, so `_L1`, `_L01`, and `_L001` are all recognized as lanes. A lane token is only recognized in two places: at the **end of a dataset name** (`NA12878-3_4_L001`), or **directly before the read token** in a FASTQ filename (`Sample_S1_L001_R1_001.fastq.gz`). A mid-name `_L1` such as `CA-2024-001_L1_extra` is left alone
     - **Read 1**: `[_-]R1.*\.fastq\.gz$`
     - **Read 2**: `[_-]R2.*\.fastq\.gz$`
 
