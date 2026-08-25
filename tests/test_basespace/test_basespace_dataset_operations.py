@@ -458,8 +458,8 @@ class TestWriteDatasetSampleSheet:
         assert paired_row["dataset_type"] == "common.fastq"
         assert paired_row["is_paired_end"] == "True"
         assert paired_row["is_balanced"] == "True"
-        assert paired_row["read1_concat_size_mb"] == "1.00 MB"
-        assert paired_row["read2_concat_size_mb"] == "2.00 MB"
+        assert paired_row["read1_concat_size_mb"] == "1.05 MB"
+        assert paired_row["read2_concat_size_mb"] == "2.10 MB"
 
         single_row = rows[1]
         assert single_row["is_paired_end"] == "False"

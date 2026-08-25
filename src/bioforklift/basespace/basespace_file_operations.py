@@ -15,6 +15,9 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
+def mib_to_mb(mib: float) -> float:
+    """Convert a size in MiB (mebibytes) to MB (megabytes)."""
+    return mib * 1024 * 1024 / 1000000
 
 def stream_to_disk(
     response: requests.Response,
