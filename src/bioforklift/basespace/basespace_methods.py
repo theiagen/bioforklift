@@ -232,11 +232,11 @@ class BaseSpaceMethods:
                 )
                 continue
 
-            # This shouldn't happen, just being precautionary.
+            # Neither a run `ExperimentName` nor a project `Name` is guaranteed unique
             if len(exact_matches) > 1:
                 raise BaseSpaceCollectionIdError(
                     f"Input collection ID `{collection_id}` matched {len(exact_matches)} items in `{scope}`: {exact_matches}. "
-                    f"Could not resolve input collection ID."
+                    f"A `collection_id` must be unique; rename one in BaseSpace."
                 )
 
             search_item = exact_matches[0]
