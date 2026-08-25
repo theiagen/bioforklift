@@ -6,7 +6,7 @@ Access these classes and operations using `from bioforklift.basespace import Bas
 
 This module enables programmatic access to Illumina BaseSpace Sequence Hub's v2 REST API, allowing you to find sequencing data by project or run and pull FASTQ files down to local disk. It enables you to:
 
-1. **Resolve Collections**: Turn a project/run ID or name into a single, unambiguous BaseSpace resource.
+1. **Resolve Collections**: Turn a run experiment name or project name into a single, unambiguous BaseSpace resource.
 2. **Discover Datasets**: List every dataset under a project or run, and every file within a dataset.
 3. **Download FASTQ Files**: Stream per-lane FASTQ files to disk with integrity verification.
 4. **Concatenate Reads**: Merge per-lane files into clean `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz` outputs.
@@ -69,17 +69,18 @@ This module enables programmatic access to Illumina BaseSpace Sequence Hub's v2 
     Instead, BaseSpace uses a single **access token string**, passed as the first argument to `BaseSpace` (or `BaseSpaceClient`). It is sent on every request as the `x-access-token` header.
 
 !!! info "Collections: projects vs. runs"
-    A "collection" is either a BaseSpace **project** or a **run**. Both can hold datasets, and both are accepted anywhere a `collection_id` is expected — you can pass an ID *or* a name.
+    A "collection" is either a BaseSpace **project** or a **run**. Both can hold datasets, and both are accepted anywhere a `collection_id` is expected. A `collection_id` is always a **name** — either a run's `ExperimentName` or a project's `Name`.
 
     The BaseSpace UI labels these fields differently than the API does, which is the most common source of confusion:
 
-    - `run.Name` refers to `Run ID` in the BaseSpace UI
-    - `run.ExperimentName` refers to `Run Name` in the BaseSpace UI
-    - `run.Id` refers to the numerical ID found in the BaseSpace HTTP URL (e.g. `https://basespace.illumina.com/run/315086826/details`)
-    - `project.Name` refers to the name under the Projects tab in the BaseSpace UI
-    - `project.Id` refers to the numerical ID found in the BaseSpace HTTP URL (e.g. `https://basespace.illumina.com/projects/489069003/about`)
+    - `run.ExperimentName` refers to `Run Name` in the BaseSpace UI — **this is the run field to pass**
+    - `project.Name` refers to the name under the Projects tab in the BaseSpace UI — **this is the project field to pass**
+    - `run.Name` refers to `Run ID` in the BaseSpace UI (e.g. `250612_M00123_0001`) — **not** accepted as a `collection_id`
+    - `run.Id` / `project.Id` refer to the numerical IDs found in the BaseSpace HTTP URL (e.g. `https://basespace.illumina.com/projects/489069003/about`) — **not** accepted as a `collection_id`
 
-    The numerical ID from the URL is always the safest input, since names are not guaranteed to be unique.
+    Names are the only supported input because the other three fields do not exist until a run has executed. Numerical IDs are still valid in a raw Lucene query passed to [`get_search_items`](#get_search_items) — they are just not a `collection_id`.
+
+    Runs are searched **before** projects, so if a run's `ExperimentName` and a project's `Name` are identical, the run wins.
 
 !!! info "Download layout and disk space"
     Downloads land **flat** in `dest_dir` as `dest_dir / <original file name>` — there is no per-sample subdirectory. If two requested samples contain identically named files, they will collide at the same path. Use a separate `dest_dir` per collection if that is a risk.
@@ -458,7 +459,7 @@ If the API reported a `Size` for the file and the number of bytes written does n
 
 #### `resolve_collection_id`
 
-Resolves an input `collection_id` to its BaseSpace project/run [SearchItem](#class-searchitem). A `collection_id` can be a project/run ID or a project/run name. If no resource matches, or if more than one does, the input was not specific enough to be resolved, and an error is raised.
+Resolves an input `collection_id` to its BaseSpace project/run [SearchItem](#class-searchitem). A `collection_id` is a run experiment name or a project name. If nothing matches, an error is raised.
 
 ```python
 resolve_collection_id(
@@ -468,30 +469,29 @@ resolve_collection_id(
 
 #### Parameters
 
-- **collection_id** (str): The user-provided identifier for a project or run, which may be an ID or a name
+- **collection_id** (str): The user-provided name for a run (its `ExperimentName`) or a project
 
 **Returns:**
 
 - The matched project/run [SearchItem](#class-searchitem)
 
-The method probes five scope/field combinations in order, building a Lucene clause for each:
+The method probes two scope/field combinations in order, building a Lucene clause for each, and returns on the first exact hit:
 
-1. `runs` by `Id`
-2. `runs` by `Name`
-3. `runs` by `ExperimentName`
-4. `projects` by `Id`
-5. `projects` by `Name`
+1. `runs` by `ExperimentName`
+2. `projects` by `Name`
 
-BaseSpace's search endpoint can return close matches as well as exact ones, so results are then filtered down to items whose field value equals `collection_id` exactly. Zero exact matches or more than one both raise [BaseSpaceCollectionIdError](#class-basespacecollectioniderror) — see [Collections: projects vs. runs](#important-notes) for how these fields map to the BaseSpace UI.
+Because runs are searched first, a run **wins** when a run and a project share the same name, and the `projects` scope is never queried. Numerical IDs and the `run.Name` field (the UI's `Run ID`) are deliberately not searched — none of them exist until a run has executed.
+
+BaseSpace's search endpoint can return close matches as well as exact ones, so results are then filtered down to items whose field value equals `collection_id` exactly. [BaseSpaceCollectionIdError](#class-basespacecollectioniderror) is raised when no exact match is found in either scope, or when a single scope returns more than one exact match — names are not guaranteed unique, and there is no more specific input to fall back on, so a duplicate has to be renamed in BaseSpace. See [Collections: projects vs. runs](#important-notes) for how these fields map to the BaseSpace UI.
 
 _**Example**_
 
 ```python
-# Resolve by numeric project ID from the browser URL
-search_item = basespace.methods.resolve_collection_id("489069003")
+# Resolve by run name (the UI's "Run Name", the API's ExperimentName)
+search_item = basespace.methods.resolve_collection_id("Mtb Surveillance 2026-08")
 
-print(search_item.type)  # "project"
-print(search_item.id)    # "489069003"
+print(search_item.type)  # "run"
+print(search_item.id)    # "315086826"
 ```
 
 </br>
@@ -518,7 +518,7 @@ fetch_sample_fastqs(
 
 #### Parameters
 
-- **collection_id** (str): A project/run ID or name to resolve
+- **collection_id** (str): A run experiment name or project name to resolve
 - **samples** (List[str]): The sample name(s) to download. Each name resolves to an exact dataset match or, when `group_by_lane` is True, to its `{name}_L###` lane siblings
 - **dest_dir** (Optional[Path]): The directory to download files to (defaults to the current working directory)
 - **dataset_types** (Optional[List[str]]): Dataset types to keep when filtering, defaults to `["common.fastq"]`
@@ -565,7 +565,7 @@ from pathlib import Path
 
 # Download three samples by exact dataset name and concatenate each
 basespace.methods.fetch_sample_fastqs(
-    collection_id="47639625",
+    collection_id="MiSeq: Nextera DNA Flex",
     samples=[
         "E-coli_1ng_input-rep02_L001",
         "R-sphaeroides_100ng_input-rep18_L001",
@@ -579,7 +579,7 @@ basespace.methods.fetch_sample_fastqs(
 # Lane-split data: "NA12878-3_4" exists only as NA12878-3_4_L001..L004 datasets.
 # group_by_lane=True merges those four datasets into one R1/R2 pair.
 basespace.methods.fetch_sample_fastqs(
-    collection_id="25852834",
+    collection_id="NovaSeq: NA12878 4-lane",
     samples=["NA12878-3_4"],
     dest_dir=Path("/data/fastqs"),
     group_by_lane=True,
@@ -618,7 +618,7 @@ build_sample_sheet(
 
 #### Parameters
 
-- **collection_id** (Optional[str]): A project/run ID or name to resolve. If None (default), survey the whole account: list every project and run and write a CSV for each
+- **collection_id** (Optional[str]): A run experiment name or project name to resolve. If None (default), survey the whole account: list every project and run and write a CSV for each
 - **dest_dir** (Optional[Path]): Directory to write the CSV(s) to (defaults to the current working directory)
 - **dataset_types** (Optional[List[str]]): Restrict rows to these dataset type(s) (default `["common.fastq"]`); pass `None` to list every dataset regardless of type
 
@@ -1156,7 +1156,7 @@ dest_dir = Path("/data/fastqs")
 # Step 1: Survey the collection to see the real dataset names and whether
 # each one would pass paired-end validation.
 basespace.methods.build_sample_sheet(
-    collection_id="47639625",
+    collection_id="MiSeq: Nextera DNA Flex",
     dest_dir=dest_dir,
 )
 
@@ -1165,7 +1165,7 @@ basespace.methods.build_sample_sheet(
 # {sample}_R1.fastq.gz / {sample}_R2.fastq.gz, then the sources are removed.
 try:
     basespace.methods.fetch_sample_fastqs(
-        collection_id="47639625",
+        collection_id="MiSeq: Nextera DNA Flex",
         samples=[
             "E-coli_1ng_input-rep02_L001",
             "R-sphaeroides_100ng_input-rep18_L001",
@@ -1189,14 +1189,14 @@ except BaseSpaceError as error:
 Expand the sections below to see common issues and their solutions.
 
 ??? question "Could not resolve input collection ID"
-    **Problem**: `BaseSpaceCollectionIdError: Could not resolve input collection ID ... no project or run exactly matches it by id or name.`
+    **Problem**: `BaseSpaceCollectionIdError: Could not resolve input collection ID ... no run experiment name or project name exactly matches it.`
 
     **Solution**:
 
-    - Prefer the **numeric ID from the browser URL** — it is unique and unambiguous. For `https://basespace.illumina.com/projects/489069003/about`, pass `"489069003"`
-    - If you are using a name, check which field you actually have. What the UI calls **Run Name** is `ExperimentName` in the API, and what it calls **Run ID** is `Name`
+    - A `collection_id` must be a **name**: a run's `ExperimentName` or a project's `Name`. A numeric ID from the browser URL, or the UI's **Run ID** (`250612_M00123_0001`), will not resolve — those fields are not searched
+    - Check which field you actually have. What the UI calls **Run Name** is `ExperimentName` in the API, and what it calls **Run ID** is `Name`, which is *not* accepted
     - Matching is exact after the search returns, so trailing spaces or a partial name will not resolve
-    - If the error says the ID is **ambiguous**, the same name exists on more than one project or run. Use the numeric ID instead
+    - If the error instead says the name **matched N items**, the same name exists on more than one run (or more than one project). Rename one of the collections in BaseSpace
 
 ??? question "No exact dataset match, or lane siblings will not be grouped"
     **Problem**: `BaseSpaceDatasetError: No exact dataset match for ... found.` or `Partial dataset match ... will not be grouped together (group_by_lane=False)`
@@ -1207,6 +1207,7 @@ Expand the sections below to see common issues and their solutions.
     - If the datasets are lane-split (`MySample_L001`, `MySample_L002`, ...) and you are requesting the lane-less name, pass `group_by_lane=True`
     - The lane pattern allows **one to three digits**, so `_L1`, `_L01`, and `_L001` are all recognized as lane tokens, but `_L0001` and `_L1234` are not. A name ending in a longer `_L####` is treated as an ordinary sample name and must be requested exactly as it appears
     - If you see a warning that siblings exist but will not be grouped, a dataset matched your name *exactly* while `_L###` siblings also exist. The exact match wins — request the lane-less name against a collection without the exact-match dataset, or request each lane individually
+    - Conversely, with `group_by_lane=True` a **trailing** `_L#` is always read as a lane. If `_L1`/`_L2` mean library, replicate, or plate in your naming scheme rather than lane, request those dataset names exactly as they appear instead of the lane-less stem, or they will be merged into a single output
 
 ??? question "BaseSpaceMissingReadError on data that looks fine"
     **Problem**: `BaseSpaceMissingReadError: Unbalanced R1/R2 files ...` even though R1 and R2 both exist
