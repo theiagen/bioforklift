@@ -3,7 +3,7 @@ name: Release
 # Tag-driven releases. To cut a release:
 #   1. Bump `version` in pyproject.toml and merge to main.
 #   2. Tag that commit with the SAME version (bare semver, matching repo history):
-#        git tag 0.4.4 && git push origin 0.4.4
+#        git tag 0.4.5 && git push origin 0.4.5
 # This workflow then verifies the tag matches pyproject.toml, runs the test
 # suite, builds the package, publishes to PyPI via Trusted Publishing (OIDC),
 # and creates the GitHub Release.

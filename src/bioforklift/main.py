@@ -9,6 +9,7 @@ main script for command-line bioforklift tool
 import sys
 import argparse
 from pathlib import Path
+from bioforklift import __version__
 from bioforklift.scripts.launch import launch, launch_args
 from bioforklift.scripts.upload import upload, upload_args
 from bioforklift.scripts.download import download, download_args
@@ -47,6 +48,11 @@ def bioforklift_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     )
     upload_parser = upload_args(upload_parser)
 
+    # Version arguments
+    subparsers.add_parser(
+        "version", aliases=["v"], help="Show the bioforklift version"
+    )
+
     return parser
 
 
@@ -59,6 +65,10 @@ def run():
 
     if args.bunkee:
         logger.info("BioBunkee mode activated")
+        sys.exit(0)
+
+    if args.command in {"version", "v"}:
+        print(f"bioforklift {__version__}")
         sys.exit(0)
 
     # Load configuration
