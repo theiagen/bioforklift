@@ -7,7 +7,7 @@ from pathlib import Path
 def main():
 
     access_token = "abc123"
-    collection_id = "47639625" # "MiSeq: Nextera DNA Flex (replicates of E.coli, B.cereus, and R.sphaeroides)"
+    collection_id = "MiSeq: Nextera DNA Flex (replicates of E.coli, B.cereus, and R.sphaeroides)"
     samples = ['E-coli_1ng_input-rep02_L001', 'R-sphaeroides_100ng_input-rep18_L001', 'R-sphaeroides_1ng_input-rep15_L001']
 
     bs_client = BaseSpaceClient(access_token)
