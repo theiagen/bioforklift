@@ -14,7 +14,7 @@ from .basespace_models import (
 )
 from .basespace_file_operations import (
     concatenate_files,
-    mib_to_mb,
+    bytes_to_mb,
 )
 from bioforklift.forklift_logging import setup_logger
 
@@ -389,13 +389,13 @@ def write_dataset_sample_sheet(
         writer.writerow(header)
 
         for ds_item, ds_files in grouped_datasets:
-            total_r1_mib = sum(file_item.size or 0 for file_item in read1_files(ds_files)) / (1024 * 1024)
-            total_r2_mib = sum(file_item.size or 0 for file_item in read2_files(ds_files)) / (1024 * 1024)
+            total_r1_bytes = sum(file_item.size or 0 for file_item in read1_files(ds_files))
+            total_r2_bytes = sum(file_item.size or 0 for file_item in read2_files(ds_files))
             writer.writerow([
                 ds_item.name,
                 ds_item.id,
-                f"{mib_to_mb(total_r1_mib):.2f} MB",
-                f"{mib_to_mb(total_r2_mib):.2f} MB",
+                f"{bytes_to_mb(total_r1_bytes):.2f} MB",
+                f"{bytes_to_mb(total_r2_bytes):.2f} MB",
                 len(ds_files),
                 ds_item.dataset_type.id if ds_item.dataset_type else "",
                 _is_paired_end(ds_item),

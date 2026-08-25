@@ -23,6 +23,7 @@ from .basespace_exceptions import (
     BaseSpaceForbiddenError,
 )
 from .basespace_file_operations import (
+    bytes_to_mb,
     stream_to_disk,
 )
 from .basespace_models import (
@@ -174,7 +175,7 @@ class BaseSpaceMethods:
 
         elapsed = time.monotonic() - start
         size_str = (
-            f"{ds_file.size / (1024 * 1024):.1f} MB"
+            f"{bytes_to_mb(ds_file.size):.1f} MB"
             if ds_file.size is not None else "unknown size"
         )
         logger.info(
