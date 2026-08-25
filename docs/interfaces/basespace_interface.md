@@ -671,7 +671,7 @@ These are pure functions that decide *what* to download and *how* to group it: r
 !!! info "Filename patterns"
     Three case-insensitive regexes drive all filename logic in this module:
 
-    - **Lane token**: `[_-]L(\d{3,})` — requires **three or more digits**, so `_L001` and `_L1234` are recognized as lanes but `_L1` and `_L01` are not
+    - **Lane token**: `[_-]L\d{1,3}(?=[_-]R[12]|$)` — `_L` (or `-L`) plus **one to three digits**, so `_L1`, `_L01`, and `_L001` are all recognized as lanes. A lane token is only recognized in the two places: at the **end of a dataset name** (`NA12878-3_4_L001`), or **directly before the read token** in a FASTQ filename (`Sample_S1_L001_R1_001.fastq.gz`). A mid-name `_L1` such as `CA-2024-001_L1_extra` is left alone
     - **Read 1**: `[_-]R1.*\.fastq\.gz$`
     - **Read 2**: `[_-]R2.*\.fastq\.gz$`
 
@@ -1205,7 +1205,7 @@ Expand the sections below to see common issues and their solutions.
 
     - Run [`build_sample_sheet`](#build_sample_sheet) first and use the `dataset_name` column — sample names in a sample sheet or LIMS often differ from BaseSpace dataset names
     - If the datasets are lane-split (`MySample_L001`, `MySample_L002`, ...) and you are requesting the lane-less name, pass `group_by_lane=True`
-    - The lane pattern requires **three or more digits**, so `_L001` is recognized as a lane token but `_L1` is not. A `_L1`-suffixed name must be requested exactly as it appears
+    - The lane pattern allows **one to three digits**, so `_L1`, `_L01`, and `_L001` are all recognized as lane tokens, but `_L0001` and `_L1234` are not. A name ending in a longer `_L####` is treated as an ordinary sample name and must be requested exactly as it appears
     - If you see a warning that siblings exist but will not be grouped, a dataset matched your name *exactly* while `_L###` siblings also exist. The exact match wins — request the lane-less name against a collection without the exact-match dataset, or request each lane individually
 
 ??? question "BaseSpaceMissingReadError on data that looks fine"
