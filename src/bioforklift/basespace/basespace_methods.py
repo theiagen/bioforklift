@@ -188,33 +188,25 @@ class BaseSpaceMethods:
     ) -> SearchItem:
         """
         Resolve an input "collection_id" to its BaseSpace project/run `SearchItem`. A "collection_id"
-        can be a project/run ID or a project/run name. If no resource matches, or if
-        more than one does, the input was not specific enough to be resolved, and an error is raised.
+        is a run experiment name or a project name. Runs are searched first, so a run wins when a run
+        and a project share the same name. If nothing matches, an error is raised.
 
         Args:
-            collection_id: The user-provided identifier for a project or run, which may be an ID or a name.
+            collection_id: The user-provided name for a run (experiment name) or a project.
         Returns:
             The matched project/run `SearchItem`.
         """
 
         logger.info(f"Resolving BaseSpace collection ID: `{collection_id}`")
 
-        # "run.Name"           refers to `Run ID` in BaseSpace UI
         # "run.ExperimentName" refers to `Run Name` in BaseSpace UI
-        # "run.Id"             refers to numerical ID found in the BaseSpace HTTP URL (ex https://basespace.illumina.com/run/315086826/details)
         # "project.Name"       refers to name under the Projects tab in BaseSpace UI
-        # "project.Id"         refers to numerical ID found in the BaseSpace HTTP URL (ex https://basespace.illumina.com/projects/489069003/about)
 
         # Represents the scope and field (snake_case model attribute of a `SearchItem`).
         search_fields = [
-            ("runs", "id"),
-            ("runs", "name"),
             ("runs", "experiment_name"),
-            ("projects", "id"),
             ("projects", "name"),
         ]
-
-        exact_matches: List[SearchItem] = []
 
         for scope, field in search_fields:
             # Creates a Lucene query clause compatible with BaseSpace (e.g. "experiment_name" -> "ExperimentName";
@@ -227,35 +219,36 @@ class BaseSpaceMethods:
 
             # Sometimes the BaseSpace search endpoint can return items that are close matches but not exact matches.
             # Filter out items whose attribute/field doesn't match the input `collection_id` exactly.
-            hits = 0
-            for search_item in search_items:
-                if (
-                    getattr(search_item, field, None) == collection_id and
-                    search_item not in exact_matches
-                  ):
-                    exact_matches.append(search_item)
-                    hits += 1
+            exact_matches: List[SearchItem] = [
+                search_item for search_item in search_items
+                if getattr(search_item, field, None) == collection_id
+            ]
 
-            if search_items:
-                logger.info(f"Found {hits} hit(s) after exact match filtering. (Total returned: {len(search_items)})")
+            if not exact_matches:
+                logger.info(
+                    f"No exact `{scope}.{to_pascal(field)}` match for `{collection_id}`. "
+                    f"(Total returned: {len(search_items)})"
+                )
+                continue
 
-        if not exact_matches:
-            raise BaseSpaceCollectionIdError(
-                f"Could not resolve input collection ID `{collection_id}`: no project or run exactly matches it by id or name."
+            # This shouldn't happen, just being precautionary.
+            if len(exact_matches) > 1:
+                raise BaseSpaceCollectionIdError(
+                    f"Input collection ID `{collection_id}` matched {len(exact_matches)} items in `{scope}`: {exact_matches}. "
+                    f"Could not resolve input collection ID."
+                )
+
+            search_item = exact_matches[0]
+            logger.info(
+                f"Input collection ID `{collection_id}` resolved to `{search_item.id}` ({search_item.type}.id)"
             )
+            return search_item
 
-        if len(exact_matches) > 1:
-            raise BaseSpaceCollectionIdError(
-                f"Input collection ID `{collection_id}` is ambiguous; it matches: "
-                f"{exact_matches}. Provide a more specific id or name."
-            )
-
-        # Should be exactly one match at this point
-        search_item = next(iter(exact_matches))
-        logger.info(
-            f"Input collection ID `{collection_id}` resolved to `{search_item.id}` ({search_item.type}.id)"
+        # No exact collection_id match found in either runs or projects
+        raise BaseSpaceCollectionIdError(
+            f"Could not resolve input collection ID `{collection_id}`: no run experiment name "
+            f"or project name exactly matches it."
         )
-        return search_item
 
     def fetch_sample_fastqs(
         self,
@@ -276,7 +269,7 @@ class BaseSpaceMethods:
         their per-lane FASTQ files, and optionally concatenate them across lanes.
 
         Args:
-            collection_id: A project/run ID or name to resolve.
+            collection_id: A run experiment name or project name to resolve.
             samples: The sample name(s) to download. Each name resolves to an exact dataset
                 match or, when `group_by_lane` is True, to its `{name}_L###` lane siblings.
             dest_dir: The directory to download files to (defaults to the current working directory).
@@ -375,7 +368,7 @@ class BaseSpaceMethods:
         balanced R1/R2). Testing utility only.
 
         Args:
-            collection_id: A project/run ID or name to resolve. If None (default),
+            collection_id: A run experiment name or project name to resolve. If None (default),
                 survey the whole account: list every project and run and write a CSV for each.
             dest_dir: Directory to write the CSV(s) to (defaults to the current working directory).
             dataset_types: Restrict rows to these dataset type(s) (default
