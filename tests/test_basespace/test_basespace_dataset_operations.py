@@ -133,6 +133,30 @@ class TestMatchDatasetsBySample:
         lanes = self._lane_datasets(make_dataset)
         assert match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
 
+    @pytest.mark.parametrize("suffix", ["_L{lane}", "_L0{lane}", "_L00{lane}", "-L00{lane}", "_l00{lane}"])
+    def test_expands_lane_group_for_one_to_three_digit_tokens(self, make_dataset, suffix):
+        # A lane token is 1-3 digits with either separator
+        lanes = [
+            make_dataset(f"ds.l{lane}", f"NA12878-3_4{suffix.format(lane=lane)}")
+            for lane in (1, 2, 3, 4)
+        ]
+        assert match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
+
+    def test_four_digit_token_is_not_a_lane(self, make_dataset):
+        # 4+ digits is not a lane, so there is nothing to group
+        not_lanes = [make_dataset(f"ds.l{lane}", f"CA-2024-001_L000{lane}") for lane in (1, 2, 3, 4)]
+        with pytest.raises(BaseSpaceDatasetError, match="No exact dataset match"):
+            match_datasets_by_sample("CA-2024-001", not_lanes, group_by_lane=True)
+
+        # Each one still resolves on its own, requested exactly as it appears.
+        assert match_datasets_by_sample("CA-2024-001_L0001", not_lanes) == [not_lanes[0]]
+
+    def test_mid_name_lane_token_is_not_a_lane(self, make_dataset):
+        # The token must end the dataset name; `_L1` followed by more name is left alone.
+        not_lanes = [make_dataset(f"ds.{i}", f"CA-2024-001_L1_rep{i}") for i in (1, 2)]
+        with pytest.raises(BaseSpaceDatasetError, match="No exact dataset match"):
+            match_datasets_by_sample("CA-2024-001", not_lanes, group_by_lane=True)
+
     def test_lane_only_raises_when_grouping_disabled(self, make_dataset):
         # With group_by_lane=False (default), a lane-less name matching only siblings raises.
         lanes = self._lane_datasets(make_dataset)
@@ -306,6 +330,41 @@ class TestConcatenateDatasetFiles:
 
         with pytest.raises(BaseSpaceDatasetError, match="multiple lane-stripped filenames"):
             concatenate_dataset_files("Sample", files, dest_dir=tmp_path, validate_lane_naming=True)
+
+    def test_validate_lane_naming_accepts_single_digit_lanes(self, make_file, tmp_path):
+        # Single-digit lane tokens (MiSeq i100) reduce to one lane-stripped name.
+        files = self._write_files(
+            make_file, tmp_path,
+            [
+                ("Sample_S1_L1_R1_001.fastq.gz", b"11", 2),
+                ("Sample_S1_L2_R1_001.fastq.gz", b"22", 2),
+                ("Sample_S1_L1_R2_001.fastq.gz", b"aa", 2),
+                ("Sample_S1_L2_R2_001.fastq.gz", b"bb", 2),
+            ],
+        )
+
+        concatenate_dataset_files("Sample", files, dest_dir=tmp_path, validate_lane_naming=True)
+
+        assert (tmp_path / "Sample_R1.fastq.gz").read_bytes() == b"1122"
+        assert (tmp_path / "Sample_R2.fastq.gz").read_bytes() == b"aabb"
+
+    def test_validate_lane_naming_keeps_four_digit_token_in_sample_name(self, make_file, tmp_path):
+        # Only the real lane token is stripped; the 4-digit `_L0001` in the sample name survives,
+        # so these still reduce to one lane-stripped name instead of falsely mismatching.
+        files = self._write_files(
+            make_file, tmp_path,
+            [
+                ("sample_L0001_S1_L001_R1_001.fastq.gz", b"11", 2),
+                ("sample_L0001_S1_L002_R1_001.fastq.gz", b"22", 2),
+                ("sample_L0001_S1_L001_R2_001.fastq.gz", b"aa", 2),
+                ("sample_L0001_S1_L002_R2_001.fastq.gz", b"bb", 2),
+            ],
+        )
+
+        concatenate_dataset_files("sample_L0001", files, dest_dir=tmp_path, validate_lane_naming=True)
+
+        assert (tmp_path / "sample_L0001_R1.fastq.gz").read_bytes() == b"1122"
+        assert (tmp_path / "sample_L0001_R2.fastq.gz").read_bytes() == b"aabb"
 
     def test_group_spanning_lanes_concatenates(self, make_file, tmp_path):
         # One sample spanning four lanes merges all R1s (and all R2s), in filename order.

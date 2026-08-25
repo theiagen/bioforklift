@@ -19,14 +19,34 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
-_LANE_PATTERN = re.compile(r"[_-]L(\d{3,})", re.IGNORECASE)
+# The lane pattern is `_L` (or `-L`) plus 1-3 digits, case-insensitive
+# So `_L1`, `_L01`, and `_L001` all count. The location of the lane token must be:
+#
+#   1. at the END of a dataset name          `NA1200-3_4_L001`         -> `NA1200-3_4`
+#   2. directly BEFORE the R1/2 in a FASTQ   `S1_L001_R1_001.fastq.gz` -> `S1_R1_001.fastq.gz`
+#
+# Example Matches (stripped):
+#   NA1200-3_4_L1 / _L01 / _L001 / _l001 / -L001   -> `NA1200-3_4`   (1-3 digits, either separator, either case)
+#   sample_L0001_S1_L001_R1_001.fastq.gz           -> `sample_L0001_S1_R1_001.fastq.gz` (the 4-digit token survives)
+#
+# Non-matches (returned unchanged):
+#   CA-2024-001_L1_extra                           -> neither at the end nor before a R1/2 token
+#   SampleL001, Sample_LANE001                     -> needs a `_`/`-` separator immediately before `L`
+#   Sample_S1_L001_I1_001.fastq.gz                 -> lane # not before `R1`/`R2`
+
+_LANE_PATTERN = re.compile(r"[_-]L\d{1,3}(?=[_-]R[12]|$)", re.IGNORECASE)
+
 _R1_PATTERN = re.compile(r"[_-]R1.*\.fastq\.gz$", re.IGNORECASE)
 _R2_PATTERN = re.compile(r"[_-]R2.*\.fastq\.gz$", re.IGNORECASE)
 
-def _lane_stripped_name(name: str) -> str:
+def _strip_lane_token(name: str) -> str:
     """
-    Return `name` without any lane pattern token (e.g. `NA12878-3_4_L001`-> `NA12878-3_4`).
-    Returns the original name unchanged when there is no lane token.
+    Return `name` without its lane pattern (`NA1200-3_4_L001` -> `NA1200-3_4`,
+    `S_L001_R1_001.fastq.gz` -> `S_R1_001.fastq.gz`). Returns the original name unchanged when
+    there is no lane token; see `_LANE_PATTERN` for exactly what counts as one.
+
+    Args:
+        name: The dataset name or FASTQ filename to strip.
     """
     match = _LANE_PATTERN.search(name)
     return name[: match.start()] + name[match.end():] if match else name
@@ -152,11 +172,12 @@ def _dataset_laned_siblings(
 ) -> List[DatasetItem]:
     """Return `{sample}_L###` datasets, excluding any dataset whose name already equals `sample`."""
 
-    # Lane-split siblings: `{sample}_L###` datasets that would group together.
+    # Lane-split siblings: `{sample}_L###` datasets that would group together. The lane token
+    # must be the trailing portion of the dataset name, so an in-sample `L#` isn't stripped.
     # Don't consider it a sibling if the original ds_item.name already matches
     return [
         ds_item for ds_item in ds_items if (
-            _lane_stripped_name(ds_item.name) == sample
+            _strip_lane_token(ds_item.name) == sample
             and ds_item.name != sample
         )
     ]
@@ -281,7 +302,10 @@ def concatenate_dataset_files(
 
         if validate_lane_naming:
             # filter for "laned" (`_LANE_PATTERN`) fastq files
-            laned_files = [_lane_stripped_name(file_item.name) for file_item in read_files]
+            laned_files = [
+                _strip_lane_token(file_item.name)
+                for file_item in read_files
+            ]
 
             # Cannot resolve R1/R2 lane concatenation if differently-named fastq files exist.
             if len(set(laned_files)) > 1:
