@@ -16,6 +16,7 @@ def main():
     bs.methods.fetch_sample_fastqs(
         collection_id=collection_id,
         samples=samples,
+        priority=None,                 # default = None ("runs" or "projects")
         dest_dir=None,                 # default = None (Path)
         concatenate=True,              # default = True
         remove_sources=True,           # default = True

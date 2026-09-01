@@ -80,7 +80,7 @@ This module enables programmatic access to Illumina BaseSpace Sequence Hub's v2 
 
     Names are the only supported input because the other three fields do not exist until a run has executed. Numerical IDs are still valid in a raw Lucene query passed to [`get_search_items`](#get_search_items) — they are just not a `collection_id`.
 
-    Runs are searched **before** projects, so if a run's `ExperimentName` and a project's `Name` are identical, the run wins.
+    Both scopes are **always** searched, because the same name can exist as both a run and a project. When it does, the `collection_id` is ambiguous and an error is raised — pass `priority="runs"` or `priority="projects"` to say which scope to resolve from. See [`resolve_collection_id`](#resolve_collection_id) for how `priority` is applied.
 
 !!! info "Download layout and disk space"
     Downloads land **flat** in `dest_dir` as `dest_dir / <original file name>` — there is no per-sample subdirectory. If two requested samples contain identically named files, they will collide at the same path. Use a separate `dest_dir` per collection if that is a risk.
@@ -463,26 +463,36 @@ Resolves an input `collection_id` to its BaseSpace project/run [SearchItem](#cla
 
 ```python
 resolve_collection_id(
-    collection_id: str
+    collection_id: str,
+    priority: Optional[Literal["runs", "projects"]] = None
 ) -> SearchItem
 ```
 
 #### Parameters
 
 - **collection_id** (str): The user-provided name for a run (its `ExperimentName`) or a project
+- **priority** (Optional[Literal["runs", "projects"]]): The scope to resolve from first. If None (default), the `collection_id` must match in only one scope
 
 **Returns:**
 
 - The matched project/run [SearchItem](#class-searchitem)
 
-The method probes two scope/field combinations in order, building a Lucene clause for each, and returns on the first exact hit:
+The method probes two scope/field combinations, building a Lucene clause for each:
 
 1. `runs` by `ExperimentName`
 2. `projects` by `Name`
 
-Because runs are searched first, a run **wins** when a run and a project share the same name, and the `projects` scope is never queried. Numerical IDs and the `run.Name` field (the UI's `Run ID`) are deliberately not searched — none of them exist until a run has executed.
+**Both are always searched**, since the same name can exist as a run and as a project. Numerical IDs and the `run.Name` field (the UI's `Run ID`) are deliberately not searched — none of them exist until a run has executed.
 
-BaseSpace's search endpoint can return close matches as well as exact ones, so results are then filtered down to items whose field value equals `collection_id` exactly. [BaseSpaceCollectionIdError](#class-basespacecollectioniderror) is raised when no exact match is found in either scope, or when a single scope returns more than one exact match — names are not guaranteed unique, and there is no more specific input to fall back on, so a duplicate has to be renamed in BaseSpace. See [Collections: projects vs. runs](#important-notes) for how these fields map to the BaseSpace UI.
+BaseSpace's search endpoint can return close matches as well as exact ones, so each scope's results are filtered down to items whose field value equals `collection_id` exactly. The surviving matches are then resolved as follows:
+
+- **Nothing matched** → [BaseSpaceCollectionIdError](#class-basespacecollectioniderror)
+- **One scope matched, exactly once** → that item is returned
+- **Both scopes matched, no `priority`** → [BaseSpaceCollectionIdError](#class-basespacecollectioniderror), because the name is ambiguous. Pass a `priority` to choose
+- **A `priority` was given** → scopes are ranked by **fewest exact matches**, with `priority` breaking the tie. A scope matching exactly one item therefore beats the prioritized scope when the prioritized one matched several or none at all; the swap is reported in the logs
+- **Every scope matched more than once** → [BaseSpaceCollectionIdError](#class-basespacecollectioniderror) naming the closest scope. Names are not guaranteed unique and there is no more specific input to fall back on, so a duplicate has to be renamed in BaseSpace
+
+See [Collections: projects vs. runs](#important-notes) for how these fields map to the BaseSpace UI.
 
 _**Example**_
 
@@ -492,6 +502,14 @@ search_item = basespace.methods.resolve_collection_id("Mtb Surveillance 2026-08"
 
 print(search_item.type)  # "run"
 print(search_item.id)    # "315086826"
+
+# The same name exists as both a run and a project: pick the project
+search_item = basespace.methods.resolve_collection_id(
+    "Mtb Surveillance 2026-08",
+    priority="projects",
+)
+
+print(search_item.type)  # "project"
 ```
 
 </br>
@@ -504,6 +522,7 @@ Resolves a `collection_id`, finds the datasets for the given sample(s), download
 fetch_sample_fastqs(
     collection_id: str,
     samples: List[str],
+    priority: Optional[Literal["runs", "projects"]] = None,
     dest_dir: Optional[Path] = None,
     dataset_types: Optional[List[str]] = ["common.fastq"],
     concatenate: bool = True,
@@ -520,6 +539,7 @@ fetch_sample_fastqs(
 
 - **collection_id** (str): A run experiment name or project name to resolve
 - **samples** (List[str]): The sample name(s) to download. Each name resolves to an exact dataset match or, when `group_by_lane` is True, to its `{name}_L###` lane siblings
+- **priority** (Optional[Literal["runs", "projects"]]): The scope to resolve the `collection_id` from first, forwarded to [`resolve_collection_id`](#resolve_collection_id). If None (default), the `collection_id` must match in only one scope
 - **dest_dir** (Optional[Path]): The directory to download files to (defaults to the current working directory)
 - **dataset_types** (Optional[List[str]]): Dataset types to keep when filtering, defaults to `["common.fastq"]`
 - **concatenate** (bool): If True, merge each dataset's FASTQ files into `{name}_R1/_R2.fastq.gz`
@@ -611,6 +631,7 @@ Unlike [`fetch_sample_fastqs`](#fetch_sample_fastqs), this takes no `samples` an
 ```python
 build_sample_sheet(
     collection_id: Optional[str] = None,
+    priority: Optional[Literal["runs", "projects"]] = None,
     dest_dir: Optional[Path] = None,
     dataset_types: Optional[List[str]] = ["common.fastq"]
 ) -> List[Path]
@@ -619,6 +640,7 @@ build_sample_sheet(
 #### Parameters
 
 - **collection_id** (Optional[str]): A run experiment name or project name to resolve. If None (default), survey the whole account: list every project and run and write a CSV for each
+- **priority** (Optional[Literal["runs", "projects"]]): The scope to resolve the `collection_id` from first, forwarded to [`resolve_collection_id`](#resolve_collection_id). Ignored when `collection_id` is None, since no name is being resolved
 - **dest_dir** (Optional[Path]): Directory to write the CSV(s) to (defaults to the current working directory)
 - **dataset_types** (Optional[List[str]]): Restrict rows to these dataset type(s) (default `["common.fastq"]`); pass `None` to list every dataset regardless of type
 

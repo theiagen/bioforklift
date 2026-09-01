@@ -122,7 +122,7 @@ Terra Data Table → Terra Entities → **SampleDataProcessor** → BigQuery Sam
 BaseSpace Project/Run → **resolve_collection_id** → Datasets → Dataset Files → Local FASTQ → **Concatenated `{sample}_R1/_R2.fastq.gz`**
 
 **Processing Steps:**
-1. **Collection Resolution**: A project/run ID or name is resolved to exactly one BaseSpace collection
+1. **Collection Resolution**: A run experiment name or project name is resolved to exactly one BaseSpace collection. Both scopes are searched, and a `priority` selects one when a run and a project share the name
 2. **Dataset Filtering**: Datasets are filtered by type (`common.fastq`, including conforming variants)
 3. **Sample Matching**: Each requested sample name resolves to an exact dataset, or to its `_L###` lane siblings
 4. **Validation**: Datasets are checked for the paired-end flag and balanced R1/R2 files before any transfer
