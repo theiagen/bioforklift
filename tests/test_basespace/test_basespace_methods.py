@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from bioforklift.basespace import (
     OtherItem,
@@ -15,20 +16,25 @@ from bioforklift.basespace.basespace_exceptions import (
 
 
 class TestResolveCollectionId:
-    def test_run_match_skips_project_search(self, mock_methods, make_response):
-        # A run experiment name resolves on the first search; projects are never queried.
+    def test_searches_every_scope(self, mock_methods, make_response):
+        # Only a run matches, but projects is still searched
         run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "MyRun"}})
         search_mock = mock_methods.endpoints.search = MagicMock(
-            return_value=make_response([run], total_count=1)
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response([], total_count=0),
+            ]
         )
 
         result = mock_methods.resolve_collection_id("MyRun")
 
         assert result == run
 
-        # Only run.ExperimentName is searched
         clauses = [(call.kwargs["scope"], call.kwargs["query"]) for call in search_mock.call_args_list]
-        assert clauses == [("runs", 'ExperimentName:"MyRun"')]
+        assert clauses == [
+            ("runs", 'ExperimentName:"MyRun"'),
+            ("projects", 'Name:"MyRun"'),
+        ]
 
     def test_project_match_after_run_miss(self, mock_methods, make_response):
         # No run matches, so the projects scope is searched next and resolves the name.
@@ -50,21 +56,116 @@ class TestResolveCollectionId:
             ("projects", 'Name:"MyProject"'),
         ]
 
-    def test_run_takes_precedence_over_project(self, mock_methods, make_response):
-        # A run and a project share the name; runs are searched first, so the run wins.
+    def test_match_in_both_scopes_without_priority_raises(self, mock_methods, make_response):
+        # A run and a project share the name; with no priority there is nothing to break the tie.
         run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "Shared"}})
         project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
-        search_mock = mock_methods.endpoints.search = MagicMock(
+        mock_methods.endpoints.search = MagicMock(
             side_effect=[
                 make_response([run], total_count=1),
                 make_response([project], total_count=1),
             ]
         )
 
-        result = mock_methods.resolve_collection_id("Shared")
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched in more than one scope"):
+            mock_methods.resolve_collection_id("Shared")
+
+    @pytest.mark.parametrize("priority, expected_id", [("runs", "run-1"), ("projects", "proj-1")])
+    def test_priority_picks_scope(self, mock_methods, make_response, priority, expected_id):
+        # Both scopes resolve to exactly one item, so `priority` decides which is returned.
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "Shared"}})
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("Shared", priority=priority)
+
+        assert result.id == expected_id
+
+    def test_priority_falls_back_to_other_scope(self, mock_methods, make_response):
+        # The prioritized scope has no exact match at all, so the other scope resolves the name.
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([], total_count=0),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("Shared", priority="runs")
+
+        assert result == project
+
+    def test_unambiguous_scope_beats_priority(self, mock_methods, make_response):
+        # `runs` is prioritized but matches twice, which can't be narrowed; the single
+        # project match resolves cleanly, so it wins despite the priority.
+        runs = [
+            RunItem.model_validate({"Type": "run", "Run": {"Id": f"run-{index}", "ExperimentName": "Shared"}})
+            for index in (1, 2)
+        ]
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response(runs, total_count=len(runs)),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("Shared", priority="runs")
+
+        assert result == project
+
+    def test_duplicates_outside_resolved_scope_are_ignored(self, mock_methods, make_response):
+        # The prioritized scope matches exactly once, so duplicate project names never apply.
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "Shared"}})
+        projects = [
+            ProjectItem.model_validate({"Type": "project", "Project": {"Id": f"proj-{index}", "Name": "Shared"}})
+            for index in (1, 2)
+        ]
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response(projects, total_count=len(projects)),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("Shared", priority="runs")
 
         assert result == run
-        assert search_mock.call_count == 1
+
+    def test_every_scope_ambiguous_raises(self, mock_methods, make_response):
+        # Nothing can be narrowed anywhere. The error names the scope that came closest,
+        # which is the one with the fewest matches rather than the prioritized one.
+        runs = [
+            RunItem.model_validate({"Type": "run", "Run": {"Id": f"run-{index}", "ExperimentName": "Shared"}})
+            for index in (1, 2, 3)
+        ]
+        projects = [
+            ProjectItem.model_validate({"Type": "project", "Project": {"Id": f"proj-{index}", "Name": "Shared"}})
+            for index in (1, 2)
+        ]
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response(runs, total_count=len(runs)),
+                make_response(projects, total_count=len(projects)),
+            ]
+        )
+
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched 2 items in `projects`"):
+            mock_methods.resolve_collection_id("Shared", priority="runs")
+
+    def test_invalid_priority_raises(self, mock_methods):
+        # `@validate_call` rejects an unknown scope before any search is issued.
+        search_mock = mock_methods.endpoints.search = MagicMock()
+
+        with pytest.raises(ValidationError):
+            mock_methods.resolve_collection_id("Shared", priority="run")
+
+        search_mock.assert_not_called()
 
     @pytest.mark.parametrize(
         "collection_id, run_items, project_items",
@@ -259,7 +360,7 @@ class TestFetchSampleFastqs:
         )
 
         assert result is None
-        mock_methods.resolve_collection_id.assert_called_once_with("collA")
+        mock_methods.resolve_collection_id.assert_called_once_with("collA", priority=None)
         mock_methods.get_datasets.assert_called_once_with(search_item)
         wiring["filter"].assert_called_once_with([wiring["ds_item"]], ["common.fastq"])
         wiring["match"].assert_called_once_with(
