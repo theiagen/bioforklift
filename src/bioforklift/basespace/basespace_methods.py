@@ -2,8 +2,9 @@ import re
 import time
 import requests
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional
 
+from pydantic import validate_call
 from pydantic.alias_generators import to_pascal
 
 from .basespace_dataset_operations import (
@@ -183,17 +184,28 @@ class BaseSpaceMethods:
         )
         return
 
+    @validate_call
     def resolve_collection_id(
         self,
-        collection_id: str
+        collection_id: str,
+        priority: Optional[Literal["runs", "projects"]] = None,
     ) -> SearchItem:
         """
         Resolve an input "collection_id" to its BaseSpace project/run `SearchItem`. A "collection_id"
-        is a run experiment name or a project name. Runs are searched first, so a run wins when a run
-        and a project share the same name. If nothing matches, an error is raised.
+        is a run experiment name or a project name. Both scopes are always searched, because the same
+        name can exist as both a run and a project.
+
+        The `priority` parameter decides which scope we should attempt to resolve/return first.
+        When the prioritized scope has no exact match, the remaining scope is used instead.
+        With no `priority`, the `collection_id` must be unambiguous.
+
+        A scope matching more than one item can't be narrowed any further, so a scope matching
+        exactly one wins over it and `priority` breaks the tie between equally good scopes.
 
         Args:
             collection_id: The user-provided name for a run (experiment name) or a project.
+            priority: The scope to resolve from first, either "runs" or "projects". If None (default),
+                the `collection_id` must match in only one scope.
         Returns:
             The matched project/run `SearchItem`.
         """
@@ -208,6 +220,8 @@ class BaseSpaceMethods:
             ("runs", "experiment_name"),
             ("projects", "name"),
         ]
+
+        matches_by_scope: Dict[str, List[SearchItem]] = {}
 
         for scope, field in search_fields:
             # Creates a Lucene query clause compatible with BaseSpace (e.g. "experiment_name" -> "ExperimentName";
@@ -225,36 +239,68 @@ class BaseSpaceMethods:
                 if getattr(search_item, field, None) == collection_id
             ]
 
-            if not exact_matches:
+            if exact_matches:
+                matches_by_scope[scope] = exact_matches
+                logger.info(
+                    f"Found {len(exact_matches)} exact `{scope}.{to_pascal(field)}` match(es) after filtering. "
+                    f"(Total returned: {len(search_items)})"
+                )
+            else:
                 logger.info(
                     f"No exact `{scope}.{to_pascal(field)}` match for `{collection_id}`. "
                     f"(Total returned: {len(search_items)})"
                 )
-                continue
-
-            # Neither a run `ExperimentName` nor a project `Name` is guaranteed unique
-            if len(exact_matches) > 1:
-                raise BaseSpaceCollectionIdError(
-                    f"Input collection ID `{collection_id}` matched {len(exact_matches)} items in `{scope}`: {exact_matches}. "
-                    f"A `collection_id` must be unique; rename one in BaseSpace."
-                )
-
-            search_item = exact_matches[0]
-            logger.info(
-                f"Input collection ID `{collection_id}` resolved to `{search_item.id}` ({search_item.type}.id)"
-            )
-            return search_item
 
         # No exact collection_id match found in either runs or projects
-        raise BaseSpaceCollectionIdError(
-            f"Could not resolve input collection ID `{collection_id}`: no run experiment name "
-            f"or project name exactly matches it."
+        if not matches_by_scope:
+            raise BaseSpaceCollectionIdError(
+                f"Could not resolve input collection ID `{collection_id}`: no run experiment name "
+                f"or project name exactly matches it."
+            )
+
+        if priority is None:
+            # Without a priority there is nothing to break a tie between the scopes.
+            if len(matches_by_scope) > 1:
+                raise BaseSpaceCollectionIdError(
+                    f"Input collection ID `{collection_id}` matched in more than one scope: {matches_by_scope}. "
+                    f'Pass priority="runs" or priority="projects" to choose which scope to resolve from.'
+                )
+
+        # Rank the scopes that matched by fewest exact matches, so a scope that resolves to exactly
+        # one item wins over an ambiguous one, and `priority` breaks the tie between them.
+        scope = sorted(
+            matches_by_scope,
+            key=lambda scope: (len(matches_by_scope[scope]), scope != priority),
+        )[0]
+        exact_matches = matches_by_scope[scope]
+
+        # A prioritized scope only loses to one that resolves more cleanly. Report the swap before
+        # resolving, because the scope we fell back to can turn out to be ambiguous itself.
+        if priority is not None and scope != priority:
+            logger.info(
+                f"Requested priority `{priority}` matched {len(matches_by_scope.get(priority, []))} items, "
+                f"so it could not be resolved; falling back to `{scope}`."
+            )
+
+        # Neither a run `ExperimentName` nor a project `Name` is guaranteed unique within the same
+        # scope. If it is still ambiguous by this point, then every other scope is too and we can't resolve it any further.
+        if len(exact_matches) > 1:
+            raise BaseSpaceCollectionIdError(
+                f"Input collection ID `{collection_id}` matched {len(exact_matches)} items in `{scope}`: {exact_matches}. "
+                f"A `collection_id` must be unique; rename one in BaseSpace."
+            )
+
+        search_item = exact_matches[0]
+        logger.info(
+            f"Input collection ID `{collection_id}` resolved to `{search_item.id}` ({search_item.type}.id)"
         )
+        return search_item
 
     def fetch_sample_fastqs(
         self,
         collection_id: str,
         samples: List[str],
+        priority: Optional[Literal["runs", "projects"]] = None,
         dest_dir: Optional[Path] = None,
         dataset_types: Optional[List[str]] = ["common.fastq"],
         concatenate: bool = True,
@@ -273,6 +319,8 @@ class BaseSpaceMethods:
             collection_id: A run experiment name or project name to resolve.
             samples: The sample name(s) to download. Each name resolves to an exact dataset
                 match or, when `group_by_lane` is True, to its `{name}_L###` lane siblings.
+            priority: The scope to resolve the `collection_id` from first, either "runs" or
+                "projects". If None (default), the `collection_id` must match in only one scope.
             dest_dir: The directory to download files to (defaults to the current working directory).
             dataset_types: Dataset types to keep when filtering, defaults to ["common.fastq"].
             concatenate: If True, merge each dataset's FASTQ files into `{name}_R1/_R2.fastq.gz`.
@@ -302,7 +350,7 @@ class BaseSpaceMethods:
         dest_dir = dest_dir or Path.cwd()
 
         # Resolve the collection_id to a SearchItem (project/run)
-        search_item = self.resolve_collection_id(collection_id)
+        search_item = self.resolve_collection_id(collection_id, priority=priority)
 
         # List every dataset for the resolved project/run (all types)
         all_ds_items = self.get_datasets(search_item)
@@ -355,6 +403,7 @@ class BaseSpaceMethods:
     def build_sample_sheet(
         self,
         collection_id: Optional[str] = None,
+        priority: Optional[Literal["runs", "projects"]] = None,
         dest_dir: Optional[Path] = None,
         dataset_types: Optional[List[str]] = ["common.fastq"],
     ) -> List[Path]:
@@ -371,6 +420,9 @@ class BaseSpaceMethods:
         Args:
             collection_id: A run experiment name or project name to resolve. If None (default),
                 survey the whole account: list every project and run and write a CSV for each.
+            priority: The scope to resolve the `collection_id` from first, either "runs" or
+                "projects". If None (default), the `collection_id` must match in only one scope.
+                Ignored when `collection_id` is None, since no name is being resolved.
             dest_dir: Directory to write the CSV(s) to (defaults to the current working directory).
             dataset_types: Restrict rows to these dataset type(s) (default
                 `["common.fastq"]`); pass `None` to list every dataset regardless of type.
@@ -381,7 +433,7 @@ class BaseSpaceMethods:
         search_items: List[SearchItem] = []
 
         if collection_id is not None:
-            search_items = [self.resolve_collection_id(collection_id)]
+            search_items = [self.resolve_collection_id(collection_id, priority=priority)]
         else:
             for scope in ("projects", "runs"):
                 search_items.extend(self.get_search_items(query="", scope=scope))
