@@ -162,8 +162,9 @@ def _dataset_exact_match(
     match = [ds_item for ds_item in ds_items if ds_item.name == sample]
     if len(match) > 1:
         raise BaseSpaceDatasetError(
-            f"Multiple datasets (n={len(match)}) found for sample `{sample}`. "
-            f"Provide a more specific sample name."
+            f"Multiple datasets (n={len(match)}) found for sample `{sample}`: "
+            f"({', '.join(ds_item.id for ds_item in match)}). "
+            f"Remove the duplicate datasets in BaseSpace or provide a more specific sample name."
         )
     return match
 
