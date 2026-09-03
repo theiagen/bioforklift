@@ -16,6 +16,25 @@ from bioforklift.basespace.basespace_exceptions import (
 
 
 class TestResolveCollectionId:
+    def test_strips_whitespace_from_collection_id(self, mock_methods, make_response):
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "MyRun"}})
+        search_mock = mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response([], total_count=0),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("  \t    MyRun    \n  ")
+
+        assert result == run
+
+        clauses = [(call.kwargs["scope"], call.kwargs["query"]) for call in search_mock.call_args_list]
+        assert clauses == [
+            ("runs", 'ExperimentName:"MyRun"'),
+            ("projects", 'Name:"MyRun"'),
+        ]
+
     def test_searches_every_scope(self, mock_methods, make_response):
         # Only a run matches, but projects is still searched
         run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "MyRun"}})
