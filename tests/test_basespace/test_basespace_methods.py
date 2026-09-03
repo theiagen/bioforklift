@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from bioforklift.basespace import (
     OtherItem,
@@ -15,56 +16,212 @@ from bioforklift.basespace.basespace_exceptions import (
 
 
 class TestResolveCollectionId:
-    @pytest.mark.parametrize(
-        "collection_id, items, expected_id",
-        [
-            ("run-1", [RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})], "run-1"),
-            ("MyRun", [RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "Name": "MyRun"}})], "run-1"),
-            ("proj-1", [ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1"}})], "proj-1"),
-            ("MyProject", [ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "MyProject"}})], "proj-1"),
-            ("dedup", [RunItem.model_validate({"Type": "run", "Run": {"Id": "dedup", "Name": "dedup"}})], "dedup"),
-        ],
-    )
-    def test_unique_match(self, mock_methods, make_response, collection_id, items, expected_id):
+    def test_strips_whitespace_from_collection_id(self, mock_methods, make_response):
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "MyRun"}})
         search_mock = mock_methods.endpoints.search = MagicMock(
-            return_value=make_response(items, total_count=len(items))
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response([], total_count=0),
+            ]
         )
 
-        result = mock_methods.resolve_collection_id(collection_id)
+        result = mock_methods.resolve_collection_id("  \t    MyRun    \n  ")
+
+        assert result == run
+
+        clauses = [(call.kwargs["scope"], call.kwargs["query"]) for call in search_mock.call_args_list]
+        assert clauses == [
+            ("runs", 'ExperimentName:"MyRun"'),
+            ("projects", 'Name:"MyRun"'),
+        ]
+
+    def test_searches_every_scope(self, mock_methods, make_response):
+        # Only a run matches, but projects is still searched
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "MyRun"}})
+        search_mock = mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response([], total_count=0),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("MyRun")
+
+        assert result == run
+
+        clauses = [(call.kwargs["scope"], call.kwargs["query"]) for call in search_mock.call_args_list]
+        assert clauses == [
+            ("runs", 'ExperimentName:"MyRun"'),
+            ("projects", 'Name:"MyRun"'),
+        ]
+
+    def test_project_match_after_run_miss(self, mock_methods, make_response):
+        # No run matches, so the projects scope is searched next and resolves the name.
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "MyProject"}})
+        search_mock = mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([], total_count=0),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("MyProject")
+
+        assert result == project
+
+        clauses = [(call.kwargs["scope"], call.kwargs["query"]) for call in search_mock.call_args_list]
+        assert clauses == [
+            ("runs", 'ExperimentName:"MyProject"'),
+            ("projects", 'Name:"MyProject"'),
+        ]
+
+    def test_match_in_both_scopes_without_priority_raises(self, mock_methods, make_response):
+        # A run and a project share the name; with no priority there is nothing to break the tie.
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "Shared"}})
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched in more than one scope"):
+            mock_methods.resolve_collection_id("Shared")
+
+    @pytest.mark.parametrize("priority, expected_id", [("runs", "run-1"), ("projects", "proj-1")])
+    def test_priority_picks_scope(self, mock_methods, make_response, priority, expected_id):
+        # Both scopes resolve to exactly one item, so `priority` decides which is returned.
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "Shared"}})
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("Shared", priority=priority)
 
         assert result.id == expected_id
 
-        # Every (scope, field) pair is searched with a PascalCase Lucene clause for this collection_id.
-        clauses = [(call.kwargs["scope"], call.kwargs["query"]) for call in search_mock.call_args_list]
-        assert clauses == [
-            ("runs", f'Id:"{collection_id}"'),
-            ("runs", f'Name:"{collection_id}"'),
-            ("runs", f'ExperimentName:"{collection_id}"'),
-            ("projects", f'Id:"{collection_id}"'),
-            ("projects", f'Name:"{collection_id}"'),
+    def test_priority_falls_back_to_other_scope(self, mock_methods, make_response):
+        # The prioritized scope has no exact match at all, so the other scope resolves the name.
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([], total_count=0),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("Shared", priority="runs")
+
+        assert result == project
+
+    def test_ambiguous_priority_scope_raises(self, mock_methods, make_response):
+        # `runs` is prioritized and matches twice, which can't be narrowed. The single project
+        # match is never considered: a prioritized scope that matched has no fallback.
+        runs = [
+            RunItem.model_validate({"Type": "run", "Run": {"Id": f"run-{index}", "ExperimentName": "Shared"}})
+            for index in (1, 2)
         ]
+        project = ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "Shared"}})
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response(runs, total_count=len(runs)),
+                make_response([project], total_count=1),
+            ]
+        )
+
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched 2 items in `runs`"):
+            mock_methods.resolve_collection_id("Shared", priority="runs")
+
+    def test_duplicates_outside_resolved_scope_are_ignored(self, mock_methods, make_response):
+        # The prioritized scope matches exactly once, so duplicate project names never apply.
+        run = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "Shared"}})
+        projects = [
+            ProjectItem.model_validate({"Type": "project", "Project": {"Id": f"proj-{index}", "Name": "Shared"}})
+            for index in (1, 2)
+        ]
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response([run], total_count=1),
+                make_response(projects, total_count=len(projects)),
+            ]
+        )
+
+        result = mock_methods.resolve_collection_id("Shared", priority="runs")
+
+        assert result == run
+
+    def test_every_scope_ambiguous_raises(self, mock_methods, make_response):
+        # Nothing can be narrowed anywhere, and the error names the prioritized scope
+        # regardless of how few matches the other scope had.
+        runs = [
+            RunItem.model_validate({"Type": "run", "Run": {"Id": f"run-{index}", "ExperimentName": "Shared"}})
+            for index in (1, 2, 3)
+        ]
+        projects = [
+            ProjectItem.model_validate({"Type": "project", "Project": {"Id": f"proj-{index}", "Name": "Shared"}})
+            for index in (1, 2)
+        ]
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response(runs, total_count=len(runs)),
+                make_response(projects, total_count=len(projects)),
+            ]
+        )
+
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched 3 items in `runs`"):
+            mock_methods.resolve_collection_id("Shared", priority="runs")
+
+    def test_invalid_priority_raises(self, mock_methods):
+        # `@validate_call` rejects an unknown scope before any search is issued.
+        search_mock = mock_methods.endpoints.search = MagicMock()
+
+        with pytest.raises(ValidationError):
+            mock_methods.resolve_collection_id("Shared", priority="run")
+
+        search_mock.assert_not_called()
 
     @pytest.mark.parametrize(
-        "collection_id, items, error_match",
+        "collection_id, run_items, project_items",
         [
-            ("none", [RunItem.model_validate({"Type": "run", "Run": {"Id": "other"}})], "no project or run exactly matches"),
-            ("ABC", [RunItem.model_validate({"Type": "run", "Run": {"Id": "ABCD"}})], "no project or run exactly matches"),
-            ("unknown", [OtherItem.model_validate({"Type": "sample", "Foo": "bar"})], "no project or run exactly matches"),
-            (
-                "dup",
-                [
-                    RunItem.model_validate({"Type": "run", "Run": {"Id": "dup"}}),
-                    ProjectItem.model_validate({"Type": "project", "Project": {"Id": "dup"}}),
-                ],
-                "ambiguous",
-            ),
+            ("run-1", [RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "MyRun"}})], []),
+            ("proj-1", [], [ProjectItem.model_validate({"Type": "project", "Project": {"Id": "proj-1", "Name": "MyProject"}})]),
+            ("250612_M00123_0001", [RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "Name": "250612_M00123_0001"}})], []),
+            ("MyRun", [RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "MyRun2"}})], []),
+            ("unknown", [OtherItem.model_validate({"Type": "sample", "Foo": "bar"})], []),
+            ("missing", [], []),
         ],
     )
-    def test_bad_match_raises(self, mock_methods, make_response, collection_id, items, error_match):
-        mock_methods.endpoints.search = MagicMock(return_value=make_response(items, total_count=len(items)))
+    def test_bad_match_raises(self, mock_methods, make_response, collection_id, run_items, project_items):
+        mock_methods.endpoints.search = MagicMock(
+            side_effect=[
+                make_response(run_items, total_count=len(run_items)),
+                make_response(project_items, total_count=len(project_items)),
+            ]
+        )
 
-        with pytest.raises(BaseSpaceCollectionIdError, match=error_match):
+        with pytest.raises(
+            BaseSpaceCollectionIdError,
+            match="no run experiment name or project name exactly matches",
+        ):
             mock_methods.resolve_collection_id(collection_id)
+
+    def test_multiple_exact_matches_in_scope_raises(self, mock_methods, make_response):
+        # Two runs sharing one experiment name can't be narrowed to a single collection.
+        items = [
+            RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1", "ExperimentName": "Dup"}}),
+            RunItem.model_validate({"Type": "run", "Run": {"Id": "run-2", "ExperimentName": "Dup"}}),
+        ]
+        mock_methods.endpoints.search = MagicMock(
+            return_value=make_response(items, total_count=len(items))
+        )
+
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched 2 items in `runs`"):
+            mock_methods.resolve_collection_id("Dup")
 
 
 class TestGetSearchItems:
@@ -221,7 +378,7 @@ class TestFetchSampleFastqs:
         )
 
         assert result is None
-        mock_methods.resolve_collection_id.assert_called_once_with("collA")
+        mock_methods.resolve_collection_id.assert_called_once_with("collA", priority=None)
         mock_methods.get_datasets.assert_called_once_with(search_item)
         wiring["filter"].assert_called_once_with([wiring["ds_item"]], ["common.fastq"])
         wiring["match"].assert_called_once_with(

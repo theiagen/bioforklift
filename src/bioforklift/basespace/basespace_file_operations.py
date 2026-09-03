@@ -15,6 +15,15 @@ from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
+def bytes_to_mb(size_bytes: int) -> float:
+    """
+    Convert a size in bytes to MB (megabytes). Every `Size` field
+    returned by the BaseSpace API is reported in bytes.
+
+    Args:
+        size_bytes: The size in bytes, as reported by the BaseSpace API.
+    """
+    return size_bytes / 1_000_000
 
 def stream_to_disk(
     response: requests.Response,
