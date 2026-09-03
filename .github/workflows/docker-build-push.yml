@@ -38,10 +38,9 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
           workload_identity_provider: ${{ vars.WIP_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          
 
-      # Fail loudly if GCP_SERVICE_ACCOUNT is unset: the auth action treats an empty
-      # `service_account` as "not provided" and silently reverts to direct WIF, which
+
       # fails later at `docker push` with an opaque permission error.
       - name: Verify authenticated identity
         run: |
