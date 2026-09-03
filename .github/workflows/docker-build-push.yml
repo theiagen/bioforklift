@@ -24,13 +24,32 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
+      # `service_account` is what selects the auth mode. With it, the GitHub OIDC
+      # token is exchanged and then used to impersonate the SA, so permissions come
+      # from roles granted to that SA. Without it the action falls back to direct
+      # Workload Identity Federation, where the caller is the bare federated
+      # principal -- which holds no roles unless they were bound to the principalSet
+      # itself. Leaving it unset is what produced `artifactregistry.repositories
+      # .uploadArtifacts denied` despite WIF being configured.
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
           project_id: ${{ env.PROJECT_ID }}
           workload_identity_provider: ${{ vars.WIP_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      # Fail loudly if GCP_SERVICE_ACCOUNT is unset: the auth action treats an empty
+      # `service_account` as "not provided" and silently reverts to direct WIF, which
+      # fails later at `docker push` with an opaque permission error.
+      - name: Verify authenticated identity
+        run: |
+          if [ -z "${{ vars.GCP_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Repository variable GCP_SERVICE_ACCOUNT is not set. Set it to the service account that holds roles/artifactregistry.writer on ${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}."
+            exit 1
+          fi
+          gcloud auth list
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.LOCATION }}-docker.pkg.dev --quiet
