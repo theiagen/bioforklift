@@ -209,7 +209,7 @@ class BaseSpaceMethods:
         Returns:
             The matched project/run `SearchItem`.
         """
-
+        collection_id = collection_id.strip()
         logger.info(f"Resolving BaseSpace collection ID: `{collection_id}`")
 
         # "run.ExperimentName" refers to `Run Name` in BaseSpace UI
