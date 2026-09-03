@@ -270,7 +270,7 @@ class BaseSpaceMethods:
         exact_matches = matches_by_scope[scope]
 
         if scope != priority and priority is not None:
-            logger.info(
+            logger.warning(
                 f"No exact `{priority}` match for `{collection_id}`; falling back to `{scope}`."
             )
 
