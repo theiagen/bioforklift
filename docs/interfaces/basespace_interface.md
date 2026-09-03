@@ -489,8 +489,8 @@ BaseSpace's search endpoint can return close matches as well as exact ones, so e
 - **Nothing matched** → [BaseSpaceCollectionIdError](#class-basespacecollectioniderror)
 - **One scope matched, exactly once** → that item is returned
 - **Both scopes matched, no `priority`** → [BaseSpaceCollectionIdError](#class-basespacecollectioniderror), because the name is ambiguous. Pass a `priority` to choose
-- **A `priority` was given** → scopes are ranked by **fewest exact matches**, with `priority` breaking the tie. A scope matching exactly one item therefore beats the prioritized scope when the prioritized one matched several or none at all; the swap is reported in the logs
-- **Every scope matched more than once** → [BaseSpaceCollectionIdError](#class-basespacecollectioniderror) naming the closest scope. Names are not guaranteed unique and there is no more specific input to fall back on, so a duplicate has to be renamed in BaseSpace
+- **A `priority` was given** → the prioritized scope is used whenever it has an exact match. The other scope is used only when the prioritized one matched **nothing at all**, and that fallback is reported in the logs
+- **The resolved scope matched more than once** → [BaseSpaceCollectionIdError](#class-basespacecollectioniderror) naming that scope. There is no fallback to the other scope: a duplicate `collection_id` has to be renamed in BaseSpace
 
 See [Collections: projects vs. runs](#important-notes) for how these fields map to the BaseSpace UI.
 

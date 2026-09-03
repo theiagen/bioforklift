@@ -100,9 +100,9 @@ class TestResolveCollectionId:
 
         assert result == project
 
-    def test_unambiguous_scope_beats_priority(self, mock_methods, make_response):
-        # `runs` is prioritized but matches twice, which can't be narrowed; the single
-        # project match resolves cleanly, so it wins despite the priority.
+    def test_ambiguous_priority_scope_raises(self, mock_methods, make_response):
+        # `runs` is prioritized and matches twice, which can't be narrowed. The single project
+        # match is never considered: a prioritized scope that matched has no fallback.
         runs = [
             RunItem.model_validate({"Type": "run", "Run": {"Id": f"run-{index}", "ExperimentName": "Shared"}})
             for index in (1, 2)
@@ -115,9 +115,8 @@ class TestResolveCollectionId:
             ]
         )
 
-        result = mock_methods.resolve_collection_id("Shared", priority="runs")
-
-        assert result == project
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched 2 items in `runs`"):
+            mock_methods.resolve_collection_id("Shared", priority="runs")
 
     def test_duplicates_outside_resolved_scope_are_ignored(self, mock_methods, make_response):
         # The prioritized scope matches exactly once, so duplicate project names never apply.
@@ -138,8 +137,8 @@ class TestResolveCollectionId:
         assert result == run
 
     def test_every_scope_ambiguous_raises(self, mock_methods, make_response):
-        # Nothing can be narrowed anywhere. The error names the scope that came closest,
-        # which is the one with the fewest matches rather than the prioritized one.
+        # Nothing can be narrowed anywhere, and the error names the prioritized scope
+        # regardless of how few matches the other scope had.
         runs = [
             RunItem.model_validate({"Type": "run", "Run": {"Id": f"run-{index}", "ExperimentName": "Shared"}})
             for index in (1, 2, 3)
@@ -155,7 +154,7 @@ class TestResolveCollectionId:
             ]
         )
 
-        with pytest.raises(BaseSpaceCollectionIdError, match="matched 2 items in `projects`"):
+        with pytest.raises(BaseSpaceCollectionIdError, match="matched 3 items in `runs`"):
             mock_methods.resolve_collection_id("Shared", priority="runs")
 
     def test_invalid_priority_raises(self, mock_methods):

@@ -199,8 +199,8 @@ class BaseSpaceMethods:
         When the prioritized scope has no exact match, the remaining scope is used instead.
         With no `priority`, the `collection_id` must be unambiguous.
 
-        A scope matching more than one item can't be narrowed any further, so a scope matching
-        exactly one wins over it and `priority` breaks the tie between equally good scopes.
+        A scope matching more than one item can't be narrowed any further, so once a scope has been
+        chosen, more than one exact match raises an error.
 
         Args:
             collection_id: The user-provided name for a run (experiment name) or a project.
@@ -258,32 +258,24 @@ class BaseSpaceMethods:
                 f"or project name exactly matches it."
             )
 
-        if priority is None:
-            # Without a priority there is nothing to break a tie between the scopes.
-            if len(matches_by_scope) > 1:
-                raise BaseSpaceCollectionIdError(
-                    f"Input collection ID `{collection_id}` matched in more than one scope: {matches_by_scope}. "
-                    f'Pass priority="runs" or priority="projects" to choose which scope to resolve from.'
-                )
+        # Without a priority there is nothing to break a tie between the scopes.
+        if len(matches_by_scope) > 1 and priority is None:
+            raise BaseSpaceCollectionIdError(
+                f"Input collection ID `{collection_id}` matched in more than one scope: {matches_by_scope}. "
+                f'Pass priority="runs" or priority="projects" to choose which scope to resolve from.'
+            )
 
-        # Rank the scopes that matched by fewest exact matches, so a scope that resolves to exactly
-        # one item wins over an ambiguous one, and `priority` breaks the tie between them.
-        scope = sorted(
-            matches_by_scope,
-            key=lambda scope: (len(matches_by_scope[scope]), scope != priority),
-        )[0]
+        # The prioritized scope wins whenever it matched, otherwise the fallback scope is used.
+        scope = priority if priority in matches_by_scope else next(iter(matches_by_scope))
         exact_matches = matches_by_scope[scope]
 
-        # A prioritized scope only loses to one that resolves more cleanly. Report the swap before
-        # resolving, because the scope we fell back to can turn out to be ambiguous itself.
-        if priority is not None and scope != priority:
+        if scope != priority and priority is not None:
             logger.info(
-                f"Requested priority `{priority}` matched {len(matches_by_scope.get(priority, []))} items, "
-                f"so it could not be resolved; falling back to `{scope}`."
+                f"No exact `{priority}` match for `{collection_id}`; falling back to `{scope}`."
             )
 
         # Neither a run `ExperimentName` nor a project `Name` is guaranteed unique within the same
-        # scope. If it is still ambiguous by this point, then every other scope is too and we can't resolve it any further.
+        # scope. Any ambiguous collection_id should be a hard error and trigger a rename in BaseSpace.
         if len(exact_matches) > 1:
             raise BaseSpaceCollectionIdError(
                 f"Input collection ID `{collection_id}` matched {len(exact_matches)} items in `{scope}`: {exact_matches}. "
