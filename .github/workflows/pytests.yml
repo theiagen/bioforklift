@@ -8,6 +8,7 @@ on:
       - 'tests/**'
       - 'poetry.lock'
       - 'pyproject.toml'
+      - '.github/workflows/pytests.yml'
   pull_request:
     branches: [ main, master ]
     paths:
@@ -15,29 +16,30 @@ on:
       - 'tests/**'
       - 'poetry.lock'
       - 'pyproject.toml'
+      - '.github/workflows/pytests.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v7
       with:
         python-version: '3.10'
     
     - name: Install Poetry
       uses: snok/install-poetry@v1
       with:
-        version: 1.8.3
+        version: 2.3.2
         virtualenvs-create: true
         virtualenvs-in-project: true
     
     - name: Load cached venv
       id: cached-poetry-dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
         path: .venv
         key: venv-${{ runner.os }}-bioforklift-${{ hashFiles('**/poetry.lock') }}
@@ -51,7 +53,7 @@ jobs:
         poetry run python -m pytest tests/ --cov=src/bioforklift --cov-report "xml:coverage.xml" --cov-report=term-missing:skip-covered --junitxml=junit.xml
     
     - name: Coverage comment
-      uses: MishaKav/pytest-coverage-comment@main
+      uses: MishaKav/pytest-coverage-comment@v1.12.2
       with:
         pytest-xml-coverage-path: ./coverage.xml
         junitxml-path: ./junit.xml
