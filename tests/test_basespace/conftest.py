@@ -6,8 +6,8 @@ import requests
 from bioforklift.basespace import (
     BaseSpaceClient,
     BaseSpaceEndpoints,
-    BaseSpaceMethods,
     BaseSpaceResponse,
+    BaseSpaceMethods,
     DatasetFileItem,
     DatasetItem,
     SearchItem,
@@ -84,9 +84,7 @@ def make_file():
     """Factory for a `DatasetFileItem` as returned by `/datasets/{id}/files`."""
 
     def _make_file(file_id, name, size=None):
-        return DatasetFileItem.model_validate(
-            {"Id": file_id, "Name": name, "Size": size}
-        )
+        return DatasetFileItem.model_validate({"Id": file_id, "Name": name, "Size": size})
 
     return _make_file
 

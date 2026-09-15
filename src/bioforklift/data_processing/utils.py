@@ -1,10 +1,8 @@
-from datetime import date, datetime
-from typing import Any, Dict
-
+from typing import Dict, Any
+from datetime import datetime, date
 import pandas as pd
 import yaml
 from google.cloud.bigquery import SchemaField
-
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -25,7 +23,7 @@ def infer_bigquery_param_type(value: Any) -> str:
     Returns:
         BigQuery parameter type string (e.g., "STRING", "INT64", "BOOL")
     """
-    # Check boolean before int
+    # Check boolean before int 
     if isinstance(value, bool):
         return "BOOL"
     elif isinstance(value, int):

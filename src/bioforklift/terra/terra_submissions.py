@@ -1,10 +1,8 @@
+from typing import Dict, Any, List
 from datetime import datetime
-from typing import Any, Dict, List
-
-from bioforklift.forklift_logging import setup_logger
-
+from .models import WorkflowConfig, WorkflowMetadata, SubmissionInfo
 from .client import TerraClient
-from .models import SubmissionInfo, WorkflowConfig, WorkflowMetadata
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger("terra_submissions.py")
 
@@ -31,7 +29,7 @@ class TerraSubmissions:
             Dict containing submission response
         """
 
-        logger.info("Submitting workflow with config:")
+        logger.info(f"Submitting workflow with config:")
         for key, value in config.model_dump().items():
             logger.info(f"{key}: {value}")
 

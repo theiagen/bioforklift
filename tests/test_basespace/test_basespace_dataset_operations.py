@@ -45,12 +45,8 @@ class TestReadPartitioning:
             make_file("1", "Sample_L001_R1_001.fastq.gz"),
             make_file("2", "Sample_L001_R2_001.fastq.gz"),
         ]
-        assert [file.name for file in read1_files(files)] == [
-            "Sample_L001_R1_001.fastq.gz"
-        ]
-        assert [file.name for file in read2_files(files)] == [
-            "Sample_L001_R2_001.fastq.gz"
-        ]
+        assert [file.name for file in read1_files(files)] == ["Sample_L001_R1_001.fastq.gz"]
+        assert [file.name for file in read2_files(files)] == ["Sample_L001_R2_001.fastq.gz"]
 
     def test_aggregates_across_lanes(self, make_file):
         # Two lanes' R1/R2 files aggregate into balanced partitions.
@@ -94,23 +90,17 @@ class TestFilterDatasetTypes:
     def test_matches_by_conformance(self, make_dataset):
         # Id is a typed variant, but it conforms to the requested common.fastq.
         ds = make_dataset(
-            "ds.a",
-            "sampleA",
-            type_id="illumina.fastq.v1.8",
+            "ds.a", "sampleA", type_id="illumina.fastq.v1.8",
             conforms_to=("common.files", "common.fastq"),
         )
         assert filter_dataset_types([ds], ["common.fastq"]) == [ds]
 
     def test_drops_non_matching_type(self, make_dataset):
-        ds = make_dataset(
-            "ds.a", "sampleA", type_id="common.bam", conforms_to=("common.files",)
-        )
+        ds = make_dataset("ds.a", "sampleA", type_id="common.bam", conforms_to=("common.files",))
         assert filter_dataset_types([ds], ["common.fastq"]) == []
 
     def test_none_keeps_all_types(self, make_dataset):
-        ds = make_dataset(
-            "ds.a", "sampleA", type_id="common.bam", conforms_to=("common.files",)
-        )
+        ds = make_dataset("ds.a", "sampleA", type_id="common.bam", conforms_to=("common.files",))
         assert filter_dataset_types([ds], None) == [ds]
 
     def test_empty_list_matches_nothing(self, make_dataset):
@@ -121,10 +111,7 @@ class TestFilterDatasetTypes:
 class TestMatchDatasetsBySample:
     def _lane_datasets(self, make_dataset):
         # Four lane-split sibling datasets for the group "NA12878-3_4".
-        return [
-            make_dataset(f"ds.l{lane}", f"NA12878-3_4_L00{lane}")
-            for lane in (1, 2, 3, 4)
-        ]
+        return [make_dataset(f"ds.l{lane}", f"NA12878-3_4_L00{lane}") for lane in (1, 2, 3, 4)]
 
     def test_exact_match(self, make_dataset):
         ds = make_dataset("ds.a", "sampleA")
@@ -144,38 +131,25 @@ class TestMatchDatasetsBySample:
     def test_expands_lane_group_when_enabled(self, make_dataset):
         # group_by_lane=True: a lane-less name with no exact match expands to its L00# siblings.
         lanes = self._lane_datasets(make_dataset)
-        assert (
-            match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
-        )
+        assert match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
 
-    @pytest.mark.parametrize(
-        "suffix", ["_L{lane}", "_L0{lane}", "_L00{lane}", "-L00{lane}", "_l00{lane}"]
-    )
-    def test_expands_lane_group_for_one_to_three_digit_tokens(
-        self, make_dataset, suffix
-    ):
+    @pytest.mark.parametrize("suffix", ["_L{lane}", "_L0{lane}", "_L00{lane}", "-L00{lane}", "_l00{lane}"])
+    def test_expands_lane_group_for_one_to_three_digit_tokens(self, make_dataset, suffix):
         # A lane token is 1-3 digits with either separator
         lanes = [
             make_dataset(f"ds.l{lane}", f"NA12878-3_4{suffix.format(lane=lane)}")
             for lane in (1, 2, 3, 4)
         ]
-        assert (
-            match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
-        )
+        assert match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
 
     def test_four_digit_token_is_not_a_lane(self, make_dataset):
         # 4+ digits is not a lane, so there is nothing to group
-        not_lanes = [
-            make_dataset(f"ds.l{lane}", f"CA-2024-001_L000{lane}")
-            for lane in (1, 2, 3, 4)
-        ]
+        not_lanes = [make_dataset(f"ds.l{lane}", f"CA-2024-001_L000{lane}") for lane in (1, 2, 3, 4)]
         with pytest.raises(BaseSpaceDatasetError, match="No exact dataset match"):
             match_datasets_by_sample("CA-2024-001", not_lanes, group_by_lane=True)
 
         # Each one still resolves on its own, requested exactly as it appears.
-        assert match_datasets_by_sample("CA-2024-001_L0001", not_lanes) == [
-            not_lanes[0]
-        ]
+        assert match_datasets_by_sample("CA-2024-001_L0001", not_lanes) == [not_lanes[0]]
 
     def test_mid_name_lane_token_is_not_a_lane(self, make_dataset):
         # The token must end the dataset name; `_L1` followed by more name is left alone.
@@ -195,9 +169,7 @@ class TestMatchDatasetsBySample:
         lanes = self._lane_datasets(make_dataset)
 
         with caplog.at_level("WARNING"):
-            result = match_datasets_by_sample(
-                "NA12878-3_4", [exact, *lanes], group_by_lane=True
-            )
+            result = match_datasets_by_sample("NA12878-3_4", [exact, *lanes], group_by_lane=True)
 
         assert result == [exact]
         assert "will not be grouped together" in caplog.text
@@ -206,9 +178,7 @@ class TestMatchDatasetsBySample:
         # The group name resolves to every sibling; a member-lane name resolves to just that lane,
         # so one dataset (L001) can feed both a group output and a lane output.
         lanes = self._lane_datasets(make_dataset)
-        assert (
-            match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
-        )
+        assert match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
         assert match_datasets_by_sample("NA12878-3_4_L001", lanes) == [lanes[0]]
 
 
@@ -222,9 +192,7 @@ class TestValidatePairedEndDatasets:
         # A valid set returns None without raising.
         assert validate_paired_end_datasets(ds_items, ds_files) is None
 
-    def test_non_paired_end_flag_raises_and_names_dataset(
-        self, make_dataset, make_file
-    ):
+    def test_non_paired_end_flag_raises_and_names_dataset(self, make_dataset, make_file):
         # Balanced files, but the dataset isn't flagged paired-end -> rejected, dataset named.
         ds_items = [make_dataset("ds.1", "MySample", paired_end=False)]
         ds_files = [
@@ -255,10 +223,7 @@ class TestValidatePairedEndDatasets:
         "names",
         [
             ("Sample_L001_R1_001.fastq.gz",),  # R1 only
-            (
-                "Sample_L001_R1_001.fastq.gz",
-                "Sample_L002_R1_001.fastq.gz",
-            ),  # two R1s, no R2
+            ("Sample_L001_R1_001.fastq.gz", "Sample_L002_R1_001.fastq.gz"),  # two R1s, no R2
             (
                 "Sample_L001_R1_001.fastq.gz",
                 "Sample_L001_R2_001.fastq.gz",
@@ -286,8 +251,7 @@ class TestConcatenateDatasetFiles:
     def test_concatenates_reads(self, make_file, tmp_path):
         # R1s merge into {name}_R1 and R2s into {name}_R2, in filename order.
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L001_R1_001.fastq.gz", b"11", 2),
                 ("Sample_S1_L002_R1_001.fastq.gz", b"22", 2),
@@ -301,15 +265,12 @@ class TestConcatenateDatasetFiles:
         assert (tmp_path / "Sample_R1.fastq.gz").read_bytes() == b"1122"
         assert (tmp_path / "Sample_R2.fastq.gz").read_bytes() == b"aabb"
 
-    def test_lane_order_matches_between_reads_when_api_order_is_shuffled(
-        self, make_file, tmp_path
-    ):
+    def test_lane_order_matches_between_reads_when_api_order_is_shuffled(self, make_file, tmp_path):
         # The absolute lane order doesn't matter, but R1 and R2 must agree or the output read
         # pairs are misaligned. The API returns these in two different shuffles (R1: 2,4,1,3 /
         # R2: 3,1,4,2), so both sides must still land in lane order.
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L002_R1_001.fastq.gz", b"2", 1),
                 ("Sample_S1_L004_R1_001.fastq.gz", b"4", 1),
@@ -329,8 +290,7 @@ class TestConcatenateDatasetFiles:
 
     def test_dry_run_writes_nothing(self, make_file, tmp_path):
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L001_R1_001.fastq.gz", None, None),
                 ("Sample_S1_L001_R2_001.fastq.gz", None, None),
@@ -344,8 +304,7 @@ class TestConcatenateDatasetFiles:
     def test_empty_read_side_is_skipped(self, make_file, tmp_path):
         # Only R1 files present: R1 is written, the empty R2 side is skipped (no output).
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L001_R1_001.fastq.gz", b"11", 2),
                 ("Sample_S1_L002_R1_001.fastq.gz", b"22", 2),
@@ -360,8 +319,7 @@ class TestConcatenateDatasetFiles:
     def test_validate_lane_naming_raises_on_mismatch(self, make_file, tmp_path):
         # With validate_lane_naming, R1 files that don't share one lane-stripped name raise.
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L001_R1_001.fastq.gz", b"11", 2),
                 ("OTHER_S1_L002_R1_001.fastq.gz", b"22", 2),
@@ -370,18 +328,13 @@ class TestConcatenateDatasetFiles:
             ],
         )
 
-        with pytest.raises(
-            BaseSpaceDatasetError, match="multiple lane-stripped filenames"
-        ):
-            concatenate_dataset_files(
-                "Sample", files, dest_dir=tmp_path, validate_lane_naming=True
-            )
+        with pytest.raises(BaseSpaceDatasetError, match="multiple lane-stripped filenames"):
+            concatenate_dataset_files("Sample", files, dest_dir=tmp_path, validate_lane_naming=True)
 
     def test_validate_lane_naming_accepts_single_digit_lanes(self, make_file, tmp_path):
         # Single-digit lane tokens (MiSeq i100) reduce to one lane-stripped name.
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L1_R1_001.fastq.gz", b"11", 2),
                 ("Sample_S1_L2_R1_001.fastq.gz", b"22", 2),
@@ -390,21 +343,16 @@ class TestConcatenateDatasetFiles:
             ],
         )
 
-        concatenate_dataset_files(
-            "Sample", files, dest_dir=tmp_path, validate_lane_naming=True
-        )
+        concatenate_dataset_files("Sample", files, dest_dir=tmp_path, validate_lane_naming=True)
 
         assert (tmp_path / "Sample_R1.fastq.gz").read_bytes() == b"1122"
         assert (tmp_path / "Sample_R2.fastq.gz").read_bytes() == b"aabb"
 
-    def test_validate_lane_naming_keeps_four_digit_token_in_sample_name(
-        self, make_file, tmp_path
-    ):
+    def test_validate_lane_naming_keeps_four_digit_token_in_sample_name(self, make_file, tmp_path):
         # Only the real lane token is stripped; the 4-digit `_L0001` in the sample name survives,
         # so these still reduce to one lane-stripped name instead of falsely mismatching.
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("sample_L0001_S1_L001_R1_001.fastq.gz", b"11", 2),
                 ("sample_L0001_S1_L002_R1_001.fastq.gz", b"22", 2),
@@ -413,9 +361,7 @@ class TestConcatenateDatasetFiles:
             ],
         )
 
-        concatenate_dataset_files(
-            "sample_L0001", files, dest_dir=tmp_path, validate_lane_naming=True
-        )
+        concatenate_dataset_files("sample_L0001", files, dest_dir=tmp_path, validate_lane_naming=True)
 
         assert (tmp_path / "sample_L0001_R1.fastq.gz").read_bytes() == b"1122"
         assert (tmp_path / "sample_L0001_R2.fastq.gz").read_bytes() == b"aabb"
@@ -423,8 +369,7 @@ class TestConcatenateDatasetFiles:
     def test_group_spanning_lanes_concatenates(self, make_file, tmp_path):
         # One sample spanning four lanes merges all R1s (and all R2s), in filename order.
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("NA12878-3_4_L001_R1_001.fastq.gz", b"1", 1),
                 ("NA12878-3_4_L002_R1_001.fastq.gz", b"2", 1),
@@ -445,8 +390,7 @@ class TestConcatenateDatasetFiles:
     def test_removes_source_files_after_concatenation(self, make_file, tmp_path):
         # Every source has a Size, so both outputs are size-verified and the per-lane files go.
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L001_R1_001.fastq.gz", b"11", 2),
                 ("Sample_S1_L002_R1_001.fastq.gz", b"22", 2),
@@ -464,8 +408,7 @@ class TestConcatenateDatasetFiles:
 
     def test_keeps_source_files_when_remove_sources_false(self, make_file, tmp_path):
         files = self._write_files(
-            make_file,
-            tmp_path,
+            make_file, tmp_path,
             [
                 ("Sample_S1_L001_R1_001.fastq.gz", b"11", 2),
                 ("Sample_S1_L002_R1_001.fastq.gz", b"22", 2),
@@ -474,9 +417,7 @@ class TestConcatenateDatasetFiles:
             ],
         )
 
-        concatenate_dataset_files(
-            "Sample", files, dest_dir=tmp_path, remove_sources=False
-        )
+        concatenate_dataset_files("Sample", files, dest_dir=tmp_path, remove_sources=False)
 
         assert sorted(path.name for path in tmp_path.iterdir()) == [
             "Sample_R1.fastq.gz",
@@ -496,9 +437,7 @@ class TestWriteDatasetSampleSheet:
             make_file("2", "PairedSample_L001_R2_001.fastq.gz", size=2 * 1024 * 1024),
         ]
         ds_single = make_dataset("ds.2", "SingleSample", paired_end=False)
-        single_files = [
-            make_file("3", "SingleSample_L001_R1_001.fastq.gz", size=1024 * 1024)
-        ]
+        single_files = [make_file("3", "SingleSample_L001_R1_001.fastq.gz", size=1024 * 1024)]
 
         output_path = tmp_path / "sheet.csv"
         result = write_dataset_sample_sheet(

@@ -1,14 +1,11 @@
 from typing import Optional
-
 from google.oauth2.credentials import Credentials
-
-from bioforklift.forklift_logging import setup_logger
-
 from .client import TerraClient
 from .terra_entities import TerraEntities
+from .terra_submissions import TerraSubmissions
 from .terra_merge import TerraMerge
 from .terra_methods import TerraMethods
-from .terra_submissions import TerraSubmissions
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -112,7 +109,7 @@ class Terra:
         """
         try:
             # Use the entities endpoint which is typically lightweight
-            endpoint = "entities"
+            endpoint = f"entities"
 
             # First check source workspace connection
             try:

@@ -1,17 +1,17 @@
-from datetime import datetime
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pandas as pd
 import pytest
-
+import pandas as pd
+import json
+from pathlib import Path
+from datetime import datetime
+from unittest.mock import patch, MagicMock, ANY, mock_open
+from google.cloud import bigquery
 from bioforklift.bigquery import BigQueryConfigOperations
 
 
 @pytest.fixture(autouse=True)
 def mock_google_auth():
     """Mock Google Cloud authentication to avoid credential errors"""
-    with patch("google.auth.default") as mock_auth:
+    with patch('google.auth.default') as mock_auth:
         # Return a mock credentials object and project ID
         mock_credentials = MagicMock()
         mock_auth.return_value = (mock_credentials, "test-project")
@@ -50,7 +50,7 @@ def config_operations(bigquery_client, test_config_schema_path):
     config_ops = BigQueryConfigOperations(
         client=bigquery_client,
         table_name="test_configs",
-        config_schema_yaml=test_config_schema_path,
+        config_schema_yaml=test_config_schema_path
     )
     return config_ops
 
@@ -67,7 +67,7 @@ def sample_config():
                 "threads": 4,
                 "memory": "8GB",
             }
-        },
+        }
     }
 
 
@@ -77,7 +77,7 @@ class TestBigQueryConfigOperations:
         config_ops = BigQueryConfigOperations(
             client=bigquery_client,
             table_name="test_configs",
-            config_schema_yaml=test_config_schema_path,
+            config_schema_yaml=test_config_schema_path
         )
 
         assert config_ops.bq_client == bigquery_client
@@ -89,11 +89,11 @@ class TestBigQueryConfigOperations:
 
     def test_init_without_schema_yaml(self, bigquery_client):
         """Test initialization without schema YAML raises error"""
-        with pytest.raises(
-            ValueError,
-            match="Either config_schema_yaml or config_schema must be provided",
-        ):
-            BigQueryConfigOperations(client=bigquery_client, table_name="test_configs")
+        with pytest.raises(ValueError, match="Either config_schema_yaml or config_schema must be provided"):
+            BigQueryConfigOperations(
+                client=bigquery_client,
+                table_name="test_configs"
+            )
 
     def test_get_prefix_fields(self, config_operations):
         """Test retrieving field marked for prefix use"""
@@ -121,7 +121,7 @@ class TestBigQueryConfigOperations:
     def test_get_config(self, config_operations, bigquery_client):
         """Test retrieving a single configuration"""
         # Mock to_dataframe() response
-
+        import pandas as pd
         mock_df = pd.DataFrame([{"id": "test-id", "name": "Test Config"}])
 
         # Set up the query job result
@@ -141,7 +141,9 @@ class TestBigQueryConfigOperations:
 
     def test_update_config(self, config_operations, bigquery_client):
         """Test updating a configuration"""
-        update_data = {"active": False}
+        update_data = {
+            "active": False
+        }
 
         mock_update_job = MagicMock()
         mock_update_job.result.return_value = None
@@ -151,10 +153,13 @@ class TestBigQueryConfigOperations:
             "id": "test-id",
             "name": "Test Config",
             "active": False,
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
         }
 
-        with patch.object(config_operations, "get_config", return_value=updated_config):
+        with patch.object(
+            config_operations, 'get_config',
+            return_value=updated_config
+        ):
             bigquery_client.query.return_value = mock_update_job
 
             result = config_operations.update_config("test-id", update_data)
@@ -189,7 +194,6 @@ class TestBigQueryConfigOperations:
 
     def test_get_configs_active_only(self, config_operations, bigquery_client):
         """Test retrieving active configurations"""
-
         # Mock query result
         class MockRow(dict):
             def __init__(self, data):
@@ -199,7 +203,7 @@ class TestBigQueryConfigOperations:
 
         mock_rows = [
             MockRow({"id": "cfg-1", "name": "Config 1", "active": True}),
-            MockRow({"id": "cfg-2", "name": "Config 2", "active": True}),
+            MockRow({"id": "cfg-2", "name": "Config 2", "active": True})
         ]
 
         mock_query_job = MagicMock()

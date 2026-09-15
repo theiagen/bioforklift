@@ -1,10 +1,9 @@
-import argparse
-from datetime import datetime
-from pathlib import Path
-
 import yaml
-
+import argparse
+from pathlib import Path
+from datetime import datetime
 from bioforklift.forklift_logging import setup_logger
+
 
 logger = setup_logger(__name__)
 

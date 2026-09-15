@@ -1,16 +1,15 @@
-import argparse
 import json
 import time
-from collections import defaultdict
-from datetime import datetime
-
+import argparse
 import pandas as pd
-
-from bioforklift.forklift_logging import setup_logger
+from datetime import datetime
+from collections import defaultdict
+from bioforklift.terra.exceptions import TerraServerError, TerraNotFoundError
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.scripts.download import extract_samples, filter_df
-from bioforklift.terra import MethodConfig, Terra, WorkflowConfig
-from bioforklift.terra.exceptions import TerraNotFoundError, TerraServerError
+from bioforklift.terra import Terra, WorkflowConfig, MethodConfig
+from bioforklift.forklift_logging import setup_logger
+
 
 logger = setup_logger(__name__)
 
@@ -246,7 +245,7 @@ def prepare_entity_name(
                 )
                 return new_entity_name, False
         else:
-            return entity_name, entity_exists
+            return entity_name, entity_exists 
     return f"{table_name}_set_{current_time}", False
 
 
@@ -287,10 +286,8 @@ def prepare_job_dicts(args_dict: dict, config: CLIConfig) -> dict:
                 job_dict[wf] = {}
                 for entity, wf_data in wf_dict.items():
                     if args_dict["entity_name"]:
-                        entity = args_dict["entity_name"]
-                    elif (
-                        entity == "null" or entity == ""
-                    ):  # artifact of JSON incompatibility with null keys
+                        entity = args_dict["entity_name"] 
+                    elif entity == "null" or entity == "": # artifact of JSON incompatibility with null keys
                         entity = None
                     job_dict[wf][entity] = wf_data
                     for arg, require in wf_args.items():
@@ -365,7 +362,7 @@ def prepare_entity_set(
     # could implement a way to use local table
     try:
         new_table_df = terra.entities.download_table(table_name, use_destination=True)
-    except TerraServerError:
+    except TerraServerError as e:
         raise TerraServerError(
             f'Error downloading table; does "{table_name}" exist in the Terra workspace?'
         )
@@ -586,14 +583,9 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
             # create the set if it does not exist
             if not entity_exists:
                 prepare_entity_set(terra, clean_table_name, job_data, clean_entity_name)
-
+            
             # launch the job
             submission_url = launch_job(clean_entity_name, job_data, terra, config)
-            wf_submissions_log[wf_name].append(
-                (
-                    entity_name,
-                    submission_url,
-                )
-            )
+            wf_submissions_log[wf_name].append((entity_name, submission_url,))
 
     generate_markdown_log(wf_submissions_log)

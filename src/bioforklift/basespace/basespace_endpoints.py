@@ -3,18 +3,17 @@ from typing import Callable, List, Literal, Optional
 import requests
 from pydantic import validate_call
 
-from bioforklift.forklift_logging import setup_logger
-
 from .basespace_client import BaseSpaceClient
 from .basespace_exceptions import BaseSpaceServerError
 from .basespace_models import (
     BaseSpaceResponse,
     DatasetFileItem,
     DatasetItem,
-    ItemType,
     Paging,
     SearchItem,
+    ItemType,
 )
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -50,9 +49,7 @@ def fetch_all_items(
     while True:
         # Build a fresh Paging each iteration; never mutate a shared instance.
         response = endpoint_method(
-            paging=Paging(
-                offset=offset, limit=1000
-            ),  # Max limit is 1000 for BaseSpace v2 endpoints
+            paging=Paging(offset=offset, limit=1000), # Max limit is 1000 for BaseSpace v2 endpoints
             **kwargs,
         )
         all_items.extend(response.items)
@@ -76,16 +73,7 @@ class BaseSpaceEndpoints:
     def search(
         self,
         query: str,
-        scope: Literal[
-            "runs",
-            "projects",
-            "genomes",
-            "samples",
-            "appresults",
-            "sample_files",
-            "appresult_files",
-            None,
-        ] = None,
+        scope: Literal["runs", "projects", "genomes", "samples", "appresults", "sample_files", "appresult_files", None] = None,
         paging: Optional[Paging] = None,
         **extra_params,
     ) -> BaseSpaceResponse[SearchItem]:
@@ -115,7 +103,7 @@ class BaseSpaceEndpoints:
                     "query": query,
                     **paging.model_dump(by_alias=True, exclude_none=True),
                     **extra_params,
-                },
+                }
             )
         except BaseSpaceServerError:
             # A 500 response here could be an indication of an invalid/unescaped query rather than an outage.
@@ -160,13 +148,13 @@ class BaseSpaceEndpoints:
 
         response = self.client.get(
             endpoint="datasets",
-            params={
+            params = {
                 **({"projectid": project_id} if project_id else {}),
                 **({"inputruns": input_runs} if input_runs else {}),
                 **({"datasettypes": dataset_types} if dataset_types else {}),
                 **paging.model_dump(by_alias=True, exclude_none=True),
                 **extra_params,
-            },
+            }
         )
 
         body = response.json()
@@ -203,10 +191,10 @@ class BaseSpaceEndpoints:
 
         response = self.client.get(
             endpoint=f"datasets/{dataset_id}/files",
-            params={
+            params = {
                 **paging.model_dump(by_alias=True, exclude_none=True),
                 **extra_params,
-            },
+            }
         )
         return BaseSpaceResponse[DatasetFileItem].model_validate(response.json())
 
@@ -237,7 +225,7 @@ class BaseSpaceEndpoints:
 
         response = self.client.get(
             endpoint=f"files/{file_id}/content",
-            params={
+            params = {
                 "redirect": redirect,
             },
             stream=stream,

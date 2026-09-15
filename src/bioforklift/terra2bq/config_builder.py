@@ -1,12 +1,11 @@
 import json
-import re
 import uuid
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-
+from typing import Dict, List, Optional, Union, Any
+from bioforklift.terra import Terra
 from bioforklift.bigquery import BigQuery
 from bioforklift.forklift_logging import setup_logger
-from bioforklift.terra import Terra
 
 logger = setup_logger(__name__)
 
@@ -45,11 +44,7 @@ class ConfigBuilder:
             default_values (Optional[Dict[str, Any]]): Optional dictionary of default values to use for the configuration.
         """
 
-        self.bigquery = BigQuery(
-            project=bigquery_project,
-            dataset=bigquery_dataset,
-            location=bigquery_location,
-        )
+        self.bigquery = BigQuery(project=bigquery_project, dataset=bigquery_dataset, location=bigquery_location)
         self.config_table_name = bigquery_config_table_name
         self.config_schema_yaml = bigquery_config_schema_yaml
         self.terra = Terra(

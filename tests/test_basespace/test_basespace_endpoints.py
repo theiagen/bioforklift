@@ -44,9 +44,7 @@ class TestFetchAllItems:
         assert endpoint.call_count == 3
         offsets = [call.kwargs["paging"].offset for call in endpoint.call_args_list]
         assert offsets == [0, 1000, 2000]
-        assert all(
-            call.kwargs["paging"].limit == 1000 for call in endpoint.call_args_list
-        )
+        assert all(call.kwargs["paging"].limit == 1000 for call in endpoint.call_args_list)
 
     def test_empty_first_page(self, make_response):
         endpoint = MagicMock(side_effect=[make_response([], total_count=0)])
@@ -72,10 +70,12 @@ class TestSearchEndpoint:
         bs_project_response,
         bs_run_response,
         scope,
-        search_item_type,
+        search_item_type
     ):
         # Determine which mock response to use based on the scope parameter
-        bs_response = bs_project_response if scope == "projects" else bs_run_response
+        bs_response = (
+          bs_project_response if scope == "projects" else bs_run_response
+        )
 
         # Create a Mock `mock_client.get` to control the response and assert how the endpoint called it.
         mock_client.get = MagicMock()
@@ -84,7 +84,12 @@ class TestSearchEndpoint:
         result = mock_endpoints.search(
             scope=scope,
             query='Name:"x"',
-            paging=Paging(offset=1, limit=67, sort_by="Name", sort_dir="Desc"),
+            paging=Paging(
+                offset=1,
+                limit=67,
+                sort_by="Name",
+                sort_dir="Desc"
+            ),
         )
 
         assert isinstance(result, BaseSpaceResponse)
@@ -112,18 +117,14 @@ class TestSearchEndpoint:
         # Not sure if there's a way to simulate an invalid query without hitting the actual API or creating a data model
         # that validates the query string. For now, we can just mock the client to raise the error.
         mock_client.get = MagicMock(
-            side_effect=BaseSpaceServerError(
-                "server error", status_code=500, response=None
-            )
+            side_effect=BaseSpaceServerError("server error", status_code=500, response=None)
         )
         with pytest.raises(BaseSpaceServerError):
-            mock_endpoints.search(scope="projects", query="Name:!@#$%^&*()")
+            mock_endpoints.search(scope="projects", query='Name:!@#$%^&*()')
 
 
 class TestDatasets:
-    def test_datasets_valid_response(
-        self, mock_endpoints, mock_client, bs_dataset_response
-    ):
+    def test_datasets_valid_response(self, mock_endpoints, mock_client, bs_dataset_response):
         mock_client.get = MagicMock()
         mock_client.get.return_value.json.return_value = bs_dataset_response
 
@@ -131,7 +132,12 @@ class TestDatasets:
             project_id="123",
             input_runs="456",
             dataset_types="common.fastq",
-            paging=Paging(offset=1, limit=67, sort_by="Name", sort_dir="Desc"),
+            paging=Paging(
+                offset=1,
+                limit=67,
+                sort_by="Name",
+                sort_dir="Desc"
+            ),
         )
 
         assert isinstance(result, BaseSpaceResponse)
@@ -152,15 +158,18 @@ class TestDatasets:
 
 
 class TestDatasetFiles:
-    def test_dataset_files_valid_response(
-        self, mock_endpoints, mock_client, bs_dataset_files_response
-    ):
+    def test_dataset_files_valid_response(self, mock_endpoints, mock_client, bs_dataset_files_response):
         mock_client.get = MagicMock()
         mock_client.get.return_value.json.return_value = bs_dataset_files_response
 
         result = mock_endpoints.dataset_files(
             dataset_id="ds.12345",
-            paging=Paging(offset=1, limit=67, sort_by="Name", sort_dir="Desc"),
+            paging=Paging(
+                offset=1,
+                limit=67,
+                sort_by="Name",
+                sort_dir="Desc"
+            ),
         )
 
         assert isinstance(result, BaseSpaceResponse)
@@ -193,6 +202,8 @@ class TestFileContent:
 
         mock_client.get.assert_called_once_with(
             endpoint="files/42/content",
-            params={"redirect": "true"},
+            params={
+                "redirect": "true"
+            },
             stream=True,
         )

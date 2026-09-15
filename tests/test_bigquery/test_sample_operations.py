@@ -1,17 +1,16 @@
-from datetime import datetime
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pandas as pd
 import pytest
-
+import pandas as pd
+from pathlib import Path
+from datetime import datetime
+from unittest.mock import patch, MagicMock, ANY
+from google.cloud import bigquery
 from bioforklift.bigquery import BigQuerySampleOperations
 
 
 @pytest.fixture(autouse=True)
 def mock_google_auth():
     """Mock Google Cloud authentication to avoid credential errors"""
-    with patch("google.auth.default") as mock_auth:
+    with patch('google.auth.default') as mock_auth:
         # Return a mock credentials object and project ID
         mock_credentials = MagicMock()
         mock_auth.return_value = (mock_credentials, "test-project")
@@ -49,7 +48,7 @@ def sample_operations(bigquery_client, test_schema_path):
     sample_ops = BigQuerySampleOperations(
         client=bigquery_client,
         table_name="test_samples",
-        sample_schema_yaml=test_schema_path,
+        sample_schema_yaml=test_schema_path
     )
     return sample_ops
 
@@ -57,22 +56,20 @@ def sample_operations(bigquery_client, test_schema_path):
 @pytest.fixture
 def sample_dataframe():
     """Sample DataFrame for testing"""
-    return pd.DataFrame(
-        [
-            {
-                "sample_name": "Sample1",
-                "sample_id": "SMP001",
-                "config_id": "CFG001",
-                "fastq_file": "gs://bucket/sample1.fastq",
-            },
-            {
-                "sample_name": "Sample2",
-                "sample_id": "SMP002",
-                "config_id": "CFG001",
-                "fastq_file": "gs://bucket/sample2.fastq",
-            },
-        ]
-    )
+    return pd.DataFrame([
+        {
+            "sample_name": "Sample1",
+            "sample_id": "SMP001",
+            "config_id": "CFG001",
+            "fastq_file": "gs://bucket/sample1.fastq"
+        },
+        {
+            "sample_name": "Sample2",
+            "sample_id": "SMP002",
+            "config_id": "CFG001",
+            "fastq_file": "gs://bucket/sample2.fastq"
+        }
+    ])
 
 
 class TestBigQuerySampleOperations:
@@ -81,7 +78,7 @@ class TestBigQuerySampleOperations:
         sample_ops = BigQuerySampleOperations(
             client=bigquery_client,
             table_name="test_samples",
-            sample_schema_yaml=test_schema_path,
+            sample_schema_yaml=test_schema_path
         )
 
         assert sample_ops.bq_client == bigquery_client
@@ -93,11 +90,11 @@ class TestBigQuerySampleOperations:
 
     def test_init_without_schema_yaml(self, bigquery_client):
         """Test initialization without schema YAML raises error"""
-        with pytest.raises(
-            ValueError,
-            match="Either sample_schema_yaml or sample_schema must be provided",
-        ):
-            BigQuerySampleOperations(client=bigquery_client, table_name="test_samples")
+        with pytest.raises(ValueError, match="Either sample_schema_yaml or sample_schema must be provided"):
+            BigQuerySampleOperations(
+                client=bigquery_client,
+                table_name="test_samples"
+            )
 
     def test_get_sample_identifier_field(self, sample_operations):
         """Test retrieving sample identifier field"""
@@ -133,9 +130,7 @@ class TestBigQuerySampleOperations:
         assert "SELECT DISTINCT sample_id" in bigquery_client.query.call_args[0][0]
         assert identifiers == ["SMP001", "SMP003"]
 
-    def test_get_existing_identifiers_with_config_id(
-        self, sample_operations, bigquery_client
-    ):
+    def test_get_existing_identifiers_with_config_id(self, sample_operations, bigquery_client):
         """Test retrieving existing sample identifiers filtered by config_id"""
         # Mock query result - rows support dict-like access
         mock_row = MagicMock()
@@ -154,13 +149,12 @@ class TestBigQuerySampleOperations:
         assert "config_id = 'CFG001'" in query_str
         assert identifiers == ["SMP001"]
 
-    def test_prepare_samples_dataframe(
-        self, sample_operations, sample_dataframe, bigquery_client
-    ):
+    def test_prepare_samples_dataframe(self, sample_operations, sample_dataframe, bigquery_client):
         """Test full preparation of samples DataFrame"""
         # Mock get_existing_identifiers to return empty set
         with patch.object(
-            sample_operations, "get_existing_identifiers", return_value=[]
+            sample_operations, 'get_existing_identifiers',
+            return_value=[]
         ):
             prepared_df = sample_operations.prepare_samples_dataframe(sample_dataframe)
 
@@ -169,23 +163,20 @@ class TestBigQuerySampleOperations:
             assert "created_at" in prepared_df.columns
             assert len(prepared_df) == 2
 
-    def test_prepare_samples_dataframe_with_config(
-        self, sample_operations, sample_dataframe, bigquery_client
-    ):
+    def test_prepare_samples_dataframe_with_config(self, sample_operations, sample_dataframe, bigquery_client):
         """Test preparation of samples DataFrame with config"""
         config = {
             "id": "CFG001",
             "entity_type": "sample",
-            "method_name": "TestWorkflow",
+            "method_name": "TestWorkflow"
         }
 
         # Mock get_existing_identifiers to return empty set
         with patch.object(
-            sample_operations, "get_existing_identifiers", return_value=[]
+            sample_operations, 'get_existing_identifiers',
+            return_value=[]
         ):
-            prepared_df = sample_operations.prepare_samples_dataframe(
-                sample_dataframe, config=config
-            )
+            prepared_df = sample_operations.prepare_samples_dataframe(sample_dataframe, config=config)
 
             # Check that system values were added
             assert "id" in prepared_df.columns
@@ -199,9 +190,8 @@ class TestBigQuerySampleOperations:
         """Test loading DataFrame into BigQuery"""
         # Mock the prepare_samples_dataframe method
         with patch.object(
-            sample_operations,
-            "prepare_samples_dataframe",
-            return_value=sample_dataframe,
+            sample_operations, 'prepare_samples_dataframe',
+            return_value=sample_dataframe
         ):
             # Mock the load_table_from_dataframe method
             mock_load_job = MagicMock()
@@ -233,9 +223,12 @@ class TestBigQuerySampleOperations:
             {
                 "id": "uuid1",
                 "workflow_state": "Succeeded",
-                "uploaded_at": datetime.now(),
+                "uploaded_at": datetime.now()
             },
-            {"id": "uuid2", "workflow_state": "Failed"},
+            {
+                "id": "uuid2",
+                "workflow_state": "Failed"
+            }
         ]
 
         # Mock query job for update (verification uses num_dml_affected_rows)
@@ -292,14 +285,15 @@ class TestBigQuerySampleOperations:
         # Mock query result
         mock_result = [
             {"id": "uuid1", "sample_id": "SMP001", "created_at": datetime.now()},
-            {"id": "uuid2", "sample_id": "SMP002", "created_at": datetime.now()},
+            {"id": "uuid2", "sample_id": "SMP002", "created_at": datetime.now()}
         ]
         mock_query_job = MagicMock()
         mock_query_job.result.return_value = mock_result
         bigquery_client.query.return_value = mock_query_job
 
         result_df = sample_operations.get_samples_by_timeframe(
-            timeframe="today", uploaded_filter="not_uploaded"
+            timeframe="today",
+            uploaded_filter="not_uploaded"
         )
 
         bigquery_client.query.assert_called_once()
@@ -316,9 +310,13 @@ class TestBigQuerySampleOperations:
 
     def test_coerce_dataframe_types(self, sample_operations):
         """Test coercing DataFrame types to match schema"""
-        df = pd.DataFrame(
-            [{"sample_id": "SMP001", "created_at": "2024-01-01", "config_id": "CFG001"}]
-        )
+        df = pd.DataFrame([
+            {
+                "sample_id": "SMP001",
+                "created_at": "2024-01-01",
+                "config_id": "CFG001"
+            }
+        ])
 
         coerced_df = sample_operations.coerce_dataframe_types(df)
 

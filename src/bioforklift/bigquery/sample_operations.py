@@ -1,14 +1,11 @@
-from typing import Any, Dict, List, Optional, Union
-
+from typing import Optional, Dict, Any, List, Union
 import pandas as pd
 from google.cloud import bigquery
-from google.cloud.bigquery import LoadJobConfig, SchemaField
-
-from bioforklift.data_processing import SampleDataProcessor
+from google.cloud.bigquery import SchemaField, LoadJobConfig
+from .client import BigQueryClient
 from bioforklift.data_processing.utils import infer_bigquery_param_type
 from bioforklift.forklift_logging import setup_logger
-
-from .client import BigQueryClient
+from bioforklift.data_processing import SampleDataProcessor
 
 logger = setup_logger(__name__)
 

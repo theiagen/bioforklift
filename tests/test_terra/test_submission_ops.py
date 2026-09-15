@@ -1,13 +1,9 @@
-from unittest.mock import Mock
-
 import pytest
+from datetime import datetime
+from unittest.mock import Mock, create_autospec
 import requests
-
-from bioforklift.terra import (
-    SubmissionInfo,
-    TerraSubmissions,
-    WorkflowConfig,
-)
+from bioforklift.terra import TerraSubmissions
+from bioforklift.terra import WorkflowConfig, WorkflowMetadata, SubmissionInfo
 
 
 @pytest.fixture

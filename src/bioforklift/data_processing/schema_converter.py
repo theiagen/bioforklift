@@ -1,21 +1,21 @@
-from typing import Any, Dict, List, Type
-
+from typing import Dict, Any, List, Type, Union
 from google.cloud.bigquery import SchemaField
-
-from bioforklift.forklift_logging import setup_logger
 
 from .schema_models import (
     FieldAttributes,
-    FieldDefinition,
     SampleFieldAttributes,
-    SchemaDefinition,
+    ConfigFieldAttributes,
+    FieldDefinition,
+    SchemaDefinition
 )
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
 
 def convert_field_attributes(
-    raw_attrs: Dict[str, Any], attr_class: Type[FieldAttributes] = FieldAttributes
+    raw_attrs: Dict[str, Any],
+    attr_class: Type[FieldAttributes] = FieldAttributes
 ) -> FieldAttributes:
     """
     Convert raw attribute dictionary to FieldAttributes model.
@@ -30,7 +30,9 @@ def convert_field_attributes(
     # Filter to only include known fields for this attribute class
     known_fields = attr_class.model_fields.keys()
     filtered_attrs = {
-        key: value for key, value in raw_attrs.items() if key in known_fields
+        key: value
+        for key, value in raw_attrs.items()
+        if key in known_fields
     }
 
     try:
@@ -43,7 +45,7 @@ def convert_field_attributes(
 def convert_to_schema_definition(
     schema: List[SchemaField],
     field_attributes: Dict[str, Dict[str, Any]],
-    attr_class: Type[FieldAttributes] = SampleFieldAttributes,
+    attr_class: Type[FieldAttributes] = SampleFieldAttributes
 ) -> SchemaDefinition:
     """
     Convert BigQuery schema and field attributes to SchemaDefinition model.
@@ -71,7 +73,7 @@ def convert_to_schema_definition(
             field_type=bq_field.field_type,
             mode=bq_field.mode,
             description=bq_field.description or "",
-            attributes=attributes,
+            attributes=attributes
         )
 
         field_definitions.append(field_def)
@@ -79,9 +81,7 @@ def convert_to_schema_definition(
     return SchemaDefinition(fields=field_definitions)
 
 
-def extract_field_attributes_dict(
-    schema_def: SchemaDefinition,
-) -> Dict[str, Dict[str, Any]]:
+def extract_field_attributes_dict(schema_def: SchemaDefinition) -> Dict[str, Dict[str, Any]]:
     """
     Extract field attributes as raw dictionary (for backward compatibility).
 

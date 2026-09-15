@@ -4,14 +4,13 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from bioforklift.forklift_logging import setup_logger
-
 from .basespace_exceptions import (
     BaseSpaceConnectionError,
     BaseSpaceInvalidResponseError,
     BaseSpaceTimeoutError,
     api_error_for_status,
 )
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -124,9 +123,7 @@ class BaseSpaceClient:
             try:
                 body = e.response.json()
             except ValueError as json_error:
-                raise BaseSpaceInvalidResponseError(
-                    "Response body was not valid JSON"
-                ) from json_error
+                raise BaseSpaceInvalidResponseError("Response body was not valid JSON") from json_error
 
             # Error bodies are expected to be JSON objects; guard against list/scalar shapes.
             if isinstance(body, dict):
@@ -135,9 +132,7 @@ class BaseSpaceClient:
                 source = {}
             message = source.get("Message") or str(e)
             raise api_error_for_status(
-                message,
-                e.response.status_code,
-                response=body,
+                message, e.response.status_code, response=body,
             ) from e
 
         except requests.RequestException as e:

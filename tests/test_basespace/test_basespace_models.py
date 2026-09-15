@@ -69,10 +69,7 @@ class TestDatasetParsing:
             {
                 "Id": "ds.2",
                 "Name": "S",
-                "DatasetType": {
-                    "Id": "illumina.fastq.v1.8",
-                    "ConformsToIds": ["common.fastq"],
-                },
+                "DatasetType": {"Id": "illumina.fastq.v1.8", "ConformsToIds": ["common.fastq"]},
             }
         )
         assert with_conformance.dataset_type.conforms_to_ids == ["common.fastq"]

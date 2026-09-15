@@ -28,13 +28,9 @@ class RunItem(BaseSpaceAPIModel):
     """
 
     type: Literal["run"]
-    id: str = Field(
-        validation_alias=AliasPath("Run", "Id")
-    )  # maps to the nested path ("Run": {"Id": ...})
+    id: str = Field(validation_alias=AliasPath("Run", "Id")) # maps to the nested path ("Run": {"Id": ...})
     name: Optional[str] = Field(default=None, validation_alias=AliasPath("Run", "Name"))
-    experiment_name: Optional[str] = Field(
-        default=None, validation_alias=AliasPath("Run", "ExperimentName")
-    )
+    experiment_name: Optional[str] = Field(default=None, validation_alias=AliasPath("Run", "ExperimentName"))
 
 
 class ProjectItem(BaseSpaceAPIModel):
@@ -43,12 +39,8 @@ class ProjectItem(BaseSpaceAPIModel):
     """
 
     type: Literal["project"]
-    id: str = Field(
-        validation_alias=AliasPath("Project", "Id")
-    )  # maps to the nested path ("Project": {"Id": ...})
-    name: Optional[str] = Field(
-        default=None, validation_alias=AliasPath("Project", "Name")
-    )
+    id: str = Field(validation_alias=AliasPath("Project", "Id")) # maps to the nested path ("Project": {"Id": ...})
+    name: Optional[str] = Field(default=None, validation_alias=AliasPath("Project", "Name"))
 
 
 class OtherItem(BaseSpaceAPIModel):
@@ -58,7 +50,9 @@ class OtherItem(BaseSpaceAPIModel):
     """
 
     model_config = ConfigDict(
-        alias_generator=to_pascal, populate_by_name=True, extra="allow"
+        alias_generator=to_pascal,
+        populate_by_name=True,
+        extra="allow"
     )
 
 
@@ -108,13 +102,9 @@ class CommonFastqAttributes(BaseSpaceAPIModel):
     is_paired_end: Optional[bool] = None
     max_length_read1: Optional[int] = None
     max_length_read2: Optional[int] = None
-    total_clusters_pf: Optional[int] = Field(
-        default=None, alias="TotalClustersPF"
-    )  # explicit alias to match BaseSpace API
+    total_clusters_pf: Optional[int] = Field(default=None, alias="TotalClustersPF") # explicit alias to match BaseSpace API
     total_clusters_raw: Optional[int] = None
-    total_reads_pf: Optional[int] = Field(
-        default=None, alias="TotalReadsPF"
-    )  # explicit alias to match BaseSpace API
+    total_reads_pf: Optional[int] = Field(default=None, alias="TotalReadsPF") # explicit alias to match BaseSpace API
     total_reads_raw: Optional[int] = None
 
 
@@ -138,9 +128,7 @@ class DatasetItem(BaseSpaceAPIModel):
     dataset_type: Optional[DatasetType] = None
     attributes: Optional[CommonFastqAttributes] = Field(
         default=None,
-        validation_alias=AliasPath(
-            "Attributes", "common_fastq"
-        ),  # maps to the nested path ("Attributes": {"common_fastq": ...})
+        validation_alias=AliasPath("Attributes", "common_fastq") # maps to the nested path ("Attributes": {"common_fastq": ...})
     )
 
 

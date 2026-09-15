@@ -1,22 +1,22 @@
-import csv
 import re
+import csv
+
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from bioforklift.forklift_logging import setup_logger
-
 from .basespace_exceptions import (
-    BaseSpaceDatasetError,
     BaseSpaceMissingReadError,
-)
-from .basespace_file_operations import (
-    bytes_to_mb,
-    concatenate_files,
+    BaseSpaceDatasetError,
 )
 from .basespace_models import (
     DatasetFileItem,
     DatasetItem,
 )
+from .basespace_file_operations import (
+    concatenate_files,
+    bytes_to_mb,
+)
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -40,7 +40,6 @@ _LANE_PATTERN = re.compile(r"[_-]L\d{1,3}(?=[_-]R[12]|$)", re.IGNORECASE)
 _R1_PATTERN = re.compile(r"[_-]R1.*\.fastq\.gz$", re.IGNORECASE)
 _R2_PATTERN = re.compile(r"[_-]R2.*\.fastq\.gz$", re.IGNORECASE)
 
-
 def _strip_lane_token(name: str) -> str:
     """
     Return `name` without its lane pattern (`NA1200-3_4_L001` -> `NA1200-3_4`,
@@ -51,16 +50,13 @@ def _strip_lane_token(name: str) -> str:
         name: The dataset name or FASTQ filename to strip.
     """
     match = _LANE_PATTERN.search(name)
-    return name[: match.start()] + name[match.end() :] if match else name
-
+    return name[: match.start()] + name[match.end():] if match else name
 
 def _is_valid_read1(name: str) -> bool:
     return bool(_R1_PATTERN.search(name))
 
-
 def _is_valid_read2(name: str) -> bool:
     return bool(_R2_PATTERN.search(name))
-
 
 def read1_files(ds_files: List[DatasetFileItem]) -> List[DatasetFileItem]:
     """Return the R1 files among `ds_files` (by filename pattern), sorted by filename."""
@@ -69,7 +65,6 @@ def read1_files(ds_files: List[DatasetFileItem]) -> List[DatasetFileItem]:
         key=lambda file: file.name,
     )
 
-
 def read2_files(ds_files: List[DatasetFileItem]) -> List[DatasetFileItem]:
     """Return the R2 files among `ds_files` (by filename pattern), sorted by filename."""
     return sorted(
@@ -77,17 +72,14 @@ def read2_files(ds_files: List[DatasetFileItem]) -> List[DatasetFileItem]:
         key=lambda file: file.name,
     )
 
-
 def _is_paired_end(ds_item: DatasetItem) -> bool:
     """True only if the dataset is flagged paired-end (`attributes` is optional)."""
     return bool(ds_item.attributes and ds_item.attributes.is_paired_end)
-
 
 def _is_balanced(ds_files: List[DatasetFileItem]) -> bool:
     """True if there is an equal, non-zero R1/R2 count across the group with no other files present."""
     r1, r2 = len(read1_files(ds_files)), len(read2_files(ds_files))
     return r1 != 0 and r1 == r2 and r1 + r2 == len(ds_files)
-
 
 def validate_paired_end_datasets(
     ds_items: List[DatasetItem],
@@ -106,7 +98,10 @@ def validate_paired_end_datasets(
         BaseSpaceMissingReadError: If any dataset is not flagged paired-end, or the R1/R2
             files are unbalanced.
     """
-    not_paired = [ds_item.name for ds_item in ds_items if not _is_paired_end(ds_item)]
+    not_paired = [
+        ds_item.name for ds_item in ds_items
+        if not _is_paired_end(ds_item)
+    ]
     if not_paired:
         raise BaseSpaceMissingReadError(
             f"DatasetItem(s) `{', '.join(not_paired)}` not flagged paired-end; only paired-end datasets are supported."
@@ -120,9 +115,7 @@ def validate_paired_end_datasets(
             f"Every file must be an R1 or R2 read."
         )
 
-    logger.info(
-        f"Validated {len(ds_files)} FASTQ files across {len(ds_items)} matching datasets"
-    )
+    logger.info(f"Validated {len(ds_files)} FASTQ files across {len(ds_items)} matching datasets")
 
 
 def filter_dataset_types(
@@ -160,7 +153,6 @@ def filter_dataset_types(
     )
     return filtered
 
-
 def _dataset_exact_match(
     sample: str,
     ds_items: List[DatasetItem],
@@ -176,7 +168,6 @@ def _dataset_exact_match(
         )
     return match
 
-
 def _dataset_laned_siblings(
     sample: str,
     ds_items: List[DatasetItem],
@@ -187,11 +178,11 @@ def _dataset_laned_siblings(
     # must be the trailing portion of the dataset name, so an in-sample `L#` isn't stripped.
     # Don't consider it a sibling if the original ds_item.name already matches
     return [
-        ds_item
-        for ds_item in ds_items
-        if (_strip_lane_token(ds_item.name) == sample and ds_item.name != sample)
+        ds_item for ds_item in ds_items if (
+            _strip_lane_token(ds_item.name) == sample
+            and ds_item.name != sample
+        )
     ]
-
 
 def match_datasets_by_sample(
     sample: str,
@@ -257,8 +248,9 @@ def match_datasets_by_sample(
             f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together (group_by_lane=False)"
         )
     else:
-        raise BaseSpaceDatasetError(f"No exact dataset match for `{sample}` found.")
-
+        raise BaseSpaceDatasetError(
+            f"No exact dataset match for `{sample}` found."
+        )
 
 def concatenate_dataset_files(
     samplename: str,
@@ -313,7 +305,8 @@ def concatenate_dataset_files(
         if validate_lane_naming:
             # filter for "laned" (`_LANE_PATTERN`) fastq files
             laned_files = [
-                _strip_lane_token(file_item.name) for file_item in read_files
+                _strip_lane_token(file_item.name)
+                for file_item in read_files
             ]
 
             # Cannot resolve R1/R2 lane concatenation if differently-named fastq files exist.
@@ -330,19 +323,17 @@ def concatenate_dataset_files(
         source_file_count += len(source_paths)
 
         if dry_run:
-            removal_note = (
-                " (removing the source file(s) afterward)" if remove_sources else ""
-            )
+            removal_note = " (removing the source file(s) afterward)" if remove_sources else ""
             logger.info(
                 f"[dry-run] Would concatenate {len(source_paths)} FASTQ file(s) into "
-                f"`{output_path}`{removal_note}:\n"
-                + "\n".join([path.name for path in source_paths])
+                f"`{output_path}`{removal_note}:\n" +
+                "\n".join([path.name for path in source_paths])
             )
             continue
 
         logger.info(
-            f"Concatenating {len(source_paths)} FASTQ file(s) into `{output_path}`:\n"
-            + "\n".join([path.name for path in source_paths])
+            f"Concatenating {len(source_paths)} FASTQ file(s) into `{output_path}`:\n" +
+            "\n".join([path.name for path in source_paths])
         )
 
         # Verify against the combined size the API reported (skipped if any source lacks a Size).
@@ -366,7 +357,6 @@ def concatenate_dataset_files(
         f"In total, {verb} {output_count} concatenated FASTQ output(s) "
         f"from {source_file_count} total FASTQ file(s)"
     )
-
 
 def write_dataset_sample_sheet(
     grouped_datasets: List[Tuple[DatasetItem, List[DatasetFileItem]]],
@@ -400,24 +390,18 @@ def write_dataset_sample_sheet(
         writer.writerow(header)
 
         for ds_item, ds_files in grouped_datasets:
-            total_r1_bytes = sum(
-                file_item.size or 0 for file_item in read1_files(ds_files)
-            )
-            total_r2_bytes = sum(
-                file_item.size or 0 for file_item in read2_files(ds_files)
-            )
-            writer.writerow(
-                [
-                    ds_item.name,
-                    ds_item.id,
-                    f"{bytes_to_mb(total_r1_bytes):.2f} MB",
-                    f"{bytes_to_mb(total_r2_bytes):.2f} MB",
-                    len(ds_files),
-                    ds_item.dataset_type.id if ds_item.dataset_type else "",
-                    _is_paired_end(ds_item),
-                    _is_balanced(ds_files),
-                ]
-            )
+            total_r1_bytes = sum(file_item.size or 0 for file_item in read1_files(ds_files))
+            total_r2_bytes = sum(file_item.size or 0 for file_item in read2_files(ds_files))
+            writer.writerow([
+                ds_item.name,
+                ds_item.id,
+                f"{bytes_to_mb(total_r1_bytes):.2f} MB",
+                f"{bytes_to_mb(total_r2_bytes):.2f} MB",
+                len(ds_files),
+                ds_item.dataset_type.id if ds_item.dataset_type else "",
+                _is_paired_end(ds_item),
+                _is_balanced(ds_files),
+            ])
         logger.info(
             f"Wrote sample sheet with {len(grouped_datasets)} dataset(s) to `{output_path}`"
         )

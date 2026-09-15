@@ -4,11 +4,11 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from bioforklift.basespace.basespace_exceptions import BaseSpaceDownloadError
 from bioforklift.basespace.basespace_file_operations import (
     concatenate_files,
     stream_to_disk,
 )
+from bioforklift.basespace.basespace_exceptions import BaseSpaceDownloadError
 
 
 class TestStreamToDisk:
@@ -98,10 +98,7 @@ class TestConcatenateFiles:
             concatenate_files([first, second], destination, expected_total_size=99)
 
         assert not destination.exists()
-        assert sorted(path.name for path in tmp_path.iterdir()) == [
-            "a.fastq.gz",
-            "b.fastq.gz",
-        ]
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["a.fastq.gz", "b.fastq.gz"]
 
     def test_missing_source_leaves_no_partial_file(self, tmp_path):
         # A missing source aborts the merge; no output and no temp file are left behind.

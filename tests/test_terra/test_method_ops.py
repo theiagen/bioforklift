@@ -1,10 +1,8 @@
-from unittest.mock import Mock
-
 import pytest
+from unittest.mock import Mock
 import requests
-
-from bioforklift.terra import MethodConfig, MethodRepoMethod, TerraMethods
-
+from bioforklift.terra import TerraMethods
+from bioforklift.terra import MethodConfig, MethodRepoMethod
 
 @pytest.fixture
 def mock_response():
@@ -12,7 +10,6 @@ def mock_response():
     response = Mock(spec=requests.Response)
     response.ok = True
     return response
-
 
 @pytest.fixture
 def mock_terra_client():
@@ -23,11 +20,9 @@ def mock_terra_client():
     client.destination_workspace = "test-destination-workspace"
     return client
 
-
 @pytest.fixture
 def terra_method_ops(mock_terra_client):
     return TerraMethods(mock_terra_client)
-
 
 @pytest.fixture
 def sample_method_config(mock_terra_client):
@@ -36,7 +31,9 @@ def sample_method_config(mock_terra_client):
         namespace=mock_terra_client.source_project,
         name="Test_Source_Workspace_Method_Config",
         rootEntityType="sample",
-        methodRepoMethod=MethodRepoMethod(methodUri="dockstore://test-method/version"),
+        methodRepoMethod=MethodRepoMethod(
+            methodUri="dockstore://test-method/version"
+        ),
         inputs={
             "example.terra_ref": "this.value",
             "example.workspace_ref": "workspace.value",
@@ -51,29 +48,18 @@ def sample_method_config(mock_terra_client):
         outputs={"example.output": "this.result"},
         prerequisites={},
         methodConfigVersion=0,
-        deleted=False,
+        deleted=False
     )
-
 
 class TestMethodRepoMethod:
 
     @pytest.mark.parametrize(
         "methodUri,sourceRepo,methodPath,methodVersion",
         [
-            pytest.param(
-                "dockstore://test-method/version",
-                "dockstore",
-                "github.com/test/repo",
-                "main",
-                id="all",
-            ),
-            pytest.param(
-                "dockstore://test-method/version", None, None, None, id="with_uri"
-            ),
-            pytest.param(
-                None, "dockstore", "github.com/test/repo", "main", id="without_uri"
-            ),
-        ],
+            pytest.param("dockstore://test-method/version", "dockstore", "github.com/test/repo", "main", id="all"),
+            pytest.param("dockstore://test-method/version", None, None, None, id="with_uri"),
+            pytest.param(None, "dockstore", "github.com/test/repo", "main", id="without_uri"),
+        ]
     )
     def test_methodrepomethod_pass(
         self,
@@ -91,16 +77,15 @@ class TestMethodRepoMethod:
         )
         assert method_repo_method is not None
 
+
     @pytest.mark.parametrize(
         "methodUri,sourceRepo,methodPath,methodVersion",
         [
-            pytest.param(
-                None, "dockstore", "github.com/test/repo", None, id="missing_version"
-            ),
+            pytest.param(None, "dockstore", "github.com/test/repo", None, id="missing_version"),
             pytest.param(None, "dockstore", None, "main", id="missing_path"),
             pytest.param(None, None, "github.com/test/repo", "main", id="missing_repo"),
             pytest.param(None, None, None, None, id="all_missing"),
-        ],
+        ]
     )
     def test_methodrepomethod_fail(
         self,
@@ -112,7 +97,7 @@ class TestMethodRepoMethod:
         """Test MethodRepoMethod validation failure when required fields are missing"""
         with pytest.raises(
             ValueError,
-            match="Either 'methodUri' or all of 'sourceRepo', 'methodPath', and 'methodVersion' must be provided.",
+            match="Either 'methodUri' or all of 'sourceRepo', 'methodPath', and 'methodVersion' must be provided."
         ):
             MethodRepoMethod(
                 methodUri=methodUri,
@@ -120,7 +105,6 @@ class TestMethodRepoMethod:
                 methodPath=methodPath,
                 methodVersion=methodVersion,
             )
-
 
 class TestMethodConfig:
 
@@ -130,12 +114,12 @@ class TestMethodConfig:
         config = config.model_dump(exclude_none=True)  # Trigger any encoding logic
 
         assert config["inputs"]["example.str"] == '"test"'
-        assert config["inputs"]["example.int"] == "5"
-        assert config["inputs"]["example.float"] == "3.14"
+        assert config["inputs"]["example.int"] == '5'
+        assert config["inputs"]["example.float"] == '3.14'
         assert config["inputs"]["example.str_array"] == '["A", "B", "C"]'
-        assert config["inputs"]["example.int_array"] == "[10, 20, 30]"
+        assert config["inputs"]["example.int_array"] == '[10, 20, 30]'
         assert config["inputs"]["example.map"] == '{"key1": "value1", "key2": 10}'
-        assert config["inputs"]["example.bool"] == "true"
+        assert config["inputs"]["example.bool"] == 'true'
 
         # This should not get converted; should remain as string reference
         assert config["inputs"]["example.terra_ref"] == "this.value"
@@ -154,7 +138,7 @@ class TestMethodConfig:
             rootEntityType="sample",
             methodRepoMethod=MethodRepoMethod(
                 methodUri="dockstore://test-method/version"
-            ),
+            )
         )
 
         expected_response = {
@@ -164,7 +148,7 @@ class TestMethodConfig:
             "invalidInputs": {},
             "invalidOutputs": {},
             "missingInputs": [],
-            "extraInputs": [],
+            "extraInputs": []
         }
         mock_response.json.return_value = expected_response
         mock_terra_client.get.return_value = mock_response
@@ -173,10 +157,11 @@ class TestMethodConfig:
 
         mock_terra_client.get.assert_called_once_with(
             f"method_configs/{mock_terra_client.destination_project}/{minimal_config.name}/validate",
-            use_destination=True,
+            use_destination=True
         )
 
         assert test_result == expected_response
+
 
     def test_method_config_validate_pass(
         self,
@@ -194,7 +179,7 @@ class TestMethodConfig:
             "invalidInputs": {},
             "invalidOutputs": {},
             "missingInputs": [],
-            "extraInputs": [],
+            "extraInputs": []
         }
 
         mock_response.json.return_value = expected_response
@@ -204,10 +189,11 @@ class TestMethodConfig:
 
         mock_terra_client.get.assert_called_once_with(
             f"method_configs/{mock_terra_client.destination_project}/{sample_method_config.name}/validate",
-            use_destination=True,
+            use_destination=True
         )
 
         assert test_result == expected_response
+
 
     @pytest.mark.parametrize(
         "invalidInputs,invalidOutputs,missingInputs,extraInputs",
@@ -216,7 +202,7 @@ class TestMethodConfig:
             pytest.param({}, {"invalid_output": "Error"}, [], [], id="invalid_outputs"),
             pytest.param({}, {}, ["missing_input"], [], id="missing_inputs"),
             pytest.param({}, {}, [], ["extra_input"], id="extra_inputs"),
-        ],
+        ]
     )
     def test_method_config_validate_fail(
         self,
@@ -238,7 +224,7 @@ class TestMethodConfig:
             "invalidInputs": invalidInputs,
             "invalidOutputs": invalidOutputs,
             "missingInputs": missingInputs,
-            "extraInputs": extraInputs,
+            "extraInputs": extraInputs
         }
 
         mock_response.json.return_value = expected_response
@@ -249,7 +235,7 @@ class TestMethodConfig:
 
         mock_terra_client.get.assert_called_once_with(
             f"method_configs/{mock_terra_client.destination_project}/{sample_method_config.name}/validate",
-            use_destination=True,
+            use_destination=True
         )
 
 
@@ -260,7 +246,7 @@ class TestTerraMethods:
         terra_method_ops,
         mock_terra_client,
         mock_response,
-    ):
+      ):
         """Test getting a method configuration from source/destination workspace"""
 
         config_name = "Test_Config"
@@ -273,15 +259,14 @@ class TestTerraMethods:
         mock_response.json.return_value = expected_response
         mock_terra_client.get.return_value = mock_response
 
-        test_result = terra_method_ops.get_method_config(
-            config_name, use_destination=False
-        )
+        test_result = terra_method_ops.get_method_config(config_name, use_destination=False)
 
         mock_terra_client.get.assert_called_once_with(
             f"method_configs/{mock_terra_client.source_project}/{config_name}",
-            use_destination=False,
+            use_destination=False
         )
         assert test_result == expected_response
+
 
     def test_overwrite_method_config(
         self,
@@ -295,15 +280,13 @@ class TestTerraMethods:
             namespace=mock_terra_client.destination_project,
             name="Test_Overwrite_Config",
             rootEntityType="sample",
-            methodRepoMethod=MethodRepoMethod(
-                methodUri="dockstore://test-method/version"
-            ),
+            methodRepoMethod=MethodRepoMethod(methodUri="dockstore://test-method/version"),
             inputs={
                 "new_input": "this.new_input",
                 "example.str": "new_test",
                 "example.map": {"new_key1": "new_value1", "new_key2": 10},
             },
-            outputs={"new_output": "this.new_output"},
+            outputs={"new_output": "this.new_output"}
         )
 
         # This will also test that inputs/outputs are properly encoded
@@ -317,38 +300,45 @@ class TestTerraMethods:
                 "example.str": '"new_test"',
                 "example.map": '{"new_key1": "new_value1", "new_key2": 10}',
             },
-            "outputs": {"new_output": "this.new_output"},
+            "outputs": {"new_output": "this.new_output"}
+
         }
 
         mock_response.json.return_value = expected_response
         mock_terra_client.put.return_value = mock_response
 
-        test_result = terra_method_ops.overwrite_method_config(
-            new_config, use_destination=True
-        )
+        test_result = terra_method_ops.overwrite_method_config(new_config, use_destination=True)
 
         mock_terra_client.put.assert_called_once_with(
             f"method_configs/{mock_terra_client.destination_project}/{new_config.name}",
             data=new_config.model_dump(exclude_none=True),
-            use_destination=True,
+            use_destination=True
         )
 
         assert test_result == expected_response
 
-    def test_dict_to_method_config(self, terra_method_ops):
+
+    def test_dict_to_method_config(
+        self,
+        terra_method_ops
+    ):
         """Test converting a dictionary to MethodConfig object"""
 
         config_dict = {
             "namespace": "test-namespace",
             "name": "TestConfig",
             "rootEntityType": "sample",
-            "methodRepoMethod": {"methodUri": "dockstore://test/method"},
+            "methodRepoMethod": {
+                "methodUri": "dockstore://test/method"
+            },
             "inputs": {
                 "workflow.terra_ref": "this.input1",
                 "workflow.string": "value2",
-                "workflow.number": 42,
+                "workflow.number": 42
             },
-            "outputs": {"workflow.output1": "this.output1"},
+            "outputs": {
+                "workflow.output1": "this.output1"
+            }
         }
 
         test_result = terra_method_ops.dict_to_method_config(config_dict)

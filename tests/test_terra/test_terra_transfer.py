@@ -1,9 +1,7 @@
 # tests/test_terra/test_terra_transfer.py
-from unittest.mock import Mock
-
-import pandas as pd
 import pytest
-
+import pandas as pd
+from unittest.mock import Mock
 from bioforklift.terra.models import TransferResult, TransferStatus
 from bioforklift.terra.terra_transfer import TerraToTerraTransfer
 
@@ -56,9 +54,10 @@ class TestTerraToTerraTransfer:
         )
 
         # Mock source data with source table's ID column
-        source_df = pd.DataFrame(
-            {"entity:analyzed_sample_id": ["s1", "s2", "s3"], "value": ["a", "b", "c"]}
-        )
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
+            "value": ["a", "b", "c"]
+        })
 
         # Mock empty destination with destination table's ID column
         dest_df = pd.DataFrame(columns=["entity:sample_id", "value"])
@@ -79,12 +78,16 @@ class TestTerraToTerraTransfer:
         )
 
         # Mock source data
-        source_df = pd.DataFrame(
-            {"entity:analyzed_sample_id": ["s1", "s2", "s3"], "value": ["a", "b", "c"]}
-        )
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
+            "value": ["a", "b", "c"]
+        })
 
         # Mock destination with s1 already present
-        dest_df = pd.DataFrame({"entity:sample_id": ["s1"], "value": ["a"]})
+        dest_df = pd.DataFrame({
+            "entity:sample_id": ["s1"],
+            "value": ["a"]
+        })
 
         transfer.entities.download_table = Mock(side_effect=[source_df, dest_df])
 
@@ -100,11 +103,15 @@ class TestTerraToTerraTransfer:
             destination_table_name="sample",
         )
 
-        source_df = pd.DataFrame(
-            {"entity:analyzed_sample_id": ["s1", "s2"], "value": ["a", "b"]}
-        )
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2"],
+            "value": ["a", "b"]
+        })
 
-        dest_df = pd.DataFrame({"entity:sample_id": ["s1", "s2"], "value": ["a", "b"]})
+        dest_df = pd.DataFrame({
+            "entity:sample_id": ["s1", "s2"],
+            "value": ["a", "b"]
+        })
 
         transfer.entities.download_table = Mock(side_effect=[source_df, dest_df])
 
@@ -121,13 +128,11 @@ class TestTerraToTerraTransfer:
         )
 
         # Mock source data (full table with all columns)
-        source_df = pd.DataFrame(
-            {
-                "entity:analyzed_sample_id": ["s1", "s2", "s3"],
-                "col1": ["a", "b", "c"],
-                "col2": [1, 2, 3],
-            }
-        )
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
+            "col1": ["a", "b", "c"],
+            "col2": [1, 2, 3]
+        })
 
         # Mock get_new_sample_ids to return s2, s3 as new
         transfer.get_new_sample_ids = Mock(return_value={"s2", "s3"})
@@ -182,7 +187,6 @@ class TestTerraToTerraTransfer:
 
     def test_init_with_transform(self, mock_terra_client):
         """Test TerraToTerraTransfer initialization with transform callable"""
-
         def my_transform(df):
             return df[df["status"] == "complete"]
 
@@ -197,7 +201,6 @@ class TestTerraToTerraTransfer:
 
     def test_transfer_with_transform_filters_rows(self, mock_terra_client):
         """Test transfer applies transform to filter rows before upload"""
-
         def filter_complete(df):
             return df[df["status"] == "complete"]
 
@@ -209,13 +212,11 @@ class TestTerraToTerraTransfer:
         )
 
         # Mock source data with mixed status
-        source_df = pd.DataFrame(
-            {
-                "entity:analyzed_sample_id": ["s1", "s2", "s3"],
-                "status": ["complete", "pending", "complete"],
-                "value": [1, 2, 3],
-            }
-        )
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2", "s3"],
+            "status": ["complete", "pending", "complete"],
+            "value": [1, 2, 3]
+        })
 
         transfer.get_new_sample_ids = Mock(return_value={"s1", "s2", "s3"})
         transfer.entities.download_table = Mock(return_value=source_df)
@@ -235,7 +236,6 @@ class TestTerraToTerraTransfer:
 
     def test_transfer_with_transform_filters_all_rows(self, mock_terra_client):
         """Test transfer returns NO_NEW_SAMPLES when transform filters all rows"""
-
         def filter_none(df):
             return df[df["status"] == "nonexistent"]
 
@@ -246,13 +246,11 @@ class TestTerraToTerraTransfer:
             transform=filter_none,
         )
 
-        source_df = pd.DataFrame(
-            {
-                "entity:analyzed_sample_id": ["s1", "s2"],
-                "status": ["complete", "pending"],
-                "value": [1, 2],
-            }
-        )
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2"],
+            "status": ["complete", "pending"],
+            "value": [1, 2]
+        })
 
         transfer.get_new_sample_ids = Mock(return_value={"s1", "s2"})
         transfer.entities.download_table = Mock(return_value=source_df)
@@ -267,7 +265,6 @@ class TestTerraToTerraTransfer:
 
     def test_transfer_with_transform_modifies_columns(self, mock_terra_client):
         """Test transfer applies transform that modifies columns"""
-
         def drop_columns(df):
             return df.drop(columns=["internal_field"])
 
@@ -278,13 +275,11 @@ class TestTerraToTerraTransfer:
             transform=drop_columns,
         )
 
-        source_df = pd.DataFrame(
-            {
-                "entity:analyzed_sample_id": ["s1", "s2"],
-                "value": [1, 2],
-                "internal_field": ["secret1", "secret2"],
-            }
-        )
+        source_df = pd.DataFrame({
+            "entity:analyzed_sample_id": ["s1", "s2"],
+            "value": [1, 2],
+            "internal_field": ["secret1", "secret2"]
+        })
 
         transfer.get_new_sample_ids = Mock(return_value={"s1", "s2"})
         transfer.entities.download_table = Mock(return_value=source_df)
@@ -305,13 +300,11 @@ class TestTerraModuleExports:
     def test_terra_transfer_importable(self):
         """Test TerraToTerraTransfer is importable from terra module"""
         from bioforklift.terra import TerraToTerraTransfer
-
         assert TerraToTerraTransfer is not None
 
     def test_transfer_models_importable(self):
         """Test transfer models are importable from terra module"""
         from bioforklift.terra import TransferResult, TransferStatus
-
         assert TransferResult is not None
         assert TransferStatus is not None
 
@@ -323,7 +316,7 @@ class TestTransferResult:
             status=TransferStatus.SUCCESS,
             transferred_ids=["sample1", "sample2"],
             skipped_ids=["sample3"],
-            message="Transferred 2 samples",
+            message="Transferred 2 samples"
         )
 
         assert result.status == TransferStatus.SUCCESS

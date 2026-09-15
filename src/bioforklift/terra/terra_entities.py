@@ -1,14 +1,11 @@
 import io
 import math
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
 import pandas as pd
-
-from bioforklift.forklift_logging import setup_logger
-
-from .client import TerraClient
+from typing import Optional, List, Dict, Any
+from pathlib import Path
 from .utils import stream_terra_table
+from .client import TerraClient
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -38,7 +35,7 @@ class TerraEntities:
         """
         response = self.client.get("entities", use_destination=use_destination)
 
-        logger.info("Retrieved entity types from Terra workspace")
+        logger.info(f"Retrieved entity types from Terra workspace")
 
         if response.status_code != 200:
             logger.error(f"Failed to retrieve entity types: {response.text}")
@@ -54,7 +51,9 @@ class TerraEntities:
             return entity_data
 
     def get_entities(
-        self, entity_type: str, use_destination: bool = False
+        self,
+        entity_type: str,
+        use_destination: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Get all entities (rows) from a given entity type (table) from a Terra workspace.
@@ -68,25 +67,20 @@ class TerraEntities:
         Returns:
             List of dictionaries containing metadata for each entity of the specified type
         """
-        response = self.client.get(
-            f"entities/{entity_type}", use_destination=use_destination
-        )
+        response = self.client.get(f"entities/{entity_type}", use_destination=use_destination)
 
-        logger.info(
-            f"Retrieved all entities of type '{entity_type}' from Terra workspace"
-        )
+        logger.info(f"Retrieved all entities of type '{entity_type}' from Terra workspace")
 
         if response.status_code != 200:
-            logger.error(
-                f"Failed to retrieve entities of type '{entity_type}': {response.text}"
-            )
-            raise ValueError(
-                f"Failed to retrieve entities of type '{entity_type}': {response.text}"
-            )
+            logger.error(f"Failed to retrieve entities of type '{entity_type}': {response.text}")
+            raise ValueError(f"Failed to retrieve entities of type '{entity_type}': {response.text}")
         return response.json()
 
     def get_entity(
-        self, entity_type: str, entity_name: str, use_destination: bool = False
+        self,
+        entity_type: str,
+        entity_name: str,
+        use_destination: bool = False
     ) -> Dict[str, Any]:
         """
         Get a specific entity (row) from a given entity type (table) from a Terra workspace.
@@ -101,21 +95,13 @@ class TerraEntities:
         Returns:
             Dictionary containing metadata for the specified entity
         """
-        response = self.client.get(
-            f"entities/{entity_type}/{entity_name}", use_destination=use_destination
-        )
+        response = self.client.get(f"entities/{entity_type}/{entity_name}", use_destination=use_destination)
 
-        logger.info(
-            f"Retrieved metadata for entity '{entity_name}' of type '{entity_type}' from Terra workspace"
-        )
+        logger.info(f"Retrieved metadata for entity '{entity_name}' of type '{entity_type}' from Terra workspace")
 
         if response.status_code != 200:
-            logger.error(
-                f"Failed to retrieve entity '{entity_name}' of type '{entity_type}': {response.text}"
-            )
-            raise ValueError(
-                f"Failed to retrieve entity '{entity_name}' of type '{entity_type}': {response.text}"
-            )
+            logger.error(f"Failed to retrieve entity '{entity_name}' of type '{entity_type}': {response.text}")
+            raise ValueError(f"Failed to retrieve entity '{entity_name}' of type '{entity_type}': {response.text}")
 
         return response.json()
 
@@ -148,7 +134,7 @@ class TerraEntities:
         Returns:
             pandas DataFrame with table data
         """
-
+        
         # Use pagination if page_size is specified
         if page_size:
             return self._download_table_paginated(
@@ -227,7 +213,7 @@ class TerraEntities:
 
         # Always include the entity id
         if entity_id_name not in attribute_names:
-            attribute_names.insert(0, f"entity:{entity_id_name}")
+            attribute_names.insert(0, f'entity:{entity_id_name}')
 
         logger.info(f"Downloading {entity_count} {entity_type}(s) using pagination")
 
@@ -261,7 +247,7 @@ class TerraEntities:
             )
 
             page_data = response.json()
-
+            
             # entityQuery returns a dict with "results" key
             entities = page_data.get("results", [])
 
@@ -273,21 +259,20 @@ class TerraEntities:
                 entity_name = entity.get("name", "")
 
                 # Build row with entity ID and attributes
-                row = {f"entity:{entity_id_name}": entity_name}
+                row = {f'entity:{entity_id_name}': entity_name}
                 for attr_name in attribute_names:
                     # Skip the entity ID column as it's already added above
-                    if attr_name == f"entity:{entity_id_name}":
+                    if attr_name == f'entity:{entity_id_name}':
                         continue
                     # Use None instead of empty string for missing values to preserve data types
                     row[attr_name] = entity_attributes.get(attr_name)
 
                 all_rows.append(row)
 
-            logger.info(
-                f"Progress: {len(all_rows)} entities fetched (page {page}/{num_pages})"
-            )
+            logger.info(f"Progress: {len(all_rows)} entities fetched (page {page}/{num_pages})")
 
         entity_df = pd.DataFrame(all_rows, columns=attribute_names)
+        
 
         # Save to file if destination provided
         if destination:

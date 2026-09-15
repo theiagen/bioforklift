@@ -1,11 +1,9 @@
 import io
 import json
-from typing import Any, Dict, Optional
-
-from google.api_core import exceptions
+from typing import Optional, Dict, Any, List
 from google.cloud import bigquery
-
 from bioforklift.data_processing.utils import load_schema_from_yaml
+from google.api_core import exceptions
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)

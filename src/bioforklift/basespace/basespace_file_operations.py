@@ -8,14 +8,12 @@ from typing import List, Optional
 import requests
 from tqdm import tqdm
 
-from bioforklift.forklift_logging import setup_logger
-
 from .basespace_exceptions import (
     BaseSpaceDownloadError,
 )
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
-
 
 def bytes_to_mb(size_bytes: int) -> float:
     """
@@ -26,7 +24,6 @@ def bytes_to_mb(size_bytes: int) -> float:
         size_bytes: The size in bytes, as reported by the BaseSpace API.
     """
     return size_bytes / 1_000_000
-
 
 def stream_to_disk(
     response: requests.Response,

@@ -1,9 +1,7 @@
-from typing import Any, Dict
-
-from bioforklift.forklift_logging import setup_logger
-
-from .client import TerraClient
+from typing import Dict, Any
 from .models import MethodConfig, MethodRepoMethod
+from .client import TerraClient
+from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -13,6 +11,7 @@ class TerraMethods:
     Class meant to handle Terra workflows and method configurations
     See https://github.com/broadinstitute/fiss/blob/b3fa2a0d888610e04f744f9e661fa32e46a5af95/firecloud/api.py#L650
     """
+
 
     def __init__(self, client: TerraClient):
         self.client = client
@@ -29,7 +28,7 @@ class TerraMethods:
     ) -> MethodConfig:
         """
         Generate a MethodConfig object for a workflow
-
+        
         Args:
             repo_uri: URI of the repository containing the workflow
             wf_name: Name of the workflow
@@ -40,7 +39,7 @@ class TerraMethods:
             source_repo: Source repository type (default: "dockstore")
 
         Returns:
-            MethodConfig object representing the workflow configuration
+            MethodConfig object representing the workflow configuration    
         """
         # to be removed when added natively
         method_config = MethodConfig(
@@ -59,6 +58,7 @@ class TerraMethods:
             deleted=False,
         )
         return method_config
+    
 
     def get_method_config(
         self,
@@ -74,20 +74,15 @@ class TerraMethods:
         Returns:
             Dict containing the method configuration details
         """
-        client_project = (
-            self.client.destination_project
-            if use_destination
-            else self.client.source_project
-        )
+        client_project = self.client.destination_project if use_destination else self.client.source_project
 
-        logger.info(
-            f"Fetching workspace method configuration: {config_name} from project: {client_project}"
-        )
+        logger.info(f"Fetching workspace method configuration: {config_name} from project: {client_project}")
         response = self.client.get(
-            f"method_configs/{client_project}/{config_name}",
-            use_destination=use_destination,
+          f"method_configs/{client_project}/{config_name}",
+          use_destination=use_destination,
         )
         return response.json()
+
 
     def overwrite_method_config(
         self,
@@ -104,25 +99,20 @@ class TerraMethods:
         Returns:
             Dict containing the created method configuration details
         """
-        client_project = (
-            self.client.destination_project
-            if use_destination
-            else self.client.source_project
-        )
+        client_project = self.client.destination_project if use_destination else self.client.source_project
 
-        logger.info(
-            f"Uploading workspace method configuration: {config.name} to project: {client_project}"
-        )
+        logger.info(f"Uploading workspace method configuration: {config.name} to project: {client_project}")
         return self.client.put(
             f"method_configs/{client_project}/{config.name}",
             data=config.model_dump(exclude_none=True),
             use_destination=use_destination,
         ).json()
 
+
     def method_config_validate(
-        self,
-        config: MethodConfig,
-        use_destination: bool = True,
+      self,
+      config: MethodConfig,
+      use_destination: bool = True,
     ) -> Dict[str, Any]:
         """
         Validate a workspace method configuration. Note that this can only validate existing configurations in the workspace.
@@ -133,29 +123,20 @@ class TerraMethods:
         Returns:
             Dict containing the validation results
         """
-        client_project = (
-            self.client.destination_project
-            if use_destination
-            else self.client.source_project
-        )
+        client_project = self.client.destination_project if use_destination else self.client.source_project
 
-        logger.info(
-            f"Validating workspace method configuration: {config.name} from project: {client_project}"
-        )
+        logger.info(f"Validating workspace method configuration: {config.name} from project: {client_project}")
         response = self.client.get(
             f"method_configs/{client_project}/{config.name}/validate",
             use_destination=use_destination,
         ).json()
 
         # Check for invalid inputs/outputs and raise error if found
-        validation_error_keys = [
-            "invalidInputs",
-            "invalidOutputs",
-            "missingInputs",
-            "extraInputs",
-        ]
+        validation_error_keys = ["invalidInputs", "invalidOutputs", "missingInputs", "extraInputs"]
         invalid_fields = {
-            key: response.get(key) for key in validation_error_keys if response.get(key)
+            key: response.get(key)
+            for key in validation_error_keys
+            if response.get(key)
         }
 
         if invalid_fields:
@@ -167,7 +148,11 @@ class TerraMethods:
 
         return response
 
-    def dict_to_method_config(self, config_dict: Dict[str, Any]) -> MethodConfig:
+
+    def dict_to_method_config(
+        self,
+        config_dict: Dict[str, Any]
+    ) -> MethodConfig:
         """
         Convert a dictionary to a MethodConfig object without making an API call.
         Useful for modifying existing configurations.

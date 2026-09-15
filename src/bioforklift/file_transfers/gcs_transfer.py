@@ -1,10 +1,8 @@
 import concurrent.futures
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
 from google.cloud import storage
 from google.oauth2 import service_account
-
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -252,9 +250,9 @@ class GCSTransferClient:
                 #    c. If not found, keep fp as is (source_to_dest_mapping.get(fp, fp))
                 # 2. If the value is NaN, keep it as is (else fp)
                 updated_df[column] = updated_df[column].apply(
-                    lambda fp: (
-                        source_to_dest_mapping.get(fp, fp) if pd.notna(fp) else fp
-                    )
+                    lambda fp: source_to_dest_mapping.get(fp, fp)
+                    if pd.notna(fp)
+                    else fp
                 )
 
         return updated_df

@@ -1,30 +1,28 @@
 import copy
 import json
 import sys
+from time import sleep
 from datetime import datetime
 from pathlib import Path
-from time import sleep
-from typing import Any, Dict, List, Optional
-
+from typing import Optional, Dict, Any, List
 import pandas as pd
 import pytz
-
 from bioforklift.bigquery import BigQuery
+from bioforklift.file_transfers import GCSTransferClient
+from bioforklift.terra import Terra
 from bioforklift.data_processing.config_processor import ConfigProcessor
 from bioforklift.data_processing.sample_processor import SampleDataProcessor
-from bioforklift.file_transfers import GCSTransferClient
-from bioforklift.forklift_logging import setup_logger
-from bioforklift.terra import Terra
 from bioforklift.terra.models import WorkflowConfig
+from bioforklift.forklift_logging import setup_logger
 from bioforklift.terra2bq.models import (
     ConfigProcessingResult,
-    DataResult,
-    DownloadResult,
-    MetadataSyncResult,
-    OperationStatus,
-    SubmissionResult,
-    UploadResult,
     WorkflowResult,
+    MetadataSyncResult,
+    DataResult,
+    UploadResult,
+    DownloadResult,
+    SubmissionResult,
+    OperationStatus
 )
 
 logger = setup_logger(__name__)
@@ -177,12 +175,7 @@ class Terra2BQ:
 
         return target_entity_clean
 
-    def _get_terra_data(
-        self,
-        entity_type: str,
-        use_destination: bool = False,
-        page_size: Optional[int] = None,
-    ) -> DataResult:
+    def _get_terra_data(self, entity_type: str, use_destination: bool = False, page_size: Optional[int] = None) -> DataResult:
         """
         Download data from Terra for a specific entity type.
 
@@ -196,12 +189,8 @@ class Terra2BQ:
         """
         try:
             workspace_info = "destination" if use_destination else "source"
-            logger.info(
-                f"Downloading data from Terra entity type: {entity_type} (using {workspace_info})"
-            )
-            terra_df = self.terra.entities.download_table(
-                entity_type, use_destination=use_destination, page_size=page_size
-            )
+            logger.info(f"Downloading data from Terra entity type: {entity_type} (using {workspace_info})")
+            terra_df = self.terra.entities.download_table(entity_type, use_destination=use_destination, page_size=page_size)
 
             if terra_df.empty:
                 logger.info(f"No data found in Terra table: {entity_type}")
@@ -361,16 +350,14 @@ class Terra2BQ:
             logger.info("No updates needed - all sync fields are up to date")
 
         return MetadataSyncResult(
-            status=(
-                OperationStatus.SUCCESS if bq_updates else OperationStatus.NO_UPDATES
-            ),
+            status=OperationStatus.SUCCESS if bq_updates else OperationStatus.NO_UPDATES,
             bq_updated_count=updated_count,
             updated_entities=updated_entities,
             failed_updates=failed_updates,
         )
 
     def _get_terra_field_name(
-        self, field_to_sync: str, terra_row: pd.Series
+      self, field_to_sync: str, terra_row: pd.Series
     ) -> Optional[str]:
         """Get the corresponding Terra field name for a BigQuery field."""
         # First try exact match
@@ -379,7 +366,8 @@ class Terra2BQ:
 
         # Processor now handles the mapping logic
         return self.sample_processor.get_source_column_for_field(
-            field_name=field_to_sync, available_columns=terra_row.index.tolist()
+            field_name=field_to_sync,
+            available_columns=terra_row.index.tolist()
         )
 
     def _retroactively_mark_samples_as_uploaded(
@@ -397,7 +385,8 @@ class Terra2BQ:
         """
 
         newly_loaded_ids_without_upload = self.samples_ops.get_recent_sample_uuids(
-            config_id=config.get("id"), limit=bq_load_result.get("loaded", 0)
+            config_id=config.get("id"),
+            limit=bq_load_result.get("loaded", 0)
         )
 
         if not newly_loaded_ids_without_upload:
@@ -497,11 +486,7 @@ class Terra2BQ:
                 failed_updates.append({"entity_id": entity_id, "error": str(terra_exc)})
 
         return MetadataSyncResult(
-            status=(
-                OperationStatus.SUCCESS
-                if updated_successfully > 0
-                else OperationStatus.NO_UPDATES
-            ),
+            status=OperationStatus.SUCCESS if updated_successfully > 0 else OperationStatus.NO_UPDATES,
             destination_updated_count=updated_successfully,
             failed_updates=failed_updates,
         )
@@ -621,11 +606,9 @@ class Terra2BQ:
             )
 
             return SubmissionResult(
-                status=(
-                    OperationStatus.SUCCESS
-                    if update_result.workflow_count > 0
-                    else OperationStatus.NO_UPDATES
-                ),
+                status=OperationStatus.SUCCESS
+                if update_result.workflow_count > 0
+                else OperationStatus.NO_UPDATES,
                 submission_id=submission_id,
                 workflow_count=update_result.workflow_count,
                 workflow_states=workflow_states,
@@ -701,11 +684,7 @@ class Terra2BQ:
             total_updated = len(batch_updates)
 
         return WorkflowResult(
-            status=(
-                OperationStatus.SUCCESS
-                if total_updated > 0
-                else OperationStatus.NO_UPDATES
-            ),
+            status=OperationStatus.SUCCESS if total_updated > 0 else OperationStatus.NO_UPDATES,
             workflow_count=total_updated,
             failed_updates=failed_updates,
         )
@@ -895,9 +874,7 @@ class Terra2BQ:
             target_entity = self._get_target_entity_from_config(config)
 
             # Get sample identifiers
-            sample_identifier_field = (
-                self.sample_processor.get_sample_identifier_field()
-            )
+            sample_identifier_field = self.sample_processor.get_sample_identifier_field()
 
             # Group samples by their upload_source value
             # This handles the case where multiple batches might be processed together
@@ -937,23 +914,17 @@ class Terra2BQ:
             )
 
             return SubmissionResult(
-                status=(
-                    OperationStatus.SUCCESS
-                    if any(
-                        result.status == OperationStatus.SUCCESS
-                        for result in submission_results
-                    )
-                    else OperationStatus.ERROR
-                ),
+                status=OperationStatus.SUCCESS
+                if any(
+                    result.status == OperationStatus.SUCCESS for result in submission_results
+                )
+                else OperationStatus.ERROR,
                 config_id=config.get("id"),
-                submission_id=",".join(
-                    [
-                        result.submission_id
-                        for result in submission_results
-                        if result.status == OperationStatus.SUCCESS
-                        and result.submission_id
-                    ]
-                ),
+                submission_id=",".join([
+                    result.submission_id
+                    for result in submission_results
+                    if result.status == OperationStatus.SUCCESS and result.submission_id
+                ]),
                 workflow_count=total_workflow_count,
             )
 
@@ -1123,6 +1094,7 @@ class Terra2BQ:
         Returns:
             DownloadResult with load results and status
         """
+        
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
@@ -1130,11 +1102,7 @@ class Terra2BQ:
 
         # Check for when the source and destination datatables are the same
         single_datatable_field = self.config_processor.get_single_datatable_field()
-        is_single_datatable = (
-            config.get(single_datatable_field, False)
-            if single_datatable_field
-            else False
-        )
+        is_single_datatable = config.get(single_datatable_field, False) if single_datatable_field else False
 
         # Get entity type from config
         entity_type = config.get("entity_type", self.source_datatable)
@@ -1146,17 +1114,13 @@ class Terra2BQ:
         # Download data from Terra if not provided
         if not self.bigquery_upload_df:
             logger.info(f"Downloading data from Terra entity type: {entity_type}")
-            terra_df = self.terra.entities.download_table(
-                entity_type, page_size=page_size
-            )
+            terra_df = self.terra.entities.download_table(entity_type, page_size=page_size)
         else:
             terra_df = self.bigquery_upload_df
 
         if terra_df.empty:
             logger.warning(f"No data found in Terra table: {entity_type}")
-            return DownloadResult(
-                status=OperationStatus.NO_DATA, config_id=config.get("id")
-            )
+            return DownloadResult(status=OperationStatus.NO_DATA, config_id=config.get("id"))
 
         # Apply metadata cleanup function if provided
         if self.metadata_cleanup_fn:
@@ -1197,7 +1161,7 @@ class Terra2BQ:
                 # I think this is one case where we don't want a flexible error handling
                 # Because if the file transfer fails, we can't proceed with the pipeline
                 logger.critical(
-                    "Error transferring sequence files, this will break the pipeline"
+                    f"Error transferring sequence files, this will break the pipeline"
                 )
                 logger.critical(
                     f"Exiting program due to file transer error: {str(exc)}"
@@ -1205,17 +1169,13 @@ class Terra2BQ:
                 sys.exit(1)
 
         # Load data into BigQuery
-        logger.info(
-            f"Checking {len(terra_df)} rows before loading new data into BigQuery"
-        )
+        logger.info(f"Checking {len(terra_df)} rows before loading new data into BigQuery")
         bq_load_result = self.samples_ops.load_dataframe(
             dataframe=terra_df, config=config, unique_ids_by_config=unique_ids_by_config
         )
-
-        logger.info(
-            f"Loaded data into BigQuery: {bq_load_result.get('loaded', 0)} rows loaded, "
-            f"{bq_load_result.get('filtered', 0)} rows filtered out"
-        )
+        
+        logger.info(f"Loaded data into BigQuery: {bq_load_result.get('loaded', 0)} rows loaded, "
+                    f"{bq_load_result.get('filtered', 0)} rows filtered out")
 
         if not bq_load_result.get("success"):
             logger.error(
@@ -1260,6 +1220,7 @@ class Terra2BQ:
         Returns:
             Dictionary with upload results including set name
         """
+
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
@@ -1370,13 +1331,14 @@ class Terra2BQ:
             DataFrame with samples ready for submission
         """
 
+
         # If a specific config_id is not provided, try to get it from the config
         if not config_id and config:
             config_id = config.get("id")
 
         logger.info(
-            "Retrieving samples for submission"
-            + (f" from set: {set_name}" if set_name else " from today")
+            f"Retrieving samples for submission"
+            + (f" from set: {set_name}" if set_name else f" from today")
         )
 
         # Get samples that have been uploaded but not submitted
@@ -1415,6 +1377,7 @@ class Terra2BQ:
         Returns:
             Dictionary with submission results
         """
+
 
         # Set up Terra client for this configuration if not already done
         if not self.terra:
@@ -1535,9 +1498,7 @@ class Terra2BQ:
             workflow_count=len(samples_df),
         )
 
-    def process_upload_and_submit(
-        self, config: Dict[str, Any]
-    ) -> ConfigProcessingResult:
+    def process_upload_and_submit(self, config: Dict[str, Any]) -> ConfigProcessingResult:
         """
         Process a configuration by uploading data and submitting a workflow.
         This is a wrapper function that handles the sequence:
@@ -1670,11 +1631,11 @@ class Terra2BQ:
 
             # Process in stages with clean state transitions
             download_result = self.download_from_terra_to_bigquery(
-                config=config_copy,
-                destination_bucket=destination_bucket,
-                page_size=page_size,
-                preserve_path_structure=preserve_path_structure,
-                unique_ids_by_config=unique_ids_by_config,
+                config=config_copy, 
+                destination_bucket=destination_bucket, 
+                page_size=page_size, 
+                preserve_path_structure=preserve_path_structure, 
+                unique_ids_by_config=unique_ids_by_config
             )
             if download_result.status != OperationStatus.SUCCESS:
                 return ConfigProcessingResult(
@@ -1688,9 +1649,7 @@ class Terra2BQ:
             is_single_datatable = config_copy.get("single_datatable", False)
 
             if is_single_datatable:
-                logger.info(
-                    "Value for is_single_datatable is {}".format(is_single_datatable)
-                )
+                logger.info("Value for is_single_datatable is {}".format(is_single_datatable))
                 logger.info(config_copy)
                 logger.info(
                     f"Processing same-datatable configuration {config_copy.get('id')}"
@@ -1719,9 +1678,9 @@ class Terra2BQ:
                 config_id=submission_result.config_id,
                 loaded_count=download_result.loaded_count,
                 filtered_count=download_result.filtered_count,
-                uploaded_count=getattr(submission_result, "uploaded_count", 0),
+                uploaded_count=getattr(submission_result, 'uploaded_count', 0),
                 workflow_count=submission_result.workflow_count,
-                set_name=getattr(submission_result, "set_name", None),
+                set_name=getattr(submission_result, 'set_name', None),
                 submission_id=submission_result.submission_id,
             )
 
@@ -1748,7 +1707,7 @@ class Terra2BQ:
         page_size: Optional[int] = None,
         preserve_path_structure: bool = False,
         skip_transferred: bool = False,
-        unique_ids_by_config: bool = False,
+        unique_ids_by_config: bool = False
     ) -> List[ConfigProcessingResult]:
         """
         Process all active configurations with progress tracking and batch processing.
@@ -1771,11 +1730,11 @@ class Terra2BQ:
         )
 
         if not configs and skip_transferred:
-            logger.info("Configs have already been transferred, skipping processing")
+            logger.info(f"Configs have already been transferred, skipping processing")
             return []
         elif not configs:
             logger.info(
-                "No active configurations found"
+                f"No active configurations found"
                 + (f" for entity type {entity_type}" if entity_type else "")
             )
             return []
@@ -1816,7 +1775,7 @@ class Terra2BQ:
                     page_size=page_size,
                     preserve_path_structure=preserve_path_structure,
                     skip_transferred=skip_transferred,
-                    unique_ids_by_config=unique_ids_by_config,
+                    unique_ids_by_config=unique_ids_by_config
                 )
                 results.append(result)
 
@@ -1869,9 +1828,7 @@ class Terra2BQ:
         success_count = sum(
             1 for result in results if result.status == OperationStatus.SUCCESS
         )
-        error_count = sum(
-            1 for result in results if result.status == OperationStatus.ERROR
-        )
+        error_count = sum(1 for result in results if result.status == OperationStatus.ERROR)
         no_data_count = sum(
             1 for result in results if result.status == OperationStatus.NO_DATA
         )
@@ -1887,9 +1844,7 @@ class Terra2BQ:
         return results
 
     @staticmethod
-    def _derive_sync_status(
-        success_count: int, failed_updates: List[Dict[str, Any]]
-    ) -> OperationStatus:
+    def _derive_sync_status(success_count: int, failed_updates: List[Dict[str, Any]]) -> OperationStatus:
         """
         Derive a metadata-sync status that surfaces partial/total failures.
 
@@ -1905,11 +1860,7 @@ class Terra2BQ:
         """
         has_failures = bool(failed_updates)
         if success_count > 0:
-            return (
-                OperationStatus.PARTIAL_SUCCESS
-                if has_failures
-                else OperationStatus.SUCCESS
-            )
+            return OperationStatus.PARTIAL_SUCCESS if has_failures else OperationStatus.SUCCESS
         return OperationStatus.ERROR if has_failures else OperationStatus.NO_UPDATES
 
     def sync_metadata_for_config(
@@ -2031,11 +1982,7 @@ class Terra2BQ:
             )
 
         # Get results from helper functions
-        terra_data_result = self._get_terra_data(
-            entity_type=entity_type,
-            use_destination=use_destination_entity,
-            page_size=page_size,
-        )
+        terra_data_result = self._get_terra_data(entity_type=entity_type, use_destination=use_destination_entity, page_size=page_size)
         logger.debug(
             f"Retrieved {len(terra_data_result.data)} samples from Terra for entity type {entity_type}"
         )
@@ -2087,16 +2034,12 @@ class Terra2BQ:
                 update_destination=update_destination,
             )
 
-        combined_failed_updates = (
-            bq_result.failed_updates + destination_result.failed_updates
-        )
+        combined_failed_updates = bq_result.failed_updates + destination_result.failed_updates
         total_updated_count = (
             bq_result.bq_updated_count + destination_result.destination_updated_count
         )
         return MetadataSyncResult(
-            status=self._derive_sync_status(
-                total_updated_count, combined_failed_updates
-            ),
+            status=self._derive_sync_status(total_updated_count, combined_failed_updates),
             config_id=config_id,
             bq_updated_count=bq_result.bq_updated_count,
             destination_updated_count=destination_result.destination_updated_count,
@@ -2161,6 +2104,7 @@ class Terra2BQ:
 
         self.initialize_operations()
 
+
         # Get active configurations
         configs = self.get_active_configs()
 
@@ -2175,11 +2119,11 @@ class Terra2BQ:
 
         # Get the fields that should be synced
         if sync_fields is None:
-            logger.info("Fetching sync fields from sample schema")
+            logger.info(f"Fetching sync fields from sample schema")
             sync_fields = self.sample_processor.get_sync_fields()
         else:
             logger.info(f"Using provided sync fields: {sync_fields}")
-
+        
         if not sync_fields:
             logger.info("No sync fields defined in the sample schema")
             return MetadataSyncResult(
@@ -2432,11 +2376,7 @@ class Terra2BQ:
 
         # Finally return the results summary
         return WorkflowResult(
-            status=(
-                OperationStatus.SUCCESS
-                if total_updated > 0
-                else OperationStatus.NO_UPDATES
-            ),
+            status=OperationStatus.SUCCESS if total_updated > 0 else OperationStatus.NO_UPDATES,
             config_id=config_id,
             workflow_count=total_updated,
             workflow_states=workflow_states,
@@ -2480,6 +2420,7 @@ class Terra2BQ:
         # Same flow as the other driver functions, trying to make everything follow a similar pattern
 
         self.initialize_operations()
+
 
         # Get active configurations
         configs = self.get_active_configs()
@@ -2536,7 +2477,7 @@ class Terra2BQ:
 
                 # Update aggregated metrics
                 total_updated += result.workflow_count
-                submission_count += getattr(result, "processed_submissions", 0)
+                submission_count += getattr(result, 'processed_submissions', 0)
                 processed_configs += 1
 
                 for state, count in result.workflow_states.items():
@@ -2590,11 +2531,7 @@ class Terra2BQ:
         )
 
         return WorkflowResult(
-            status=(
-                OperationStatus.SUCCESS
-                if total_updated > 0
-                else OperationStatus.NO_UPDATES
-            ),
+            status=OperationStatus.SUCCESS if total_updated > 0 else OperationStatus.NO_UPDATES,
             workflow_count=total_updated,
             workflow_states=status_summary,
             failed_updates=failed_updates,
