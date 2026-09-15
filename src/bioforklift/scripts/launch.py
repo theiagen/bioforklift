@@ -2,8 +2,8 @@ import json
 import time
 import argparse
 import pandas as pd
-from pathlib import Path
 from datetime import datetime
+from collections import defaultdict
 from bioforklift.terra.exceptions import TerraServerError, TerraNotFoundError
 from bioforklift.scripts.configure import CLIConfig
 from bioforklift.scripts.download import extract_samples, filter_df
@@ -464,7 +464,7 @@ def prepare_workflow_config(
 
 def launch_job(
     entity_name: str, job_data: dict, terra: Terra, config: CLIConfig
-) -> None:
+) -> str:
     """Launch a workflow in Terra based on provided job data"""
 
     # get method config dictionary from existing workspace
@@ -507,6 +507,7 @@ def launch_job(
     submission_url = f"{submission_prefix}{submission['submissionId']}"
     logger.info(f"Submission URL: {submission_url}")
     logger.debug(status)
+    return submission_url
 
 
 def filter_mngr(df: pd.DataFrame, job_data: dict, terra: Terra) -> list:
@@ -525,6 +526,20 @@ def filter_mngr(df: pd.DataFrame, job_data: dict, terra: Terra) -> list:
         randomize=job_data.get("randomize", False),
     )
     return filtered_df[sample_col].tolist()
+
+
+def generate_markdown_log(wf_submissions_log: dict) -> None:
+    """Output a markdown checklist relating workflow runs to submission URLs"""
+    output_str = ""
+    for wf_name, submissions in wf_submissions_log.items():
+        # if there are greater than 1 submission, nest it
+        if len(submissions) > 1:
+            output_str += f"- [] {wf_name}\n"
+            for entity, url in submissions:
+                output_str += f"  - [] [{entity}]({url})\n"
+        else:
+            output_str += f"- [] [{wf_name}]({submissions[0][1]})\n"
+    print(f"Markdown checklist:\n\n{output_str}\n")
 
 
 def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
@@ -548,6 +563,8 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
         destination_project=config.project,
     )
 
+    # Capture log for checklist output
+    wf_submissions_log = defaultdict(list)
     # Submit workflows for each job in the job dictionary
     first = True
     for wf_name, entity_dict in job_dicts.items():
@@ -568,4 +585,7 @@ def launch(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
                 prepare_entity_set(terra, clean_table_name, job_data, clean_entity_name)
             
             # launch the job
-            launch_job(clean_entity_name, job_data, terra, config)
+            submission_url = launch_job(clean_entity_name, job_data, terra, config)
+            wf_submissions_log[wf_name].append((entity_name, submission_url,))
+
+    generate_markdown_log(wf_submissions_log)
