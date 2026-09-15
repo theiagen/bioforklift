@@ -1,7 +1,10 @@
 import sys
+from typing import List, Optional
+
 import pandas as pd
-from typing import List, Any, Optional
+
 from bioforklift.forklift_logging import setup_logger
+
 from .terra_entities import TerraEntities
 
 logger = setup_logger(__name__)
@@ -79,7 +82,7 @@ class TerraMerge:
             logger.info(
                 f"Downloaded master table: {master_table} with {len(master_df)} records"
             )
-        except Exception as exc:
+        except Exception:
             # If master table doesn't exist or is empty, create an empty DataFrame, e.g., for new uploads
             logger.info(
                 f"Master table {master_table} not found or empty, will create new"

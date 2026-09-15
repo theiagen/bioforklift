@@ -37,26 +37,34 @@ class TestBaseSpaceClient:
 
     def test_custom_client_trims_trailing_slash_url(self):
         mock_client = BaseSpaceClient(
-            access_token="abc",
-            basespace_api_url="https://example.com/"
+            access_token="abc", basespace_api_url="https://example.com/"
         )
         assert mock_client.base_url == "https://example.com"
 
     def test_build_url_path(self, mock_client):
         # The _build_url_path method should correctly construct the full URL for various endpoints, regardless of leading/trailing slashes.
-        assert mock_client._build_url_path("search") == "https://api.basespace.illumina.com/v2/search"
-        assert mock_client._build_url_path("/search/") == "https://api.basespace.illumina.com/v2/search"
-        assert mock_client._build_url_path("/datasets") == "https://api.basespace.illumina.com/v2/datasets"
-        assert mock_client._build_url_path("datasets/ds.1/files/") == "https://api.basespace.illumina.com/v2/datasets/ds.1/files"
+        assert (
+            mock_client._build_url_path("search")
+            == "https://api.basespace.illumina.com/v2/search"
+        )
+        assert (
+            mock_client._build_url_path("/search/")
+            == "https://api.basespace.illumina.com/v2/search"
+        )
+        assert (
+            mock_client._build_url_path("/datasets")
+            == "https://api.basespace.illumina.com/v2/datasets"
+        )
+        assert (
+            mock_client._build_url_path("datasets/ds.1/files/")
+            == "https://api.basespace.illumina.com/v2/datasets/ds.1/files"
+        )
 
     def test_get(self, mock_client, mock_response):
         with patch.object(mock_client, "_http_request") as mock_http_request:
             mock_http_request.return_value = mock_response
 
-            response = mock_client.get(
-                endpoint="search",
-                params={"scope": "projects"}
-            )
+            response = mock_client.get(endpoint="search", params={"scope": "projects"})
 
         # Make sure the result is a valid response
         assert response == mock_response
@@ -94,12 +102,16 @@ class TestBaseSpaceErrorMapping:
                 mock_client.get("search")
 
     def test_connection_error_raises(self, mock_client):
-        with patch.object(mock_client.session, "request", side_effect=requests.ConnectionError):
+        with patch.object(
+            mock_client.session, "request", side_effect=requests.ConnectionError
+        ):
             with pytest.raises(BaseSpaceConnectionError):
                 mock_client.get("search")
 
     def test_generic_requestexception_raises(self, mock_client):
-        with patch.object(mock_client.session, "request", side_effect=requests.RequestException):
+        with patch.object(
+            mock_client.session, "request", side_effect=requests.RequestException
+        ):
             with pytest.raises(BaseSpaceConnectionError):
                 mock_client.get("search")
 
@@ -143,10 +155,15 @@ class TestBaseSpaceErrorMapping:
             (403, BaseSpaceForbiddenError),
             (404, BaseSpaceNotFoundError),
             (500, BaseSpaceServerError),
-            (418, BaseSpaceAPIError),  # Unknown status code should fall back to generic API error
+            (
+                418,
+                BaseSpaceAPIError,
+            ),  # Unknown status code should fall back to generic API error
         ],
     )
-    def test_http_error_maps_status_to_exception(self, mock_client, mock_response, status_code, expected_class):
+    def test_http_error_maps_status_to_exception(
+        self, mock_client, mock_response, status_code, expected_class
+    ):
         mock_response.status_code = status_code
         mock_response.json.return_value = {"ResponseStatus": {"Message": "BAD"}}
 

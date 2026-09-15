@@ -1,8 +1,10 @@
-from typing import Optional, Dict, Any
-from .client import BigQueryClient
-from .sample_operations import BigQuerySampleOperations
-from .config_operations import BigQueryConfigOperations
+from typing import Any, Dict, Optional
+
 from bioforklift.forklift_logging import setup_logger
+
+from .client import BigQueryClient
+from .config_operations import BigQueryConfigOperations
+from .sample_operations import BigQuerySampleOperations
 
 logger = setup_logger(__name__)
 

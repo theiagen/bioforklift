@@ -1,8 +1,10 @@
+import io
 from pathlib import Path
 from typing import Optional
-import requests
+
 import pandas as pd
-import io
+import requests
+
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)

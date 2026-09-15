@@ -2,13 +2,16 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
 from google.cloud.bigquery import SchemaField
-from .utils import load_schema_from_yaml
+
 from bioforklift.forklift_logging import setup_logger
-from .schema_models import SchemaDefinition, ConfigFieldAttributes
+
 from .schema_converter import convert_to_schema_definition
+from .schema_models import ConfigFieldAttributes, SchemaDefinition
+from .utils import load_schema_from_yaml
 
 logger = setup_logger(__name__)
 
@@ -28,9 +31,7 @@ class ConfigProcessor:
 
         # Add typed schema definition for type-safe attribute access
         self.schema_definition: SchemaDefinition = convert_to_schema_definition(
-            self.schema,
-            self.field_attributes,
-            ConfigFieldAttributes
+            self.schema, self.field_attributes, ConfigFieldAttributes
         )
 
         logger.info(f"ConfigDataProcessor initialized with schema: {schema_yaml}")
@@ -59,9 +60,7 @@ class ConfigProcessor:
         return config
 
     def prepare_configs_from_directory(
-        self,
-        config_dir: Path,
-        file_pattern: str = "*.json"
+        self, config_dir: Path, file_pattern: str = "*.json"
     ) -> List[Dict[str, Any]]:
         """
         Process multiple configuration files from a directory.
@@ -87,7 +86,7 @@ class ConfigProcessor:
         for config_file in config_files:
             try:
                 logger.debug(f"Processing config file: {config_file}")
-                with open(config_file, 'r') as f:
+                with open(config_file, "r") as f:
                     config_data = json.load(f)
 
                 processed_config = self.prepare_config_for_insert(config_data)
@@ -101,9 +100,7 @@ class ConfigProcessor:
         return configs
 
     def process_configs_dataframe(
-        self,
-        dataframe: pd.DataFrame,
-        schema: Optional[List[SchemaField]] = None
+        self, dataframe: pd.DataFrame, schema: Optional[List[SchemaField]] = None
     ) -> pd.DataFrame:
         """
         Process a DataFrame of configurations.
@@ -137,7 +134,9 @@ class ConfigProcessor:
         for field_name, attrs in self.field_attributes.items():
             if attrs.get("primary_key") and field_name not in config:
                 config[field_name] = str(uuid.uuid4())
-                logger.debug(f"Generated UUID for field '{field_name}': {config[field_name]}")
+                logger.debug(
+                    f"Generated UUID for field '{field_name}': {config[field_name]}"
+                )
 
         # Set created_at datetime if not provided
         for field_name, attrs in self.field_attributes.items():
@@ -153,14 +152,20 @@ class ConfigProcessor:
 
         # Generate UUIDs for primary key fields
         for field_name, attrs in self.field_attributes.items():
-            if attrs.get("primary_key") and (field_name not in df.columns or df[field_name].isna().any()):
+            if attrs.get("primary_key") and (
+                field_name not in df.columns or df[field_name].isna().any()
+            ):
                 if field_name not in df.columns:
                     df[field_name] = None
 
                 # Fill missing values with UUIDs
                 null_mask = df[field_name].isna()
-                df.loc[null_mask, field_name] = [str(uuid.uuid4()) for _ in range(null_mask.sum())]
-                logger.debug(f"Generated {null_mask.sum()} UUIDs for field '{field_name}'")
+                df.loc[null_mask, field_name] = [
+                    str(uuid.uuid4()) for _ in range(null_mask.sum())
+                ]
+                logger.debug(
+                    f"Generated {null_mask.sum()} UUIDs for field '{field_name}'"
+                )
 
         # Set created_at for missing timestamps
         for field_name, attrs in self.field_attributes.items():
@@ -169,7 +174,9 @@ class ConfigProcessor:
                     df[field_name] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     null_mask = df[field_name].isna()
-                    df.loc[null_mask, field_name] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    df.loc[null_mask, field_name] = datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
 
         return df
 
@@ -188,7 +195,9 @@ class ConfigProcessor:
             if attrs.get("type", "").lower() == "object" and field_name in config:
                 if isinstance(config[field_name], (dict, list)):
                     config[field_name] = json.dumps(config[field_name])
-                    logger.debug(f"Serialized object field '{field_name}' from attributes")
+                    logger.debug(
+                        f"Serialized object field '{field_name}' from attributes"
+                    )
 
         return config
 
@@ -212,7 +221,9 @@ class ConfigProcessor:
                 df[field_name] = df[field_name].apply(
                     lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x
                 )
-                logger.debug(f"Serialized object field '{field_name}' from attributes in DataFrame")
+                logger.debug(
+                    f"Serialized object field '{field_name}' from attributes in DataFrame"
+                )
 
         return df
 
@@ -244,4 +255,6 @@ class ConfigProcessor:
 
     def get_single_datatable_field(self) -> Optional[str]:
         """Get the field name 'single_datatable' if it exists in the schema"""
-        return "single_datatable" if "single_datatable" in self.field_attributes else None
+        return (
+            "single_datatable" if "single_datatable" in self.field_attributes else None
+        )

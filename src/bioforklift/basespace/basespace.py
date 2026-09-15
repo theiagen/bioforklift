@@ -1,7 +1,8 @@
+from bioforklift.forklift_logging import setup_logger
+
 from .basespace_client import BaseSpaceClient
 from .basespace_endpoints import BaseSpaceEndpoints
 from .basespace_methods import BaseSpaceMethods
-from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 

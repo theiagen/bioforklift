@@ -6,16 +6,15 @@ Bioforklift: Automation Data Movement and Integration
 main script for command-line bioforklift tool
 """
 
-import sys
 import argparse
-from pathlib import Path
+import sys
+
 from bioforklift import __version__
+from bioforklift.forklift_logging import setup_logger
+from bioforklift.scripts.configure import CLIConfig, configure, configure_args
+from bioforklift.scripts.download import download, download_args
 from bioforklift.scripts.launch import launch, launch_args
 from bioforklift.scripts.upload import upload, upload_args
-from bioforklift.scripts.download import download, download_args
-from bioforklift.scripts.configure import configure, configure_args, CLIConfig
-from bioforklift.forklift_logging import setup_logger
-
 
 logger = setup_logger(__name__)
 
@@ -49,9 +48,7 @@ def bioforklift_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     upload_parser = upload_args(upload_parser)
 
     # Version arguments
-    subparsers.add_parser(
-        "version", aliases=["v"], help="Show the bioforklift version"
-    )
+    subparsers.add_parser("version", aliases=["v"], help="Show the bioforklift version")
 
     return parser
 

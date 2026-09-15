@@ -1,8 +1,9 @@
-import pytest
-import pandas as pd
 import tempfile
+
+import pandas as pd
+import pytest
 import yaml
-from unittest.mock import patch, MagicMock
+
 from bioforklift.data_processing import SampleDataProcessor
 
 
@@ -15,38 +16,29 @@ def sample_schema_yaml():
                 "type": "string",
                 "required": True,
                 "primary_key": True,
-                "system_value": True
+                "system_value": True,
             },
             "sample_id": {
                 "type": "string",
                 "required": True,
                 "sample_identifier": True,
-                "accepted_pattern": "^SMP[0-9]{4}$"
+                "accepted_pattern": "^SMP[0-9]{4}$",
             },
             "batch_id": {
                 "type": "string",
-                "accepted_pattern": "^BATCH_[A-Z]{2}[0-9]{3}$"
+                "accepted_pattern": "^BATCH_[A-Z]{2}[0-9]{3}$",
             },
-            "read1": {
-                "type": "string",
-                "sequence_file": True
-            },
-            "read2": {
-                "type": "string",
-                "sequence_file": True
-            },
+            "read1": {"type": "string", "sequence_file": True},
+            "read2": {"type": "string", "sequence_file": True},
             "metadata_field": {
                 "type": "string",
-                "column_mappings": ["source_metadata", "alt_metadata"]
+                "column_mappings": ["source_metadata", "alt_metadata"],
             },
-            "created_at": {
-                "type": "datetime",
-                "system_value": True
-            }
+            "created_at": {"type": "datetime", "system_value": True},
         }
     }
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         yaml.dump(schema_content, f)
         return f.name
 
@@ -60,14 +52,21 @@ def sample_processor(sample_schema_yaml):
 @pytest.fixture
 def sample_dataframe():
     """Sample DataFrame for testing"""
-    return pd.DataFrame({
-        "sample_id": ["SMP0001", "SMP0002", "INVALID", "SMP0003"],
-        "batch_id": ["BATCH_AB123", "BATCH_CD456", "INVALID_BATCH", "BATCH_EF789"],
-        "read1": ["file1.fastq", "file2.fastq", None, "file4.fastq"],
-        "read2": ["file1_r2.fastq", None, "file3_r2.fastq", "file4_r2.fastq"],
-        "source_metadata": ["meta1", "meta2", "meta3", "meta4"],  # Will be mapped
-        "extra_column": ["extra1", "extra2", "extra3", "extra4"]  # Will be filtered out
-    })
+    return pd.DataFrame(
+        {
+            "sample_id": ["SMP0001", "SMP0002", "INVALID", "SMP0003"],
+            "batch_id": ["BATCH_AB123", "BATCH_CD456", "INVALID_BATCH", "BATCH_EF789"],
+            "read1": ["file1.fastq", "file2.fastq", None, "file4.fastq"],
+            "read2": ["file1_r2.fastq", None, "file3_r2.fastq", "file4_r2.fastq"],
+            "source_metadata": ["meta1", "meta2", "meta3", "meta4"],  # Will be mapped
+            "extra_column": [
+                "extra1",
+                "extra2",
+                "extra3",
+                "extra4",
+            ],  # Will be filtered out
+        }
+    )
 
 
 class TestSampleDataProcessor:
@@ -100,16 +99,23 @@ class TestSampleDataProcessor:
         assert "source_metadata" not in mapped_df.columns
 
         # Values should be preserved
-        assert mapped_df["metadata_field"].tolist() == ["meta1", "meta2", "meta3", "meta4"]
+        assert mapped_df["metadata_field"].tolist() == [
+            "meta1",
+            "meta2",
+            "meta3",
+            "meta4",
+        ]
 
     def test_filter_columns(self, sample_processor):
         """Test column filtering"""
-        df_with_extra = pd.DataFrame({
-            "sample_id": ["SMP0001"],
-            "read1": ["file1.fastq"],
-            "extra_column": ["extra"],
-            "another_extra": ["more_extra"]
-        })
+        df_with_extra = pd.DataFrame(
+            {
+                "sample_id": ["SMP0001"],
+                "read1": ["file1.fastq"],
+                "extra_column": ["extra"],
+                "another_extra": ["more_extra"],
+            }
+        )
 
         filtered_df = sample_processor._filter_columns(df_with_extra)
 
@@ -123,10 +129,12 @@ class TestSampleDataProcessor:
 
     def test_filter_existing_samples(self, sample_processor):
         """Test filtering existing samples"""
-        df = pd.DataFrame({
-            "sample_id": ["SMP0001", "SMP0002", "SMP0003"],
-            "read1": ["file1.fastq", "file2.fastq", "file3.fastq"]
-        })
+        df = pd.DataFrame(
+            {
+                "sample_id": ["SMP0001", "SMP0002", "SMP0003"],
+                "read1": ["file1.fastq", "file2.fastq", "file3.fastq"],
+            }
+        )
 
         existing_ids = {"SMP0001", "SMP0003"}
         filtered_df = sample_processor._filter_existing_samples(df, existing_ids)
@@ -137,11 +145,13 @@ class TestSampleDataProcessor:
 
     def test_validate_sequence_files(self, sample_processor):
         """Test sequence file validation"""
-        df = pd.DataFrame({
-            "sample_id": ["SMP0001", "SMP0002", "SMP0003"],
-            "read1": ["file1.fastq", None, "file3.fastq"],
-            "read2": [None, None, "file3_r2.fastq"]
-        })
+        df = pd.DataFrame(
+            {
+                "sample_id": ["SMP0001", "SMP0002", "SMP0003"],
+                "read1": ["file1.fastq", None, "file3.fastq"],
+                "read2": [None, None, "file3_r2.fastq"],
+            }
+        )
 
         validated_df = sample_processor._validate_sequence_files(df)
 
@@ -152,10 +162,12 @@ class TestSampleDataProcessor:
 
     def test_validate_field_patterns(self, sample_processor):
         """Test pattern validation"""
-        df = pd.DataFrame({
-            "sample_id": ["SMP0001", "INVALID", "SMP0003"],
-            "batch_id": ["BATCH_AB123", "INVALID_BATCH", "BATCH_CD456"]
-        })
+        df = pd.DataFrame(
+            {
+                "sample_id": ["SMP0001", "INVALID", "SMP0003"],
+                "batch_id": ["BATCH_AB123", "INVALID_BATCH", "BATCH_CD456"],
+            }
+        )
 
         validated_df = sample_processor._validate_field_patterns(df)
 
@@ -165,10 +177,12 @@ class TestSampleDataProcessor:
 
     def test_add_system_values(self, sample_processor):
         """Test adding system values"""
-        df = pd.DataFrame({
-            "sample_id": ["SMP0001", "SMP0002"],
-            "read1": ["file1.fastq", "file2.fastq"]
-        })
+        df = pd.DataFrame(
+            {
+                "sample_id": ["SMP0001", "SMP0002"],
+                "read1": ["file1.fastq", "file2.fastq"],
+            }
+        )
 
         df_with_system = sample_processor._add_system_values(df)
 

@@ -1,16 +1,17 @@
+import argparse
+import fnmatch
 import os
 import time
-import fnmatch
-import argparse
-import pandas as pd
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
+
+import pandas as pd
 from google.cloud import storage
 from google.cloud.storage import transfer_manager
-from bioforklift.terra import Terra
-from bioforklift.scripts.configure import CLIConfig
-from bioforklift.forklift_logging import setup_logger
 
+from bioforklift.forklift_logging import setup_logger
+from bioforklift.scripts.configure import CLIConfig
+from bioforklift.terra import Terra
 
 logger = setup_logger(__name__)
 
@@ -252,16 +253,19 @@ def file_download_mngr(
             results = transfer_manager.download_many(
                 blob_file_pairs,
                 worker_type="process",
-                max_workers=max_workers, # "None" will set max_workers to os.cpu_count()
+                max_workers=max_workers,  # "None" will set max_workers to os.cpu_count()
             )
             for blob_name, result in zip(blob_names, results):
                 if isinstance(result, Exception):
-                    logger.error(f"Failed to download gs://{bucket_name}/{blob_name}: {result}")
+                    logger.error(
+                        f"Failed to download gs://{bucket_name}/{blob_name}: {result}"
+                    )
                 else:
                     logger.debug(f"Downloaded gs://{bucket_name}/{blob_name}")
 
     elapsed = time.time() - start_time
     logger.info(f"File downloads completed in {elapsed:.3f}s")
+
 
 def download(args: argparse.Namespace, config: CLIConfig = CLIConfig()) -> None:
     """Download data from Terra workspace"""

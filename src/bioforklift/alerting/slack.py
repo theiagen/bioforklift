@@ -1,6 +1,8 @@
-from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
 import requests
+
 from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -288,9 +290,11 @@ class TerraSummary:
                         "total_samples": len(group),
                         "uploaded_samples": group["uploaded_at"].notna().sum(),
                         "submitted_samples": group["submitted_at"].notna().sum(),
-                        "entity_type": config.get("entity_type", "Unknown")
-                        if config
-                        else "Unknown",
+                        "entity_type": (
+                            config.get("entity_type", "Unknown")
+                            if config
+                            else "Unknown"
+                        ),
                     }
                 )
 
@@ -301,7 +305,6 @@ class TerraSummary:
             "by_config": by_config,
             "date": datetime.now().strftime("%Y-%m-%d"),
         }
-
 
     def format_hourly_summary_for_slack(
         self, summary: Dict[str, Any], project_title: str = None
@@ -333,7 +336,7 @@ class TerraSummary:
         else:
             title = f"Terra2BQ Hourly Summary ({date} {time_range})"
 
-        message = f"*Summary of Terra operations for the past hour*\n"
+        message = "*Summary of Terra operations for the past hour*\n"
         message += f"• Total samples: {summary['total_samples']}\n"
         message += f"• Uploaded to Terra: {summary['uploaded_samples']}\n"
         message += f"• Submitted to workflows: {summary['submitted_samples']}\n"
@@ -392,7 +395,7 @@ class TerraSummary:
         else:
             title = f"Terra2BQ Daily Summary for {summary['date']}"
 
-        message = f"*Summary of today's Terra operations*\n"
+        message = "*Summary of today's Terra operations*\n"
         message += f"• Total samples: {summary['total_samples']}\n"
         message += f"• Uploaded to Terra: {summary['uploaded_samples']}\n"
         message += f"• Submitted to workflows: {summary['submitted_samples']}\n"

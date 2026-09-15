@@ -1,12 +1,15 @@
-from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
-import pandas as pd
 import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+import pandas as pd
 from google.cloud import bigquery
-from google.cloud.bigquery import SchemaField, LoadJobConfig
-from .client import BigQueryClient
-from bioforklift.forklift_logging import setup_logger
+from google.cloud.bigquery import LoadJobConfig, SchemaField
+
 from bioforklift.data_processing import ConfigProcessor
+from bioforklift.forklift_logging import setup_logger
+
+from .client import BigQueryClient
 
 logger = setup_logger(__name__)
 
@@ -42,7 +45,9 @@ class BigQueryConfigOperations:
             self.field_attributes = self.data_processor.field_attributes
             logger.info(f"Initialized with ConfigProcessor: {config_schema_yaml}")
         else:
-            raise ValueError("Either config_schema_yaml or config_schema must be provided")
+            raise ValueError(
+                "Either config_schema_yaml or config_schema must be provided"
+            )
 
     def create_config(
         self, config_data: Union[Dict[str, Any], str, Path]
@@ -62,7 +67,7 @@ class BigQueryConfigOperations:
             if not config_path.exists():
                 raise FileNotFoundError(f"Config file not found: {config_path}")
 
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
         else:
             config = config_data.copy()
@@ -93,7 +98,9 @@ class BigQueryConfigOperations:
         Returns:
             List of created configurations
         """
-        directory = Path(directory_path) if isinstance(directory_path, str) else directory_path
+        directory = (
+            Path(directory_path) if isinstance(directory_path, str) else directory_path
+        )
 
         if not directory.is_dir():
             raise ValueError(f"Directory not found: {directory}")
@@ -218,11 +225,7 @@ class BigQueryConfigOperations:
         """
 
         # Map schema field types to accepted ScalarQueryParameterType value
-        BQ_TYPE_MAP = {
-            "BOOLEAN": "BOOL",
-            "INTEGER": "INT64",
-            "FLOAT": "FLOAT64"
-        }
+        BQ_TYPE_MAP = {"BOOLEAN": "BOOL", "INTEGER": "INT64", "FLOAT": "FLOAT64"}
 
         # Validate update data
         if not update_data:
@@ -230,7 +233,7 @@ class BigQueryConfigOperations:
             return self.get_config(config_id)
 
         # Ensure fields exist in schema
-        
+
         schema_fields = self.data_processor.get_schema_fields()
 
         invalid_fields = set(update_data.keys()) - set(schema_fields)
@@ -240,7 +243,10 @@ class BigQueryConfigOperations:
         # Handle special fields like JSON objects
         processed_data = update_data.copy()
         for field in self.schema:
-            if field.field_type.upper() in ("STRING", "JSON")  and field.name in processed_data:
+            if (
+                field.field_type.upper() in ("STRING", "JSON")
+                and field.name in processed_data
+            ):
                 if isinstance(processed_data[field.name], dict) or isinstance(
                     processed_data[field.name], list
                 ):
@@ -254,7 +260,6 @@ class BigQueryConfigOperations:
             if field not in ["id", "created_at"]:
                 update_statements.append(f"{field} = @{field}")
 
-                
                 field_def = self.data_processor.schema_definition.get_field(field)
 
                 raw_type = field_def.field_type if field_def else "STRING"
@@ -282,7 +287,6 @@ class BigQueryConfigOperations:
 
         # Return updated config
         return self.get_config(config_id)
-
 
     def mark_configs_as_transferred(
         self, config_ids: Union[str, List[str]]
@@ -382,7 +386,9 @@ class BigQueryConfigOperations:
             configs_to_load = []
             for _, row in dataframe.iterrows():
                 config_data = row.to_dict()
-                prepared_config = self.data_processor.prepare_config_for_insert(config_data)
+                prepared_config = self.data_processor.prepare_config_for_insert(
+                    config_data
+                )
                 configs_to_load.append(prepared_config)
 
             # Setup load job
@@ -440,7 +446,7 @@ class BigQueryConfigOperations:
             # Get field type from schema
             field_def = self.data_processor.schema_definition.get_field(field)
             param_type = field_def.field_type if field_def else "STRING"
-            
+
             params.append(bigquery.ScalarQueryParameter(f"val_{i}", param_type, value))
 
         # Add condition to only update active configs - once deactivated, they should not be updated again

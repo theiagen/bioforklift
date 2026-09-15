@@ -1,7 +1,7 @@
 from .bigquery import BigQuery
 from .client import BigQueryClient
-from .sample_operations import BigQuerySampleOperations
 from .config_operations import BigQueryConfigOperations
+from .sample_operations import BigQuerySampleOperations
 
 __all__ = [
     "BigQuery",

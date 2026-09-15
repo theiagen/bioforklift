@@ -1,9 +1,11 @@
-import pytest
-import pandas as pd
-import tempfile
-import yaml
 import json
+import tempfile
 from pathlib import Path
+
+import pandas as pd
+import pytest
+import yaml
+
 from bioforklift.data_processing import ConfigProcessor
 
 
@@ -12,38 +14,17 @@ def config_schema_yaml():
     """Create a temporary YAML schema file for testing"""
     schema_content = {
         "fields": {
-            "id": {
-                "type": "string",
-                "required": True,
-                "primary_key": True
-            },
-            "name": {
-                "type": "string",
-                "required": True,
-                "use_as_prefix": True
-            },
-            "description": {
-                "type": "string",
-                "display_for_alerts": True
-            },
-            "settings": {
-                "type": "object"
-            },
-            "parameters": {
-                "type": "JSON"
-            },
-            "workflow_config": {
-                "type": "string",
-                "configuration_identifier": True
-            },
-            "created_at": {
-                "type": "datetime",
-                "system_value": True
-            }
+            "id": {"type": "string", "required": True, "primary_key": True},
+            "name": {"type": "string", "required": True, "use_as_prefix": True},
+            "description": {"type": "string", "display_for_alerts": True},
+            "settings": {"type": "object"},
+            "parameters": {"type": "JSON"},
+            "workflow_config": {"type": "string", "configuration_identifier": True},
+            "created_at": {"type": "datetime", "system_value": True},
         }
     }
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         yaml.dump(schema_content, f)
         return f.name
 
@@ -62,7 +43,7 @@ def sample_config():
         "description": "Test configuration",
         "settings": {"option1": "value1", "option2": 42},
         "parameters": [{"param1": "value1"}, {"param2": "value2"}],
-        "workflow_config": "workflow_123"
+        "workflow_config": "workflow_123",
     }
 
 
@@ -74,14 +55,26 @@ def config_directory(tmp_path):
 
     # Create multiple config files
     configs = [
-        {"name": "config1", "description": "First config", "settings": {"key": "value1"}},
-        {"name": "config2", "description": "Second config", "settings": {"key": "value2"}},
-        {"name": "config3", "description": "Third config", "settings": {"key": "value3"}}
+        {
+            "name": "config1",
+            "description": "First config",
+            "settings": {"key": "value1"},
+        },
+        {
+            "name": "config2",
+            "description": "Second config",
+            "settings": {"key": "value2"},
+        },
+        {
+            "name": "config3",
+            "description": "Third config",
+            "settings": {"key": "value3"},
+        },
     ]
 
     for i, config in enumerate(configs, 1):
         config_file = config_dir / f"config{i}.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump(config, f)
 
     return config_dir
@@ -128,7 +121,7 @@ class TestConfigProcessor:
             "id": "existing-uuid",
             "name": "test_config",
             "created_at": "2023-01-01 12:00:00",
-            "settings": {"key": "value"}
+            "settings": {"key": "value"},
         }
 
         prepared_config = config_processor.prepare_config_for_insert(config_with_values)
@@ -143,7 +136,7 @@ class TestConfigProcessor:
             "name": "test",
             "settings": {"nested": {"key": "value"}},  # Object type
             "parameters": [{"item1": "value1"}, {"item2": "value2"}],  # JSON type
-            "simple_string": "not_serialized"
+            "simple_string": "not_serialized",
         }
 
         processed = config_processor.prepare_config_for_insert(config)
@@ -157,7 +150,10 @@ class TestConfigProcessor:
 
         # Should be valid JSON
         assert json.loads(processed["settings"]) == {"nested": {"key": "value"}}
-        assert json.loads(processed["parameters"]) == [{"item1": "value1"}, {"item2": "value2"}]
+        assert json.loads(processed["parameters"]) == [
+            {"item1": "value1"},
+            {"item2": "value2"},
+        ]
 
     def test_prepare_configs_from_directory(self, config_processor, config_directory):
         """Test processing multiple configs from directory"""
@@ -182,11 +178,21 @@ class TestConfigProcessor:
 
     def test_process_configs_dataframe(self, config_processor):
         """Test processing DataFrame of configurations"""
-        df = pd.DataFrame([
-            {"name": "config1", "description": "First config", "settings": {"key": "value1"}},
-            {"name": "config2", "description": "Second config", "parameters": [{"param": "value"}]},
-            {"name": "config3", "description": "Third config"}
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "name": "config1",
+                    "description": "First config",
+                    "settings": {"key": "value1"},
+                },
+                {
+                    "name": "config2",
+                    "description": "Second config",
+                    "parameters": [{"param": "value"}],
+                },
+                {"name": "config3", "description": "Third config"},
+            ]
+        )
 
         processed_df = config_processor.process_configs_dataframe(df)
 
@@ -217,6 +223,14 @@ class TestConfigProcessor:
         """Test getting schema field names"""
         fields = config_processor.get_schema_fields()
 
-        expected_fields = ["id", "name", "description", "settings", "parameters", "workflow_config", "created_at"]
+        expected_fields = [
+            "id",
+            "name",
+            "description",
+            "settings",
+            "parameters",
+            "workflow_config",
+            "created_at",
+        ]
         for field in expected_fields:
             assert field in fields

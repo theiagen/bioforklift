@@ -1,17 +1,19 @@
 import re
 import time
-import requests
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
+import requests
 from pydantic import validate_call
 from pydantic.alias_generators import to_pascal
 
+from bioforklift.forklift_logging import setup_logger
+
 from .basespace_dataset_operations import (
+    concatenate_dataset_files,
     filter_dataset_types,
     match_datasets_by_sample,
     validate_paired_end_datasets,
-    concatenate_dataset_files,
     write_dataset_sample_sheet,
 )
 from .basespace_endpoints import (
@@ -34,7 +36,6 @@ from .basespace_models import (
     RunItem,
     SearchItem,
 )
-from bioforklift.forklift_logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -177,7 +178,8 @@ class BaseSpaceMethods:
         elapsed = time.monotonic() - start
         size_str = (
             f"{bytes_to_mb(ds_file.size):.1f} MB"
-            if ds_file.size is not None else "unknown size"
+            if ds_file.size is not None
+            else "unknown size"
         )
         logger.info(
             f"Downloaded dataset file: `{ds_file.name}` ({size_str} in {elapsed:.1f}s)"
@@ -227,15 +229,13 @@ class BaseSpaceMethods:
             # Creates a Lucene query clause compatible with BaseSpace (e.g. "experiment_name" -> "ExperimentName";
             query_clause = f'{to_pascal(field)}:"{collection_id}"'
 
-            search_items = self.get_search_items(
-                scope=scope,
-                query=query_clause
-            )
+            search_items = self.get_search_items(scope=scope, query=query_clause)
 
             # Sometimes the BaseSpace search endpoint can return items that are close matches but not exact matches.
             # Filter out items whose attribute/field doesn't match the input `collection_id` exactly.
             exact_matches: List[SearchItem] = [
-                search_item for search_item in search_items
+                search_item
+                for search_item in search_items
                 if getattr(search_item, field, None) == collection_id
             ]
 
@@ -266,7 +266,9 @@ class BaseSpaceMethods:
             )
 
         # The prioritized scope wins whenever it matched, otherwise the fallback scope is used.
-        scope = priority if priority in matches_by_scope else next(iter(matches_by_scope))
+        scope = (
+            priority if priority in matches_by_scope else next(iter(matches_by_scope))
+        )
         exact_matches = matches_by_scope[scope]
 
         if scope != priority and priority is not None:
@@ -362,7 +364,9 @@ class BaseSpaceMethods:
             for ds_item in matched_ds_items:
                 ds_files.extend(self.get_dataset_files(ds_item))
 
-            logger.info(f"Found {len(ds_files)} FASTQ files across {len(matched_ds_items)} matching datasets")
+            logger.info(
+                f"Found {len(ds_files)} FASTQ files across {len(matched_ds_items)} matching datasets"
+            )
 
             if validate_paired_end:
                 validate_paired_end_datasets(
@@ -425,7 +429,9 @@ class BaseSpaceMethods:
         search_items: List[SearchItem] = []
 
         if collection_id is not None:
-            search_items = [self.resolve_collection_id(collection_id, priority=priority)]
+            search_items = [
+                self.resolve_collection_id(collection_id, priority=priority)
+            ]
         else:
             for scope in ("projects", "runs"):
                 search_items.extend(self.get_search_items(query="", scope=scope))
@@ -438,7 +444,11 @@ class BaseSpaceMethods:
         for search_item in search_items:
             # Name the file by the resolved SearchItem.name or ID
             resolved_name = (
-                (search_item.experiment_name if isinstance(search_item, RunItem) else None)
+                (
+                    search_item.experiment_name
+                    if isinstance(search_item, RunItem)
+                    else None
+                )
                 or search_item.name
                 or search_item.id
             )
@@ -450,14 +460,18 @@ class BaseSpaceMethods:
                 # List every dataset for the resolved project/run (all types)
                 all_ds_items = self.get_datasets(search_item)
             except BaseSpaceForbiddenError:
-                logger.info(f"Skipping SearchItem: ({search_item}); Unauthorized request.")
+                logger.info(
+                    f"Skipping SearchItem: ({search_item}); Unauthorized request."
+                )
                 continue
 
             # Filter the requested dataset type(s) before matching on sample name
             filtered_items = filter_dataset_types(all_ds_items, dataset_types)
 
             if len(filtered_items) == 0:
-                logger.info(f"Skipping SearchItem: ({search_item}); Fetched 0 datasets.")
+                logger.info(
+                    f"Skipping SearchItem: ({search_item}); Fetched 0 datasets."
+                )
                 continue
 
             grouped_datasets = []
@@ -471,8 +485,7 @@ class BaseSpaceMethods:
                 grouped_datasets.append((ds_item, ds_files))
 
             sample_sheet = write_dataset_sample_sheet(
-                grouped_datasets=grouped_datasets,
-                output_path=output_path
+                grouped_datasets=grouped_datasets, output_path=output_path
             )
 
             all_output_paths.append(sample_sheet)

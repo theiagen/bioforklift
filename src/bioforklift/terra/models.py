@@ -1,9 +1,11 @@
-from pydantic import BaseModel, Field, model_validator, computed_field, field_serializer
-from datetime import datetime
-from typing import Optional, Dict, List, Any
-from typing_extensions import Self
-from enum import Enum
 import json
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, computed_field, field_serializer, model_validator
+from typing_extensions import Self
+
 
 class WorkflowConfig(BaseModel):
     """Model for Terra workflow submission configuration"""
@@ -46,6 +48,7 @@ class MethodRepoMethod(BaseModel):
     """
     Model for method repository method.
     """
+
     methodUri: Optional[str] = None
     sourceRepo: Optional[str] = None
     methodPath: Optional[str] = None
@@ -54,8 +57,12 @@ class MethodRepoMethod(BaseModel):
     @model_validator(mode="after")
     def check_required_fields(self) -> Self:
         # Note: having all four fields is perfectly valid, but not required
-        if self.methodUri is None and not all([self.sourceRepo, self.methodPath, self.methodVersion]):
-            raise ValueError("Either 'methodUri' or all of 'sourceRepo', 'methodPath', and 'methodVersion' must be provided.")
+        if self.methodUri is None and not all(
+            [self.sourceRepo, self.methodPath, self.methodVersion]
+        ):
+            raise ValueError(
+                "Either 'methodUri' or all of 'sourceRepo', 'methodPath', and 'methodVersion' must be provided."
+            )
         return self
 
 
@@ -84,16 +91,15 @@ class MethodConfig(BaseModel):
         This runs only during serialization (model_dump), not construction,
         preventing double-encoding when round-tripping configs through the API.
         """
-        return {
-            k: self._encode_value(v)
-            for k, v in inputs.items()
-        }
+        return {k: self._encode_value(v) for k, v in inputs.items()}
 
     @staticmethod
     def _encode_value(value: Any) -> str:
         """Encode a single input value for Terra API."""
         # Keep Terra workspace references as-is
-        if isinstance(value, str) and (value.startswith("this.") or value.startswith("workspace.")):
+        if isinstance(value, str) and (
+            value.startswith("this.") or value.startswith("workspace.")
+        ):
             return value
 
         # If it's already a JSON-encoded string, return as-is

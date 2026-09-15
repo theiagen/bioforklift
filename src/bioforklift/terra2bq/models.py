@@ -1,5 +1,6 @@
-from typing import Dict, List, Optional, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -54,10 +55,10 @@ class DataResult(BaseResult):
     data: Optional[Any] = None
     error: Optional[str] = None
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_status_with_data(self):
         if self.status == OperationStatus.SUCCESS and self.data is None:
-            raise ValueError('data must be provided when status is success')
+            raise ValueError("data must be provided when status is success")
         return self
 
 
@@ -79,10 +80,10 @@ class ProcessAllConfigsResult(BaseResult):
     successful_configs: int = Field(default=0, ge=0)
     failed_configs: int = Field(default=0, ge=0)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_config_counts(self):
         if self.successful_configs > self.total_configs:
-            raise ValueError('successful_configs cannot exceed total_configs')
+            raise ValueError("successful_configs cannot exceed total_configs")
         if self.failed_configs > self.total_configs:
-            raise ValueError('failed_configs cannot exceed total_configs')
+            raise ValueError("failed_configs cannot exceed total_configs")
         return self

@@ -1,16 +1,15 @@
-import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import MagicMock, patch
+
+import pytest
 import requests
-from google.auth.exceptions import DefaultCredentialsError, RefreshError
+from google.auth.exceptions import RefreshError
+
 from bioforklift.terra import TerraClient
 from bioforklift.terra.exceptions import (
-    TerraAPIError,
     TerraAuthenticationError,
     TerraConnectionError,
-    TerraBadRequestError,
     TerraNotFoundError,
-    TerraPermissionError,
     TerraServerError,
 )
 
@@ -18,7 +17,7 @@ from bioforklift.terra.exceptions import (
 @pytest.fixture
 def terra_client():
     """Create a TerraClient with default test parameters"""
-    with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_creds:
+    with patch("bioforklift.terra.TerraClient._get_default_credentials") as mock_creds:
         mock_creds.return_value = MagicMock()
         client = TerraClient(
             source_workspace="test-workspace",
@@ -42,13 +41,15 @@ def mock_response():
 class TestTerraClient:
     def test_init_with_defaults(self):
         """Test initialization with default parameters"""
-        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_default_credentials"
+        ) as mock_creds:
             mock_creds.return_value = MagicMock()
             client = TerraClient(
                 source_workspace="test-workspace",
                 source_project="test-project",
             )
-            
+
             assert client.source_workspace == "test-workspace"
             assert client.source_project == "test-project"
             assert client.destination_workspace == "test-workspace"
@@ -60,7 +61,9 @@ class TestTerraClient:
 
     def test_init_with_all_params(self):
         """Test initialization with all parameters specified"""
-        with patch('bioforklift.terra.TerraClient._get_credentials_from_json') as mock_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_credentials_from_json"
+        ) as mock_creds:
             mock_creds.return_value = MagicMock()
             client = TerraClient(
                 source_workspace="src-workspace",
@@ -69,9 +72,9 @@ class TestTerraClient:
                 destination_project="dest-project",
                 google_credentials_json="path/to/creds.json",
                 firecloud_api_url="https://custom.api.org/api/",
-                token_audience="https://custom.audience"
+                token_audience="https://custom.audience",
             )
-            
+
             assert client.source_workspace == "src-workspace"
             assert client.source_project == "src-project"
             assert client.destination_workspace == "dest-workspace"
@@ -84,176 +87,204 @@ class TestTerraClient:
         """Test getting a cached token"""
         # Token is already set in the fixture
         token = terra_client._get_token()
-        
+
         assert token == "mock-token"
         # Ensure refresh wasn't called
         terra_client._credentials.refresh.assert_not_called()
 
     def test_get_token_fetch_id_token_success(self):
         """Test fetching a new ID token successfully"""
-        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_default_credentials"
+        ) as mock_get_creds:
             mock_credentials = MagicMock()
             mock_get_creds.return_value = mock_credentials
-            
+
             client = TerraClient(
                 source_workspace="test-workspace",
                 source_project="test-project",
             )
-            
+
             # Mock the fetch_id_token function
-            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+            with patch("google.oauth2.id_token.fetch_id_token") as mock_fetch_id_token:
                 mock_fetch_id_token.return_value = "id-token-123"
-                
+
                 token = client._get_token()
-                
+
                 assert token == "id-token-123"
                 mock_fetch_id_token.assert_called_once()
                 mock_credentials.refresh.assert_not_called()
 
     def test_get_token_service_account_fallback(self):
         """Test fallback to regular token flow when ID token fetch fails for service account"""
-        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_default_credentials"
+        ) as mock_get_creds:
             # Create a mock service account credential
             mock_credentials = MagicMock()
             mock_credentials.service_account_email = "service-account@example.com"
             mock_credentials.token = "fallback-access-token"
-            mock_credentials.id_token = "fallback-id-token"  # Service account has id_token
+            mock_credentials.id_token = (
+                "fallback-id-token"  # Service account has id_token
+            )
             mock_credentials.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
             mock_get_creds.return_value = mock_credentials
-            
+
             client = TerraClient(
                 source_workspace="test-workspace",
                 source_project="test-project",
             )
-            
+
             # Mock id_token.fetch_id_token to fail
-            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+            with patch("google.oauth2.id_token.fetch_id_token") as mock_fetch_id_token:
                 mock_fetch_id_token.side_effect = Exception("ID token fetch failed")
-                
+
                 # Execute the function
                 token = client._get_token()
-                
+
                 # Verify results
-                assert token == "fallback-id-token"  # Should use id_token from credentials
+                assert (
+                    token == "fallback-id-token"
+                )  # Should use id_token from credentials
                 mock_fetch_id_token.assert_called_once()
                 mock_credentials.refresh.assert_called_once()
-                
+
     def test_get_token_service_account_success(self):
         """Test successful ID token fetch for service account credentials"""
-        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_default_credentials"
+        ) as mock_get_creds:
             # Create a mock service account credential
             mock_credentials = MagicMock()
             mock_credentials.service_account_email = "service-account@example.com"
             mock_get_creds.return_value = mock_credentials
-            
+
             client = TerraClient(
                 source_workspace="test-workspace",
                 source_project="test-project",
             )
-            
+
             # Mock transport.requests.Request
             mock_request = MagicMock()
-            with patch('google.auth.transport.requests.Request', return_value=mock_request):
+            with patch(
+                "google.auth.transport.requests.Request", return_value=mock_request
+            ):
                 # Mock id_token.fetch_id_token
-                with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+                with patch(
+                    "google.oauth2.id_token.fetch_id_token"
+                ) as mock_fetch_id_token:
                     mock_fetch_id_token.return_value = "service-account-id-token"
-                    
+
                     # Execute the function
                     token = client._get_token()
-                    
+
                     # Verify results
                     assert token == "service-account-id-token"
-                    mock_fetch_id_token.assert_called_once_with(mock_request, client.token_audience)
+                    mock_fetch_id_token.assert_called_once_with(
+                        mock_request, client.token_audience
+                    )
                     # The regular refresh should not be called
                     mock_credentials.refresh.assert_not_called()
-                    
+
                     # Check the token expiry was set
                     assert client._token_expiry is not None
                     assert client._token_expiry > datetime.now(timezone.utc)
-                    
+
     def test_get_token_refresh_failure(self):
         """Test failure during token refresh"""
-        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_default_credentials"
+        ) as mock_get_creds:
             mock_credentials = MagicMock()
             mock_credentials.refresh.side_effect = RefreshError("Refresh failed")
             mock_get_creds.return_value = mock_credentials
-            
+
             client = TerraClient(
                 source_workspace="test-workspace",
                 source_project="test-project",
             )
-            
+
             # Mock the fetch_id_token function to fail
-            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+            with patch("google.oauth2.id_token.fetch_id_token") as mock_fetch_id_token:
                 mock_fetch_id_token.side_effect = Exception("ID token fetch failed")
-                
+
                 with pytest.raises(TerraAuthenticationError) as exc_info:
                     client._get_token()
-                
+
                 # The error message comes from the refresh failure, not the general failure
                 assert "Failed to refresh authentication token" in str(exc_info.value)
 
     def test_get_token_with_id_token_attribute(self):
         """Test when credentials have id_token attribute"""
-        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_default_credentials"
+        ) as mock_get_creds:
             mock_credentials = MagicMock()
             mock_credentials.id_token = "credential-id-token"
             mock_credentials.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
             mock_get_creds.return_value = mock_credentials
-            
+
             client = TerraClient(
                 source_workspace="test-workspace",
                 source_project="test-project",
             )
-            
+
             # Mock the fetch_id_token function to fail
-            with patch('google.oauth2.id_token.fetch_id_token') as mock_fetch_id_token:
+            with patch("google.oauth2.id_token.fetch_id_token") as mock_fetch_id_token:
                 mock_fetch_id_token.side_effect = Exception("ID token fetch failed")
-                
+
                 token = client._get_token()
-                
+
                 assert token == "credential-id-token"
                 mock_credentials.refresh.assert_called_once()
 
     def test_headers(self, terra_client):
         """Test header generation"""
         headers = terra_client._headers
-        
+
         assert headers["Authorization"] == "Bearer mock-token"
         assert headers["Accept"] == "*/*"
 
     def test_build_firecloud_url_source(self, terra_client):
         """Test building API URL for source workspace"""
         url = terra_client._build_firecloud_url("entities")
-        
-        assert url == "https://api.firecloud.org/api/workspaces/test-project/test-workspace/entities"
+
+        assert (
+            url
+            == "https://api.firecloud.org/api/workspaces/test-project/test-workspace/entities"
+        )
 
     def test_build_firecloud_url_destination(self, terra_client):
         """Test building API URL for destination workspace"""
         # Set different destination
         terra_client.destination_workspace = "dest-workspace"
         terra_client.destination_project = "dest-project"
-        
+
         url = terra_client._build_firecloud_url("entities", use_destination=True)
-        
-        assert url == "https://api.firecloud.org/api/workspaces/dest-project/dest-workspace/entities"
+
+        assert (
+            url
+            == "https://api.firecloud.org/api/workspaces/dest-project/dest-workspace/entities"
+        )
 
     def test_handle_response_error_json(self):
         """Test handling error response with JSON body"""
-        with patch('bioforklift.terra.TerraClient._get_default_credentials') as mock_get_creds:
+        with patch(
+            "bioforklift.terra.TerraClient._get_default_credentials"
+        ) as mock_get_creds:
             mock_get_creds.return_value = MagicMock()
             client = TerraClient(
                 source_workspace="test-workspace",
                 source_project="test-project",
             )
-            
+
             mock_response = MagicMock()
             mock_response.status_code = 404
             mock_response.json.return_value = {"message": "Resource not found"}
-            
+
             with pytest.raises(TerraNotFoundError) as exc_info:
                 client._handle_response_error(mock_response)
-            
+
             assert "Resource not found" in str(exc_info.value)
             assert exc_info.value.status_code == 404
 
@@ -262,24 +293,24 @@ class TestTerraClient:
         # Token is set in fixture
         assert terra_client._token == "mock-token"
         assert terra_client._token_expiry is not None
-        
+
         terra_client.reset_auth_cache()
-        
+
         assert terra_client._token is None
         assert terra_client._token_expiry is None
 
     def test_get(self, terra_client, mock_response):
         """Test GET request wrapper"""
-        with patch.object(terra_client, '_http_request') as mock_http_request:
+        with patch.object(terra_client, "_http_request") as mock_http_request:
             mock_http_request.return_value = mock_response
-            
+
             response = terra_client.get(
                 endpoint="entities",
                 params={"page": 1},
                 stream=True,
                 use_destination=False,
             )
-            
+
             assert response == mock_response
             mock_http_request.assert_called_once_with(
                 "GET",
@@ -291,12 +322,12 @@ class TestTerraClient:
 
     def test_post(self, terra_client, mock_response):
         """Test POST request wrapper"""
-        with patch.object(terra_client, '_http_request') as mock_http_request:
+        with patch.object(terra_client, "_http_request") as mock_http_request:
             mock_http_request.return_value = mock_response
-            
+
             data = {"name": "test-entity"}
             files = {"file": ("test.txt", b"content")}
-            
+
             response = terra_client.post(
                 endpoint="entities",
                 data=data,
@@ -304,7 +335,7 @@ class TestTerraClient:
                 params={"validate": True},
                 use_destination=True,
             )
-            
+
             assert response == mock_response
             mock_http_request.assert_called_once_with(
                 "POST",
@@ -317,23 +348,19 @@ class TestTerraClient:
 
     def test_http_request_with_timeout(self, terra_client):
         """Test _http_request with custom timeout"""
-        with patch('requests.request') as mock_request:
+        with patch("requests.request") as mock_request:
             mock_response = MagicMock()
             mock_response.ok = True
             mock_request.return_value = mock_response
 
-            terra_client._http_request(
-                "GET",
-                "entities",
-                timeout=(60, 600)
-            )
+            terra_client._http_request("GET", "entities", timeout=(60, 600))
 
             mock_request.assert_called_once()
             assert mock_request.call_args[1]["timeout"] == (60, 600)
 
     def test_http_request_default_timeout(self, terra_client):
         """Test _http_request uses default timeout"""
-        with patch('requests.request') as mock_request:
+        with patch("requests.request") as mock_request:
             mock_response = MagicMock()
             mock_response.ok = True
             mock_request.return_value = mock_response
@@ -345,8 +372,8 @@ class TestTerraClient:
 
     def test_http_request_retry_on_502(self, terra_client):
         """Test _http_request retries on 502 error"""
-        with patch('requests.request') as mock_request:
-            with patch('time.sleep'):  # Mock sleep to speed up test
+        with patch("requests.request") as mock_request:
+            with patch("time.sleep"):  # Mock sleep to speed up test
                 # First call returns 502, second succeeds
                 mock_502_response = MagicMock()
                 mock_502_response.ok = False
@@ -365,8 +392,8 @@ class TestTerraClient:
 
     def test_http_request_retry_exhausted_on_502(self, terra_client):
         """Test _http_request raises error after max retries on 502"""
-        with patch('requests.request') as mock_request:
-            with patch('time.sleep'):  # Mock sleep to speed up test
+        with patch("requests.request") as mock_request:
+            with patch("time.sleep"):  # Mock sleep to speed up test
                 # All calls return 502
                 mock_502_response = MagicMock()
                 mock_502_response.ok = False
@@ -383,15 +410,15 @@ class TestTerraClient:
 
     def test_http_request_retry_on_connection_error(self, terra_client):
         """Test _http_request retries on connection error"""
-        with patch('requests.request') as mock_request:
-            with patch('time.sleep'):
+        with patch("requests.request") as mock_request:
+            with patch("time.sleep"):
                 # First call raises ConnectionError, second succeeds
                 mock_success_response = MagicMock()
                 mock_success_response.ok = True
 
                 mock_request.side_effect = [
                     requests.ConnectionError("Connection failed"),
-                    mock_success_response
+                    mock_success_response,
                 ]
 
                 response = terra_client._http_request("GET", "entities")
@@ -401,8 +428,8 @@ class TestTerraClient:
 
     def test_http_request_retry_exhausted_on_connection_error(self, terra_client):
         """Test _http_request raises error after max retries on connection error"""
-        with patch('requests.request') as mock_request:
-            with patch('time.sleep'):
+        with patch("requests.request") as mock_request:
+            with patch("time.sleep"):
                 mock_request.side_effect = requests.ConnectionError("Connection failed")
 
                 with pytest.raises(TerraConnectionError) as exc_info:
@@ -413,15 +440,15 @@ class TestTerraClient:
 
     def test_http_request_retry_on_timeout(self, terra_client):
         """Test _http_request retries on timeout"""
-        with patch('requests.request') as mock_request:
-            with patch('time.sleep'):
+        with patch("requests.request") as mock_request:
+            with patch("time.sleep"):
                 # First call raises Timeout, second succeeds
                 mock_success_response = MagicMock()
                 mock_success_response.ok = True
 
                 mock_request.side_effect = [
                     requests.Timeout("Request timed out"),
-                    mock_success_response
+                    mock_success_response,
                 ]
 
                 response = terra_client._http_request("GET", "entities")
@@ -431,7 +458,7 @@ class TestTerraClient:
 
     def test_http_request_no_retry_on_404(self, terra_client):
         """Test _http_request does not retry on 404 error"""
-        with patch('requests.request') as mock_request:
+        with patch("requests.request") as mock_request:
             mock_404_response = MagicMock()
             mock_404_response.ok = False
             mock_404_response.status_code = 404

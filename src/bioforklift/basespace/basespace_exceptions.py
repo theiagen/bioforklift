@@ -1,37 +1,45 @@
 from typing import Any, Dict, Optional, Type
 
+
 class BaseSpaceError(Exception):
     """Base exception for BaseSpace-related errors."""
+
     pass
 
 
 class BaseSpaceConnectionError(BaseSpaceError):
     """Raised when connection to BaseSpace fails."""
+
     pass
 
 
 class BaseSpaceTimeoutError(BaseSpaceConnectionError):
     """Raised when a request to BaseSpace times out."""
+
     pass
 
 
 class BaseSpaceInvalidResponseError(BaseSpaceError):
     """Raised when a response body could not be parsed as expected JSON."""
+
     pass
 
 
 class BaseSpaceCollectionIdError(BaseSpaceError):
     """Raised when a collection ID cannot be resolved to a single project/run."""
+
     pass
 
 
 class BaseSpaceDatasetError(BaseSpaceError):
     """Raised when a sample resolves to no datasets, or to more than one (ambiguous)."""
+
     pass
 
 
 class BaseSpaceMissingReadError(BaseSpaceError):
     """Raised when a dataset is not paired-end, or is paired-end but an unexpected number of reads are present."""
+
     pass
 
 
@@ -40,6 +48,7 @@ class BaseSpaceDownloadError(BaseSpaceError):
     Raised when a downloaded file fails an integrity check: the number of bytes
     written does not match the file's expected `Size`.
     """
+
     pass
 
 
@@ -64,27 +73,33 @@ class BaseSpaceAPIError(BaseSpaceError):
 
 class BaseSpaceBadRequestError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 400."""
+
     pass
 
 
 class BaseSpaceAuthenticationError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 401."""
+
     pass
 
 
 class BaseSpaceForbiddenError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 403."""
+
     pass
 
 
 class BaseSpaceNotFoundError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 404."""
+
     pass
 
 
 class BaseSpaceServerError(BaseSpaceAPIError):
     """Raised when BaseSpace returns 500."""
+
     pass
+
 
 # Maps HTTP status codes to their most specific exception class. Any status
 # not listed falls back to the generic BaseSpaceAPIError.
@@ -95,6 +110,7 @@ _ERROR_MAPPING: Dict[int, Type[BaseSpaceAPIError]] = {
     404: BaseSpaceNotFoundError,
     500: BaseSpaceServerError,
 }
+
 
 def api_error_for_status(
     message: str,

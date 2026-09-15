@@ -1,8 +1,10 @@
+from unittest.mock import Mock
+
+import pandas as pd
 import pytest
-from unittest.mock import MagicMock, Mock
+
 from bioforklift.terra import TerraEntities
 from bioforklift.terra.exceptions import TerraNotFoundError
-import pandas as pd
 
 
 @pytest.fixture
@@ -148,7 +150,10 @@ class TestDownloadTable:
         page1_response = Mock(
             json=lambda: {
                 "results": [
-                    {"name": f"sample{i}", "attributes": {"value1": f"v1_{i}", "value2": f"v2_{i}"}}
+                    {
+                        "name": f"sample{i}",
+                        "attributes": {"value1": f"v1_{i}", "value2": f"v2_{i}"},
+                    }
                     for i in range(1, 101)
                 ]
             }
@@ -156,7 +161,10 @@ class TestDownloadTable:
         page2_response = Mock(
             json=lambda: {
                 "results": [
-                    {"name": f"sample{i}", "attributes": {"value1": f"v1_{i}", "value2": f"v2_{i}"}}
+                    {
+                        "name": f"sample{i}",
+                        "attributes": {"value1": f"v1_{i}", "value2": f"v2_{i}"},
+                    }
                     for i in range(101, 151)
                 ]
             }
@@ -249,7 +257,6 @@ class TestGetEntities:
         assert len(result) == 2
         assert result[0]["name"] == "sample1_row"
         assert result[1]["name"] == "sample2_row"
-
 
     def test_get_entities_not_found(self, data_ops, mock_terra_client):
         """Test that a TerraNotFoundError from the client propagates out"""

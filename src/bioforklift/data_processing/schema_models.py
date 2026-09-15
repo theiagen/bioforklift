@@ -1,6 +1,7 @@
-from typing import Optional, List, Union, Dict, Any
-from pydantic import BaseModel, Field, field_validator
 import re
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class FieldAttributes(BaseModel):
@@ -11,49 +12,43 @@ class FieldAttributes(BaseModel):
     """
 
     # Field identification and classification
-    primary_key: bool = Field(default=False, description="Field is a primary key (auto-generated UUID)")
+    primary_key: bool = Field(
+        default=False, description="Field is a primary key (auto-generated UUID)"
+    )
 
     # Data processing attributes
     column_mappings: Optional[List[str]] = Field(
-        default=None,
-        description="Source column names to map to this field"
+        default=None, description="Source column names to map to this field"
     )
     use_field_name: bool = Field(
-        default=False,
-        description="Use the field name as-is without mapping"
+        default=False, description="Use the field name as-is without mapping"
     )
 
     # Validation attributes
     accepted_pattern: Optional[str] = Field(
-        default=None,
-        description="Regex pattern for field value validation"
+        default=None, description="Regex pattern for field value validation"
     )
-    required: bool = Field(
-        default=False,
-        description="Field is required"
-    )
+    required: bool = Field(default=False, description="Field is required")
 
     # System fields
     system_value: bool = Field(
         default=False,
-        description="System-generated value (should be dropped before Terra upload)"
+        description="System-generated value (should be dropped before Terra upload)",
     )
 
     # Display and formatting
     use_as_prefix: bool = Field(
-        default=False,
-        description="Use this field value as a prefix"
+        default=False, description="Use this field value as a prefix"
     )
     display_for_alerts: bool = Field(
-        default=False,
-        description="Display this field in alerts"
+        default=False, description="Display this field in alerts"
     )
     date_format: Optional[str] = Field(
         default=None,
-        description="Date format specification for date/string coercion (e.g., 'ISO 8601')"
+        description="Date format specification for date/string coercion (e.g., 'ISO 8601')",
     )
 
-    @field_validator('accepted_pattern')
+    @field_validator("accepted_pattern")
     @classmethod
     def validate_pattern(cls, v: Optional[str]) -> Optional[str]:
         """Validate that pattern is a valid regex."""
@@ -64,9 +59,11 @@ class FieldAttributes(BaseModel):
                 raise ValueError(f"Invalid regex pattern: {e}")
         return v
 
-    @field_validator('column_mappings')
+    @field_validator("column_mappings")
     @classmethod
-    def normalize_column_mappings(cls, v: Optional[Union[str, List[str]]]) -> Optional[List[str]]:
+    def normalize_column_mappings(
+        cls, v: Optional[Union[str, List[str]]]
+    ) -> Optional[List[str]]:
         """Normalize column_mappings to always be a list."""
         if v is None:
             return None
@@ -74,7 +71,7 @@ class FieldAttributes(BaseModel):
             return [v]
         return v
 
-    @field_validator('date_format')
+    @field_validator("date_format")
     @classmethod
     def validate_date_format(cls, v: Optional[str]) -> Optional[str]:
         """Validate that date_format is a recognized format."""
@@ -84,18 +81,18 @@ class FieldAttributes(BaseModel):
         # Define supported date format identifiers - can be expanded as needed, but these are knowns
         # from our lab partners
         supported_formats = {
-            'ISO 8601',
-            'ISO8601',
-            'RFC 3339',
-            'RFC3339',
-            'YYYY-MM-DD',
-            'MM/DD/YYYY',
-            'DD/MM/YYYY',
-            'YYYY/MM/DD',
+            "ISO 8601",
+            "ISO8601",
+            "RFC 3339",
+            "RFC3339",
+            "YYYY-MM-DD",
+            "MM/DD/YYYY",
+            "DD/MM/YYYY",
+            "YYYY/MM/DD",
         }
 
         # Allow either exact match or strftime format strings
-        if v in supported_formats or '%' in v:
+        if v in supported_formats or "%" in v:
             return v
 
         raise ValueError(
@@ -122,41 +119,35 @@ class SampleFieldAttributes(FieldAttributes):
 
     # Sample identification
     sample_identifier: bool = Field(
-        default=False,
-        description="Field uniquely identifies samples"
+        default=False, description="Field uniquely identifies samples"
     )
 
     # Metadata and synchronization
-    metadata: bool = Field(
-        default=False,
-        description="Field contains metadata"
-    )
+    metadata: bool = Field(default=False, description="Field contains metadata")
     sync_field: bool = Field(
-        default=False,
-        description="Field should be synchronized to Terra"
+        default=False, description="Field should be synchronized to Terra"
     )
 
     # File and sequence attributes
     sequence_file: bool = Field(
-        default=False,
-        description="Field contains sequence file path"
+        default=False, description="Field contains sequence file path"
     )
 
     # Configuration inheritance
     inherit_from_config: Optional[str] = Field(
-        default=None,
-        description="Configuration field to inherit value from"
+        default=None, description="Configuration field to inherit value from"
     )
-    
+
     # Configuration identification for samples
     configuration_identifier: bool = Field(
-        default=False,
-        description="Field uniquely identifies configurations"
+        default=False, description="Field uniquely identifies configurations"
     )
 
     def is_identifier_field(self) -> bool:
         """Check if this field is any type of identifier."""
-        return self.primary_key or self.sample_identifier or self.configuration_identifier
+        return (
+            self.primary_key or self.sample_identifier or self.configuration_identifier
+        )
 
     def should_sync(self) -> bool:
         """Check if this field should be synchronized to Terra."""
@@ -172,11 +163,11 @@ class ConfigFieldAttributes(FieldAttributes):
 
     terra_method_config: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
-        description="Field is part of Terra method configuration (JSON string or dict)"
+        description="Field is part of Terra method configuration (JSON string or dict)",
     )
     single_datatable: bool = Field(
         default=False,
-        description="Indicates if source and destination datatables are the same (skips upload step)"
+        description="Indicates if source and destination datatables are the same (skips upload step)",
     )
 
 
@@ -187,13 +178,14 @@ class FieldDefinition(BaseModel):
 
     name: str = Field(description="Field name")
     field_type: str = Field(description="BigQuery field type (STRING, INTEGER, etc.)")
-    mode: str = Field(default="NULLABLE", description="Field mode (REQUIRED, NULLABLE, REPEATED)")
+    mode: str = Field(
+        default="NULLABLE", description="Field mode (REQUIRED, NULLABLE, REPEATED)"
+    )
     description: Optional[str] = Field(default=None, description="Field description")
 
     # Custom attributes
     attributes: FieldAttributes = Field(
-        default_factory=FieldAttributes,
-        description="Custom processing attributes"
+        default_factory=FieldAttributes, description="Custom processing attributes"
     )
 
     def has_pattern(self) -> bool:
@@ -230,27 +222,17 @@ class SchemaDefinition(BaseModel):
     def get_identifier_fields(self) -> List[FieldDefinition]:
         """Get all identifier fields."""
         return [
-            field for field in self.fields
-            if field.attributes.is_identifier_field()
+            field for field in self.fields if field.attributes.is_identifier_field()
         ]
 
     def get_pattern_fields(self) -> List[FieldDefinition]:
         """Get all fields with validation patterns."""
-        return [
-            field for field in self.fields
-            if field.has_pattern()
-        ]
+        return [field for field in self.fields if field.has_pattern()]
 
     def get_sync_fields(self) -> List[FieldDefinition]:
         """Get all fields that should be synchronized."""
-        return [
-            field for field in self.fields
-            if field.attributes.should_sync()
-        ]
+        return [field for field in self.fields if field.attributes.should_sync()]
 
     def get_system_fields(self) -> List[FieldDefinition]:
         """Get all system-managed fields."""
-        return [
-            field for field in self.fields
-            if field.attributes.is_system_field()
-        ]
+        return [field for field in self.fields if field.attributes.is_system_field()]

@@ -1,6 +1,22 @@
 from .basespace import BaseSpace
 from .basespace_client import BaseSpaceClient
 from .basespace_endpoints import BaseSpaceEndpoints
+from .basespace_exceptions import (
+    BaseSpaceAPIError,
+    BaseSpaceAuthenticationError,
+    BaseSpaceBadRequestError,
+    BaseSpaceCollectionIdError,
+    BaseSpaceConnectionError,
+    BaseSpaceDatasetError,
+    BaseSpaceDownloadError,
+    BaseSpaceError,
+    BaseSpaceForbiddenError,
+    BaseSpaceInvalidResponseError,
+    BaseSpaceMissingReadError,
+    BaseSpaceNotFoundError,
+    BaseSpaceServerError,
+    BaseSpaceTimeoutError,
+)
 from .basespace_methods import BaseSpaceMethods
 from .basespace_models import (
     BaseSpaceResponse,
@@ -8,28 +24,12 @@ from .basespace_models import (
     DatasetFileItem,
     DatasetItem,
     DatasetType,
+    OtherItem,
     Paging,
     PagingResponse,
     ProjectItem,
-    OtherItem,
     RunItem,
     SearchItem,
-)
-from .basespace_exceptions import (
-    BaseSpaceError,
-    BaseSpaceConnectionError,
-    BaseSpaceTimeoutError,
-    BaseSpaceInvalidResponseError,
-    BaseSpaceCollectionIdError,
-    BaseSpaceDatasetError,
-    BaseSpaceMissingReadError,
-    BaseSpaceDownloadError,
-    BaseSpaceAPIError,
-    BaseSpaceBadRequestError,
-    BaseSpaceAuthenticationError,
-    BaseSpaceForbiddenError,
-    BaseSpaceNotFoundError,
-    BaseSpaceServerError,
 )
 
 __all__ = [

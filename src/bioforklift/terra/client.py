@@ -1,18 +1,21 @@
-import requests
 import time
-from typing import Optional, Dict
 from datetime import datetime, timedelta, timezone
-from bioforklift.forklift_logging import setup_logger
-from google.auth.transport import requests as google_requests
-from google.oauth2.credentials import Credentials
-from google.oauth2 import service_account, id_token
+from typing import Dict, Optional
+
+import requests
 from google.auth import default, transport
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token, service_account
+from google.oauth2.credentials import Credentials
+
+from bioforklift.forklift_logging import setup_logger
+
 from .exceptions import (
     TerraAPIError,
     TerraAuthenticationError,
-    TerraConnectionError,
     TerraBadRequestError,
+    TerraConnectionError,
     TerraNotFoundError,
     TerraPermissionError,
     TerraServerError,
@@ -251,8 +254,11 @@ class TerraClient:
 
                 if not response.ok:
                     # Check if this is a retryable server error
-                    if response.status_code in (502, 503, 504) and attempt < max_retries - 1:
-                        wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    if (
+                        response.status_code in (502, 503, 504)
+                        and attempt < max_retries - 1
+                    ):
+                        wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
                         logger.warning(
                             f"Request to {method} {response.url} failed with status {response.status_code}, "
                             f"retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
@@ -273,8 +279,10 @@ class TerraClient:
                     f"Failed to connect to Terra Firecloud API: {str(connection_error)}"
                 )
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
-                    logger.warning(f"Connection error, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Connection error, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(wait_time)
                     continue
                 raise last_exception from connection_error
@@ -283,8 +291,10 @@ class TerraClient:
                     f"Request to Terra Firecloud API timed out: {str(timeout_error)}"
                 )
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
-                    logger.warning(f"Timeout error, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Timeout error, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(wait_time)
                     continue
                 raise last_exception from timeout_error
