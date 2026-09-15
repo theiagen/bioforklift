@@ -1,0 +1,7 @@
+# A stale wheel here gets copied into the builder stage, survives `poetry build`,
+# and makes `pip install /tmp/*.whl` resolve two versions of bioforklift at once.
+dist/
+
+.git/
+.pytest_cache/
+*.log
