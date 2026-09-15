@@ -534,11 +534,11 @@ def generate_markdown_log(wf_submissions_log: dict) -> None:
     for wf_name, submissions in wf_submissions_log.items():
         # if there are greater than 1 submission, nest it
         if len(submissions) > 1:
-            output_str += f"- [] {wf_name}\n"
+            output_str += f"- [ ] {wf_name}\n"
             for entity, url in submissions:
-                output_str += f"  - [] [{entity}]({url})\n"
+                output_str += f"  - [ ] [{entity}]({url})\n"
         else:
-            output_str += f"- [] [{wf_name}]({submissions[0][1]})\n"
+            output_str += f"- [ ] [{wf_name}]({submissions[0][1]})\n"
     print(f"Markdown checklist:\n\n{output_str}\n")
 
 
