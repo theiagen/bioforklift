@@ -198,6 +198,7 @@ class TestUseLatestDataset:
 
         assert result == [newer]
         assert "Selecting the most recently created dataset: `ds.new`" in caplog.text
+        assert "sampleA (ds.old, DateCreated: 2026-08-10T14:12:00+00:00)" in caplog.text
 
     def test_newest_wins_regardless_of_api_order(self, make_dataset):
         # Resolution is by date, not by position in the response.
@@ -227,7 +228,7 @@ class TestUseLatestDataset:
             match_datasets_by_sample("sampleA", [first, second], use_latest_dataset=True)
 
         # The unresolvable name is called out, so a multi-lane group says which lane tied.
-        assert "share the same creation date" in str(excinfo.value)
+        assert "Cannot resolve duplicates for `sampleA`" in str(excinfo.value)
 
     def test_duplicate_lane_sibling_resolves_per_lane(self, make_dataset):
         # A duplicated lane collapses to its newest dataset; the other lanes are untouched.
@@ -289,6 +290,18 @@ class TestUseLatestDataset:
         assert match_datasets_by_sample(
             "NA12878-3_4", lanes, group_by_lane=True, use_latest_dataset=True
         ) == lanes
+
+    def test_exact_match_ignores_duplicate_lane_siblings(self, make_dataset, caplog):
+        # Siblings are never returned when an exact match exists, so their duplicates must not raise.
+        exact = make_dataset("ds.s", "NA12878-3_4", date_created=self.OLD_TIME)
+        l1_old = make_dataset("ds.l1old", "NA12878-3_4_L001", date_created=self.OLD_TIME)
+        l1_new = make_dataset("ds.l1new", "NA12878-3_4_L001", date_created=self.NEW_TIME)
+
+        with caplog.at_level("WARNING"):
+            result = match_datasets_by_sample("NA12878-3_4", [exact, l1_old, l1_new])
+
+        assert result == [exact]
+        assert "will not be grouped together" in caplog.text
 
     def test_flag_does_not_bypass_other_guards(self, make_dataset):
         # use_latest_dataset only resolves duplicates; it does not relax lane grouping.

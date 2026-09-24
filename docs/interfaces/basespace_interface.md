@@ -619,8 +619,9 @@ basespace.methods.fetch_sample_fastqs(
     dest_dir=Path("/data/fastqs"),
     use_latest_dataset=True,
 )
-# Logs: Duplicate datasets (n=2) found for `NDF_Ecoli_1`;
-#       resolved to `ds.123456` (created 2026-08-12T09:03:00+00:00) via use_latest_dataset=True
+# Logs: Duplicate datasets (n=2) named `NDF_Ecoli_1` found for sample `NDF_Ecoli_1`:
+#       NDF_Ecoli_1 (ds.123455, DateCreated: 2026-08-10T14:12:00+00:00); NDF_Ecoli_1 (ds.123456, DateCreated: 2026-08-12T09:03:00+00:00).
+#       Selecting the most recently created dataset: `ds.123456` (DateCreated: 2026-08-12T09:03:00+00:00) via `use_latest_dataset`=True.
 ```
 
 ```python
