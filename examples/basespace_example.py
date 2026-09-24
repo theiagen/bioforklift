@@ -23,6 +23,7 @@ def main():
         validate_paired_end=True,      # default = True
         validate_lane_naming=False,    # default = False
         group_by_lane=False,           # default = False
+        use_latest_dataset=False,      # default = False
         dry_run=True,                  # default = False
     )
 
