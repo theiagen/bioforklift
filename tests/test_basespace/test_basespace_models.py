@@ -59,6 +59,23 @@ class TestDatasetParsing:
         assert attrs.total_clusters_pf == 38503
         assert attrs.total_reads_pf == 77006
 
+    def test_date_created_parses_basespace_timestamp(self):
+        # BaseSpace reports 7 fractional digits and a `Z` suffix; both parse to an aware UTC datetime.
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "S", "DateCreated": "2026-08-10T14:12:00.0000000Z"}
+        )
+        assert item.date_created == datetime(2026, 8, 10, 14, 12, tzinfo=timezone.utc)
+
+    def test_date_created_orders_by_recency(self):
+        # Two timestamps compare directly, which is what duplicate resolution relies on.
+        older = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "S", "DateCreated": "2026-08-10T14:12:00.0000000Z"}
+        )
+        newer = DatasetItem.model_validate(
+            {"Id": "ds.2", "Name": "S", "DateCreated": "2026-08-12T09:03:00.0000000Z"}
+        )
+        assert max(older.date_created, newer.date_created) == newer.date_created
+
     def test_dataset_type_conforms_to_ids_defaults_empty(self):
         # ConformsToIds is optional: absent -> empty list; present -> parsed.
         without = DatasetItem.model_validate(
