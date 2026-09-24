@@ -194,7 +194,7 @@ def _resolve_duplicate_datasets(
 
     # Create a list of strings describing the duplicate datasets for error messages
     dupe_details = "; ".join(
-        f"{ds_item.id} (created {ds_item.date_created.isoformat()})"
+        f"{ds_item.name} ({ds_item.id}, DateCreated: {ds_item.date_created.isoformat()})"
         for ds_item in dupes
     )
 
@@ -221,9 +221,13 @@ def _resolve_duplicate_datasets(
 
         # Log the resolution of duplicates to the most recent dataset
         if len(ds_group) > 1:
+            group_details = "; ".join(
+                f"{ds_item.name} ({ds_item.id}, DateCreated: {ds_item.date_created.isoformat()})"
+                for ds_item in ds_group
+            )
             logger.info(
-                f"Duplicate datasets (n={len(ds_group)}) named `{name}` found for sample `{sample}`. "
-                f"Selecting the most recently created dataset: `{latest_ds_items[0].id}` (created {latest_date_created.isoformat()}) "
+                f"Duplicate datasets (n={len(ds_group)}) named `{name}` found for sample `{sample}`: {group_details}. "
+                f"Selecting the most recently created dataset: `{latest_ds_items[0].id}` (DateCreated: {latest_date_created.isoformat()}) "
                 f"via `use_latest_dataset`=True."
             )
         resolved_ds_items.append(latest_ds_items[0])
@@ -231,7 +235,7 @@ def _resolve_duplicate_datasets(
     if insoluble_dupes:
         raise BaseSpaceDatasetError(
             f"Duplicate datasets (n={len(dupes)}) found for sample `{sample}`: {dupe_details}. "
-            f"Cannot resolve duplicates for {insoluble_dupes} because they share the same creation date. "
+            f"Cannot resolve duplicates for {', '.join(f'`{name}`' for name in insoluble_dupes)} because they share the same creation date. "
             f"Remove the duplicate datasets in BaseSpace or provide a more specific sample name."
         )
     return resolved_ds_items
