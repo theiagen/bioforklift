@@ -154,6 +154,88 @@ def filter_dataset_types(
     )
     return filtered
 
+def _resolve_duplicate_datasets(
+    sample: str,
+    ds_items: List[DatasetItem],
+    use_latest_dataset: bool = False,
+) -> List[DatasetItem]:
+    """
+    Checks for duplicate datasets that share the exact same name. Resolves them based on the
+    `use_latest_dataset` flag. If False, raises an error if any name is duplicated, and the
+    user must resolve the ambiguity. If True, returns only the dataset(s) with the most recent
+    `DateCreated` attribute.
+
+    Args:
+        sample: The requested sample name, (only used for error messages)
+        ds_items: The candidate datasets to sort through
+        use_latest_dataset: If True, keep the most recently created dataset per name.
+
+    Returns:
+        `ds_items` with duplicates resolved to the most recent dataset per name, if `use_latest_dataset` is True.
+
+    Raises:
+        BaseSpaceDatasetError: If a name is duplicated and `use_latest_dataset` is False, or if two duplicates
+        share the same `DateCreated`.
+    """
+    # Group DatasetItems by name
+    ds_map: Dict[str, List[DatasetItem]] = defaultdict(list)
+    for ds_item in ds_items:
+        ds_map[ds_item.name].append(ds_item)
+
+    # Grab list of duplicate DatasetItems
+    dupes: List[DatasetItem] = [
+        ds_item for ds_group in ds_map.values()
+        if len(ds_group) > 1
+        for ds_item in ds_group
+    ]
+
+    if not dupes:
+        return ds_items
+
+    # Create a list of strings describing the duplicate datasets for error messages
+    dupe_details = "; ".join(
+        f"{ds_item.id} (created {ds_item.date_created.isoformat()})"
+        for ds_item in dupes
+    )
+
+    # Duplicates exist and the user has not requested to use_latest_dataset, raise an error
+    if not use_latest_dataset:
+        raise BaseSpaceDatasetError(
+            f"Duplicate datasets (n={len(dupes)}) found for sample `{sample}`: {dupe_details}. "
+            f"Remove the duplicate datasets in BaseSpace, provide a more specific sample name, "
+            f"or pass `use_latest_dataset`=True to use the most recently created one."
+        )
+
+    # Duplicates exist; find the DatasetItem with the most recent `DateCreated` and resolve to it, error if there's a tie
+    resolved_ds_items: List[DatasetItem] = []
+    insoluble_dupes: List[str] = []
+
+    for name, ds_group in ds_map.items():
+        latest_date_created = max(ds_item.date_created for ds_item in ds_group)
+        latest_ds_items = [ds_item for ds_item in ds_group if ds_item.date_created == latest_date_created]
+
+        # If there are still multiple datasets in this list, they share the same creation date and cannot be resolved automatically
+        if len(latest_ds_items) > 1:
+            insoluble_dupes.append(name)
+            continue
+
+        # Log the resolution of duplicates to the most recent dataset
+        if len(ds_group) > 1:
+            logger.info(
+                f"Duplicate datasets (n={len(ds_group)}) named `{name}` found for sample `{sample}`. "
+                f"Selecting the most recently created dataset: `{latest_ds_items[0].id}` (created {latest_date_created.isoformat()}) "
+                f"via `use_latest_dataset`=True."
+            )
+        resolved_ds_items.append(latest_ds_items[0])
+
+    if insoluble_dupes:
+        raise BaseSpaceDatasetError(
+            f"Duplicate datasets (n={len(dupes)}) found for sample `{sample}`: {dupe_details}. "
+            f"Cannot resolve duplicates for {insoluble_dupes} because they share the same creation date. "
+            f"Remove the duplicate datasets in BaseSpace or provide a more specific sample name."
+        )
+    return resolved_ds_items
+
 def _dataset_exact_match(
     sample: str,
     ds_items: List[DatasetItem],
