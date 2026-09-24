@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from bioforklift.basespace import (
     BaseSpaceResponse,
     CommonFastqAttributes,
@@ -60,7 +62,7 @@ class TestDatasetParsing:
     def test_dataset_type_conforms_to_ids_defaults_empty(self):
         # ConformsToIds is optional: absent -> empty list; present -> parsed.
         without = DatasetItem.model_validate(
-            {"Id": "ds.1", "Name": "S", "DatasetType": {"Id": "common.fastq"}}
+            {"Id": "ds.1", "Name": "S", "DateCreated": "2026-01-01T00:00:00.0000000Z", "DatasetType": {"Id": "common.fastq"}}
         )
         assert isinstance(without.dataset_type, DatasetType)
         assert without.dataset_type.conforms_to_ids == []
@@ -69,6 +71,7 @@ class TestDatasetParsing:
             {
                 "Id": "ds.2",
                 "Name": "S",
+                "DateCreated": "2026-01-01T00:00:00.0000000Z",
                 "DatasetType": {"Id": "illumina.fastq.v1.8", "ConformsToIds": ["common.fastq"]},
             }
         )
@@ -76,7 +79,9 @@ class TestDatasetParsing:
 
     def test_dataset_item_optional_fields_default_none(self):
         # A minimal dataset (no DatasetType/Attributes) parses with None defaults.
-        item = DatasetItem.model_validate({"Id": "ds.1", "Name": "S"})
+        item = DatasetItem.model_validate(
+            {"Id": "ds.1", "Name": "S", "DateCreated": "2026-01-01T00:00:00.0000000Z"}
+        )
         assert item.dataset_type is None
         assert item.attributes is None
 

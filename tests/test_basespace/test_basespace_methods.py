@@ -382,7 +382,10 @@ class TestFetchSampleFastqs:
         mock_methods.get_datasets.assert_called_once_with(search_item)
         wiring["filter"].assert_called_once_with([wiring["ds_item"]], ["common.fastq"])
         wiring["match"].assert_called_once_with(
-            sample="SampleA", ds_items=[wiring["ds_item"]], group_by_lane=False
+            sample="SampleA",
+            ds_items=[wiring["ds_item"]],
+            group_by_lane=False,
+            use_latest_dataset=False,
         )
         mock_methods.get_dataset_files.assert_called_once_with(wiring["ds_item"])
         wiring["validate"].assert_called_once_with(
