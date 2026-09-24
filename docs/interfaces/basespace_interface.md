@@ -530,6 +530,7 @@ fetch_sample_fastqs(
     validate_paired_end: bool = True,
     validate_lane_naming: bool = False,
     group_by_lane: bool = False,
+    use_latest_dataset: bool = False,
     dry_run: bool = False,
     progress: bool = True
 ) -> None
@@ -547,6 +548,7 @@ fetch_sample_fastqs(
 - **validate_paired_end** (bool): If True (default), require each output to be a balanced paired-end dataset group before downloading. Set False to skip the check
 - **validate_lane_naming** (bool): If True, verify that all FASTQ files being concatenated share the same lane-stripped filename before merging
 - **group_by_lane** (bool): If True, expands sample name matching to `{sample}_L###` and groups together sibling datasets so they concatenate together. Set False to require an exact match
+- **use_latest_dataset** (bool): If True, resolve datasets sharing a name to the most recently created one instead of raising. Datasets with identical `DateCreated` still raise, since they cannot be told apart
 - **dry_run** (bool): If True, log what would be downloaded/concatenated without fetching or writing any files
 - **progress** (bool): If True (default), draw the tqdm progress bar on a TTY. Set False to disable
 
@@ -606,6 +608,19 @@ basespace.methods.fetch_sample_fastqs(
     validate_lane_naming=True,
 )
 # Writes /data/fastqs/NA12878-3_4_R1.fastq.gz and NA12878-3_4_R2.fastq.gz
+```
+
+```python
+# A requeued run left two datasets named "NDF_Ecoli_1" in the same Run.
+# Without the flag this raises; with it, the newer dataset is used.
+basespace.methods.fetch_sample_fastqs(
+    collection_id="MiSeq: Nextera DNA Flex",
+    samples=["NDF_Ecoli_1"],
+    dest_dir=Path("/data/fastqs"),
+    use_latest_dataset=True,
+)
+# Logs: Duplicate datasets (n=2) found for `NDF_Ecoli_1`;
+#       resolved to `ds.123456` (created 2026-08-12T09:03:00+00:00) via use_latest_dataset=True
 ```
 
 ```python
@@ -744,7 +759,8 @@ Resolves one requested sample name to the dataset(s) that feed its output.
 match_datasets_by_sample(
     sample: str,
     ds_items: List[DatasetItem],
-    group_by_lane: bool = False
+    group_by_lane: bool = False,
+    use_latest_dataset: bool = False,
 ) -> List[DatasetItem]
 ```
 
@@ -753,10 +769,11 @@ match_datasets_by_sample(
 - **sample** (str): The requested sample name to match
 - **ds_items** (List[[DatasetItem](#class-datasetitem)]): DatasetItems to match against
 - **group_by_lane** (bool): If True, group a lane-less sample name with its `{sample}_L###` siblings. Defaults to False (an exact match is required)
+- **use_latest_dataset** (bool): If True, resolve datasets sharing a name to the most recently created one instead of raising. Defaults to False
 
 **Returns:**
 
-- The matched [DatasetItem](#class-datasetitem) objects: a single-item list for an exact match, or the lane-sibling group when `group_by_lane` is True
+- The matched [DatasetItem](#class-datasetitem) objects: a single-item list for an exact match, or the lane-sibling group (one dataset per lane) when `group_by_lane` is True
 
 Resolution follows a strict precedence:
 
@@ -765,6 +782,13 @@ Resolution follows a strict precedence:
 - When `group_by_lane` is False, a name matching only `{sample}_L###` siblings raises rather than silently grouping
 
 [BaseSpaceDatasetError](#class-basespacedataseterror) is raised if the sample matches multiple exact datasets, matches only lane siblings while `group_by_lane` is False, or matches nothing at all.
+
+!!! info "Duplicate dataset names"
+    A BaseSpace project can hold two datasets with the same name — most often because a run was requeued. Both the exact-match and lane-sibling paths reject that by default, since either would otherwise feed the same output twice.
+
+    `use_latest_dataset=True` resolves the collision to the most recently created dataset, by the `DateCreated` on [DatasetItem](#class-datasetitem). Resolution is **per name**, so a duplicated `{sample}_L001` collapses to its newest dataset while `_L002` and `_L003` are left alone. Duplicate datasets sharing identical `DateCreated` times raise an error.
+
+    The flag only resolves duplicates. It does not relax `group_by_lane` — a lane-less name matching only siblings still raises when grouping is disabled.
 
 ### `validate_paired_end_datasets`
 
@@ -1008,6 +1032,7 @@ A single entry in the `Items` list returned by the `/datasets` endpoint.
 
 - **id** (str): The dataset ID
 - **name** (str): The dataset name — this is the value matched against a requested sample name
+- **date_created** (datetime): When the dataset was created, read from `DateCreated`. Parsed as a timezone-aware UTC datetime, and used to resolve datasets sharing a name when `use_latest_dataset` is set.
 - **dataset_type** (Optional[[DatasetType](#class-datasettype)]): The dataset's type block
 - **attributes** (Optional[[CommonFastqAttributes](#class-commonfastqattributes)]): Read from the nested `Attributes.common_fastq` path; None for datasets that are not FASTQ
 
