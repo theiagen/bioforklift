@@ -243,38 +243,26 @@ def _resolve_duplicate_datasets(
 def _dataset_exact_match(
     sample: str,
     ds_items: List[DatasetItem],
-    use_latest_dataset: bool = False,
 ) -> List[DatasetItem]:
-    """Return the single DatasetItem whose name exactly matches `sample`, or an empty list."""
+    """Return every DatasetItem whose name exactly matches `sample`, or an empty list."""
 
-    match = [ds_item for ds_item in ds_items if ds_item.name == sample]
-    return _resolve_duplicate_datasets(
-        sample=sample,
-        ds_items=match,
-        use_latest_dataset=use_latest_dataset,
-    )
+    return [ds_item for ds_item in ds_items if ds_item.name == sample]
 
 def _dataset_laned_siblings(
     sample: str,
     ds_items: List[DatasetItem],
-    use_latest_dataset: bool = False,
 ) -> List[DatasetItem]:
-    """Return one `{sample}_L###` dataset per lane, excluding any dataset whose name already equals `sample`."""
+    """Return `{sample}_L###` datasets, excluding any dataset whose name already equals `sample`."""
 
     # Lane-split siblings: `{sample}_L###` datasets that would group together. The lane token
     # must be the trailing portion of the dataset name, so an in-sample `L#` isn't stripped.
     # Don't consider it a sibling if the original ds_item.name already matches
-    siblings = [
+    return [
         ds_item for ds_item in ds_items if (
             _strip_lane_token(ds_item.name) == sample
             and ds_item.name != sample
         )
     ]
-    return _resolve_duplicate_datasets(
-        sample=sample,
-        ds_items=siblings,
-        use_latest_dataset=use_latest_dataset,
-    )
 
 def match_datasets_by_sample(
     sample: str,
@@ -315,20 +303,21 @@ def match_datasets_by_sample(
     exact_match = _dataset_exact_match(
         sample=sample,
         ds_items=ds_items,
-        use_latest_dataset=use_latest_dataset,
     )
-
-    if not exact_match:
-        logger.info(f"No exact dataset match for `{sample}` found; checking for laned siblings")
 
     siblings = _dataset_laned_siblings(
         sample=sample,
         ds_items=ds_items,
-        use_latest_dataset=use_latest_dataset,
     )
 
-    # An exact dataset-name match always wins
+    # An exact dataset-name match always wins. Duplicates are resolved only for the datasets
+    # being returned, and before logging, so the logs reflect what will actually be used.
     if exact_match:
+        exact_match = _resolve_duplicate_datasets(
+            sample=sample,
+            ds_items=exact_match,
+            use_latest_dataset=use_latest_dataset,
+        )
         # warn if siblings also exist so the user knows those lanes won't be grouped into these datasets.
         if siblings:
             logger.warning(
@@ -340,6 +329,11 @@ def match_datasets_by_sample(
         return exact_match
 
     elif siblings and group_by_lane:
+        siblings = _resolve_duplicate_datasets(
+            sample=sample,
+            ds_items=siblings,
+            use_latest_dataset=use_latest_dataset,
+        )
         logger.info(
             f"Partial dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
             f"({', '.join(f'{s.name} ({s.id})' for s in siblings)}) exist and will be grouped together"
@@ -353,7 +347,7 @@ def match_datasets_by_sample(
         )
     else:
         raise BaseSpaceDatasetError(
-            f"No exact dataset match for `{sample}` found."
+            f"No exact dataset match for `{sample}` found, and no laned siblings (`{sample}_L###`) found."
         )
 
 def concatenate_dataset_files(
