@@ -2,7 +2,8 @@ import re
 import csv
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from collections import defaultdict
 
 from .basespace_exceptions import (
     BaseSpaceMissingReadError,
@@ -156,38 +157,44 @@ def filter_dataset_types(
 def _dataset_exact_match(
     sample: str,
     ds_items: List[DatasetItem],
+    use_latest_dataset: bool = False,
 ) -> List[DatasetItem]:
-    """Return the single DatasetItem whose name exactly matches `sample`, or None."""
+    """Return the single DatasetItem whose name exactly matches `sample`, or an empty list."""
 
     match = [ds_item for ds_item in ds_items if ds_item.name == sample]
-    if len(match) > 1:
-        raise BaseSpaceDatasetError(
-            f"Multiple datasets (n={len(match)}) found for sample `{sample}`: "
-            f"({', '.join(ds_item.id for ds_item in match)}). "
-            f"Remove the duplicate datasets in BaseSpace or provide a more specific sample name."
-        )
-    return match
+    return _resolve_duplicate_datasets(
+        sample=sample,
+        ds_items=match,
+        use_latest_dataset=use_latest_dataset,
+    )
 
 def _dataset_laned_siblings(
     sample: str,
     ds_items: List[DatasetItem],
+    use_latest_dataset: bool = False,
 ) -> List[DatasetItem]:
-    """Return `{sample}_L###` datasets, excluding any dataset whose name already equals `sample`."""
+    """Return one `{sample}_L###` dataset per lane, excluding any dataset whose name already equals `sample`."""
 
     # Lane-split siblings: `{sample}_L###` datasets that would group together. The lane token
     # must be the trailing portion of the dataset name, so an in-sample `L#` isn't stripped.
     # Don't consider it a sibling if the original ds_item.name already matches
-    return [
+    siblings = [
         ds_item for ds_item in ds_items if (
             _strip_lane_token(ds_item.name) == sample
             and ds_item.name != sample
         )
     ]
+    return _resolve_duplicate_datasets(
+        sample=sample,
+        ds_items=siblings,
+        use_latest_dataset=use_latest_dataset,
+    )
 
 def match_datasets_by_sample(
     sample: str,
     ds_items: List[DatasetItem],
     group_by_lane: bool = False,
+    use_latest_dataset: bool = False,
 ) -> List[DatasetItem]:
     """
     Resolve one requested sample name to the dataset(s) that feed its output.
@@ -204,23 +211,34 @@ def match_datasets_by_sample(
         ds_items: DatasetItems to match against.
         group_by_lane: If True, group a lane-less sample name with its `{sample}_L###` siblings.
             Defaults to False (an exact match is required).
+        use_latest_dataset: If True, resolve datasets sharing a name to the most recently
+            created one rather than raising. Defaults to False.
 
     Returns:
         The matched DatasetItem(s): a single-item list for an exact match, or the lane-sibling
-        group when `group_by_lane` is True.
+        group (one dataset per lane) when `group_by_lane` is True.
 
     Raises:
         BaseSpaceDatasetError: If the sample matches multiple exact datasets, matches only lane
-            siblings while `group_by_lane` is False, or matches nothing.
+            siblings while `group_by_lane` is False, or matches nothing. Duplicate names raise
+            unless `use_latest_dataset` is set, and still raise when they cannot be told apart
+            by creation date.
     """
+    logger.info(f"Matching sample `{sample}` against {len(ds_items)} dataset(s)")
+
     exact_match = _dataset_exact_match(
         sample=sample,
         ds_items=ds_items,
+        use_latest_dataset=use_latest_dataset,
     )
+
+    if not exact_match:
+        logger.info(f"No exact dataset match for `{sample}` found; checking for laned siblings")
 
     siblings = _dataset_laned_siblings(
         sample=sample,
         ds_items=ds_items,
+        use_latest_dataset=use_latest_dataset,
     )
 
     # An exact dataset-name match always wins
@@ -228,24 +246,24 @@ def match_datasets_by_sample(
         # warn if siblings also exist so the user knows those lanes won't be grouped into these datasets.
         if siblings:
             logger.warning(
-                f"Exact dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-                f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together"
+                f"Exact dataset match for `{sample}` found ({exact_match[0].id}); {len(siblings)} laned sibling(s) "
+                f"({', '.join(f'{s.name} ({s.id})' for s in siblings)}) exist, but will not be grouped together"
             )
         else:
-            logger.info(f"Exact dataset match for `{sample}` found")
+            logger.info(f"Exact dataset match for `{sample}` found ({exact_match[0].id})")
         return exact_match
 
     elif siblings and group_by_lane:
         logger.info(
             f"Partial dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-            f"({', '.join(s.name for s in siblings)}) exist and will be grouped together"
+            f"({', '.join(f'{s.name} ({s.id})' for s in siblings)}) exist and will be grouped together"
         )
         return siblings
 
     elif siblings and not group_by_lane:
         raise BaseSpaceDatasetError(
             f"Partial dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-            f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together (group_by_lane=False)"
+            f"({', '.join(f'{s.name} ({s.id})' for s in siblings)}) exist, but will not be grouped together (group_by_lane=False)"
         )
     else:
         raise BaseSpaceDatasetError(
