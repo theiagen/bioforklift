@@ -382,7 +382,10 @@ class TestFetchSampleFastqs:
         mock_methods.get_datasets.assert_called_once_with(search_item)
         wiring["filter"].assert_called_once_with([wiring["ds_item"]], ["common.fastq"])
         wiring["match"].assert_called_once_with(
-            sample="SampleA", ds_items=[wiring["ds_item"]], group_by_lane=False
+            sample="SampleA",
+            ds_items=[wiring["ds_item"]],
+            group_by_lane=False,
+            use_latest_dataset=False,
         )
         mock_methods.get_dataset_files.assert_called_once_with(wiring["ds_item"])
         wiring["validate"].assert_called_once_with(
@@ -396,6 +399,24 @@ class TestFetchSampleFastqs:
             dry_run=True,
             validate_lane_naming=False,
             remove_sources=True,
+        )
+
+    def test_use_latest_dataset_forwards_to_matcher(
+        self, mock_methods, tmp_path, monkeypatch, make_dataset, make_file
+    ):
+        # The flag is a pass-through; matching owns the duplicate-resolution behavior.
+        search_item = RunItem.model_validate({"Type": "run", "Run": {"Id": "run-1"}})
+        wiring = self._wire_pipeline(mock_methods, monkeypatch, make_dataset, make_file, search_item)
+
+        mock_methods.fetch_sample_fastqs(
+            "collA", ["SampleA"], dest_dir=tmp_path, dry_run=True, use_latest_dataset=True
+        )
+
+        wiring["match"].assert_called_once_with(
+            sample="SampleA",
+            ds_items=[wiring["ds_item"]],
+            group_by_lane=False,
+            use_latest_dataset=True,
         )
 
     def test_default_concatenates(self, mock_methods, tmp_path, monkeypatch, make_dataset, make_file):

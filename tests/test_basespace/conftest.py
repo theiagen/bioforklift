@@ -66,6 +66,7 @@ def make_dataset():
         type_id="common.fastq",
         conforms_to=("common.files",),
         paired_end=None,
+        date_created="2026-01-01T00:00:00.0000000Z",
     ):
         payload = {
             "Id": ds_id,
@@ -74,6 +75,8 @@ def make_dataset():
         }
         if paired_end is not None:
             payload["Attributes"] = {"common_fastq": {"IsPairedEnd": paired_end}}
+        if date_created is not None:
+            payload["DateCreated"] = date_created
         return DatasetItem.model_validate(payload)
 
     return _make_dataset
@@ -155,6 +158,7 @@ def bs_dataset_response():
             {
                 "Id": "ds.1232bjbfejfu23u43h24u324",
                 "Name": "My_Dataset",
+                "DateCreated": "2026-01-01T00:00:00.0000000Z",
                 "DatasetType": {
                     "Id": "common.fastq",
                     "Href": "https://api.basespace.illumina.com/v2/datasettypes/common.fastq",

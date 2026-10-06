@@ -300,6 +300,7 @@ class BaseSpaceMethods:
         validate_paired_end: bool = True,
         validate_lane_naming: bool = False,
         group_by_lane: bool = False,
+        use_latest_dataset: bool = False,
         dry_run: bool = False,
         progress: bool = True,
     ):
@@ -318,6 +319,8 @@ class BaseSpaceMethods:
             concatenate: If True, merge each dataset's FASTQ files into `{name}_R1/_R2.fastq.gz`.
             group_by_lane: If True, expands sample name matching to `{sample}_L###` and groups together
                 sibling datasets so they concatenate together. Set False to require an exact match.
+            use_latest_dataset: If True, resolve datasets sharing a name to the most recently created
+                one instead of raising.
             validate_paired_end: If True (default), require each output to be a balanced paired-end
                 dataset group before downloading. Set False to skip the check.
             validate_lane_naming: If True, verify that all FASTQ files being concatenated
@@ -330,6 +333,7 @@ class BaseSpaceMethods:
         """
 
         # Fail fast on empty/duplicate samples before any network calls.
+        samples = [sample.strip() for sample in samples]
         if not samples:
             raise BaseSpaceDatasetError("No samples provided; nothing to fetch.")
         duplicates = sorted({name for name in samples if samples.count(name) > 1})
@@ -355,6 +359,7 @@ class BaseSpaceMethods:
                 sample=sample,
                 ds_items=filtered_ds_items,
                 group_by_lane=group_by_lane,
+                use_latest_dataset=use_latest_dataset,
             )
 
             # Gather every file across the group's dataset(s) into one output unit.
@@ -370,7 +375,7 @@ class BaseSpaceMethods:
                     ds_files=ds_files,
                 )
 
-            logger.info(f"Preparing to download {len(ds_files)} FASTQ files")
+            logger.info(f"Preparing to download {len(ds_files)} FASTQ file(s)")
 
             # Download all dataset file items for each matching dataset (or log if dry_run).
             for ds_file in ds_files:
