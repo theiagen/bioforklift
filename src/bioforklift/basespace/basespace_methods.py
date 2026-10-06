@@ -333,6 +333,7 @@ class BaseSpaceMethods:
         """
 
         # Fail fast on empty/duplicate samples before any network calls.
+        samples = [sample.strip() for sample in samples]
         if not samples:
             raise BaseSpaceDatasetError("No samples provided; nothing to fetch.")
         duplicates = sorted({name for name in samples if samples.count(name) > 1})
