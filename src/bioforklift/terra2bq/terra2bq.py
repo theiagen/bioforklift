@@ -1795,6 +1795,17 @@ class Terra2BQ:
                         f"No new samples to process for configuration {config.get('id')} "
                         f"(loaded: {result.loaded_count}, filtered: {result.filtered_count})"
                     )
+                elif status == OperationStatus.NO_DATA_AFTER_CLEANUP:
+                    logger.info(
+                        "No data remaining after metadata cleanup for configuration "
+                        f"{config.get('id')}"
+                    )
+                elif status == OperationStatus.NO_UPDATES:
+                    logger.info(
+                        "No samples awaiting submission for configuration "
+                        f"{config.get('id')} (loaded: {result.loaded_count}, "
+                        f"filtered: {result.filtered_count})"
+                    )
                 else:
                     logger.warning(
                         f"Error processing configuration {config.get('id')}: {result.message}"
@@ -1835,10 +1846,22 @@ class Terra2BQ:
         no_samples_count = sum(
             1 for result in results if result.status == OperationStatus.NO_NEW_SAMPLES
         )
+        no_data_after_cleanup_count = sum(
+            1
+            for result in results
+            if result.status == OperationStatus.NO_DATA_AFTER_CLEANUP
+        )
+        no_updates_count = sum(
+            1 for result in results if result.status == OperationStatus.NO_UPDATES
+        )
 
         logger.info(
             f"Completed processing {total_configs} configurations in {int(minutes)}m {int(seconds)}s - "
-            f"Success: {success_count}, Error: {error_count}, No data: {no_data_count}, No new samples: {no_samples_count}"
+            f"Success: {success_count}, Error: {error_count}, "
+            f"No data: {no_data_count}, "
+            f"No data after cleanup: {no_data_after_cleanup_count}, "
+            f"No new samples: {no_samples_count}, "
+            f"No samples awaiting submission: {no_updates_count}"
         )
 
         return results
