@@ -621,6 +621,35 @@ def test_process_all_configs(t2bq):
     # Check sleep was called between batches (since batch_size=1)
     assert mock_sleep.call_count == 1
 
+@pytest.mark.parametrize("status", [
+    OperationStatus.NO_DATA_AFTER_CLEANUP,
+    OperationStatus.NO_UPDATES,
+])
+def test_process_all_configs_benign_status_does_not_warn(t2bq, caplog, status):
+    """Benign 'nothing to do' statuses should not be logged as errors"""
+    t2bq.get_active_configs = MagicMock(return_value=[{"id": "config1"}])
+    t2bq.process_configuration = MagicMock(return_value=ConfigProcessingResult(status=status, config_id="config1"))
+
+    with caplog.at_level("INFO", logger="bioforklift.terra2bq.terra2bq"):
+        t2bq.process_all_configs(batch_size=1, cooldown_seconds=0)
+
+    assert not any("Error processing configuration" in record.message for record in caplog.records)
+
+def test_process_all_configs_summary_counts_all_statuses(t2bq, caplog):
+    """End-of-run summary should account for every config processed"""
+    t2bq.get_active_configs = MagicMock(return_value=[{"id": "config1"}, {"id": "config2"}])
+    t2bq.process_configuration = MagicMock(side_effect=[
+        ConfigProcessingResult(status=OperationStatus.NO_DATA_AFTER_CLEANUP, config_id="config1"),
+        ConfigProcessingResult(status=OperationStatus.NO_UPDATES, config_id="config2"),
+    ])
+
+    with caplog.at_level("INFO", logger="bioforklift.terra2bq.terra2bq"):
+        t2bq.process_all_configs(batch_size=2, cooldown_seconds=0)
+
+    summary = next(record.message for record in caplog.records if record.message.startswith("Completed processing"))
+    assert "No data after cleanup: 1" in summary
+    assert "No samples awaiting submission: 1" in summary
+
 # # Test sync_metadata_for_config
 def test_sync_metadata_for_config_success(t2bq, sample_config):
     """Test successful metadata sync for one config"""
