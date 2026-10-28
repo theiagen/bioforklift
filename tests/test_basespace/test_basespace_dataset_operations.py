@@ -125,7 +125,7 @@ class TestMatchDatasetsBySample:
     def test_ambiguous_exact_raises(self, make_dataset):
         ds_a = make_dataset("ds.a", "sampleA")
         ds_a2 = make_dataset("ds.a2", "sampleA")
-        with pytest.raises(BaseSpaceDatasetError, match="Multiple datasets"):
+        with pytest.raises(BaseSpaceDatasetError, match="Duplicate datasets"):
             match_datasets_by_sample("sampleA", [ds_a, ds_a2])
 
     def test_expands_lane_group_when_enabled(self, make_dataset):
@@ -180,6 +180,139 @@ class TestMatchDatasetsBySample:
         lanes = self._lane_datasets(make_dataset)
         assert match_datasets_by_sample("NA12878-3_4", lanes, group_by_lane=True) == lanes
         assert match_datasets_by_sample("NA12878-3_4_L001", lanes) == [lanes[0]]
+
+
+class TestUseLatestDataset:
+    OLD_TIME = "2026-08-10T14:12:00.0000000Z"
+    NEW_TIME = "2026-08-12T09:03:00.0000000Z"
+
+    def test_exact_duplicates_resolve_to_newest(self, make_dataset, caplog):
+        # The newer of two same-named datasets wins, and the choice is logged.
+        older = make_dataset("ds.old", "sampleA", date_created=self.OLD_TIME)
+        newer = make_dataset("ds.new", "sampleA", date_created=self.NEW_TIME)
+
+        with caplog.at_level("INFO"):
+            result = match_datasets_by_sample(
+                "sampleA", [older, newer], use_latest_dataset=True
+            )
+
+        assert result == [newer]
+        assert "Selecting the most recently created dataset: `ds.new`" in caplog.text
+        assert "sampleA (ds.old, DateCreated: 2026-08-10T14:12:00+00:00)" in caplog.text
+
+    def test_newest_wins_regardless_of_api_order(self, make_dataset):
+        # Resolution is by date, not by position in the response.
+        older = make_dataset("ds.old", "sampleA", date_created=self.OLD_TIME)
+        newer = make_dataset("ds.new", "sampleA", date_created=self.NEW_TIME)
+        assert match_datasets_by_sample(
+            "sampleA", [newer, older], use_latest_dataset=True
+        ) == [newer]
+
+    def test_exact_duplicates_still_raise_when_disabled(self, make_dataset):
+        # Default behavior is unchanged, and the error now names both creation dates.
+        older = make_dataset("ds.old", "sampleA", date_created=self.OLD_TIME)
+        newer = make_dataset("ds.new", "sampleA", date_created=self.NEW_TIME)
+
+        with pytest.raises(BaseSpaceDatasetError, match="Duplicate datasets") as excinfo:
+            match_datasets_by_sample("sampleA", [older, newer])
+
+        assert "2026-08-10T14:12:00+00:00" in str(excinfo.value)
+        assert "`use_latest_dataset`=True" in str(excinfo.value)
+
+    def test_tie_on_newest_raises(self, make_dataset):
+        # Two datasets created at the same instant cannot be told apart, so refuse to guess.
+        first = make_dataset("ds.1", "sampleA", date_created=self.NEW_TIME)
+        second = make_dataset("ds.2", "sampleA", date_created=self.NEW_TIME)
+
+        with pytest.raises(BaseSpaceDatasetError, match="share the same creation date") as excinfo:
+            match_datasets_by_sample("sampleA", [first, second], use_latest_dataset=True)
+
+        # The unresolvable name is called out, so a multi-lane group says which lane tied.
+        assert "Cannot resolve duplicates for `sampleA`" in str(excinfo.value)
+
+    def test_duplicate_lane_sibling_resolves_per_lane(self, make_dataset):
+        # A duplicated lane collapses to its newest dataset; the other lanes are untouched.
+        l1_old = make_dataset("ds.l1old", "NA12878-3_4_L001", date_created=self.OLD_TIME)
+        l1_new = make_dataset("ds.l1new", "NA12878-3_4_L001", date_created=self.NEW_TIME)
+        l2 = make_dataset("ds.l2", "NA12878-3_4_L002", date_created=self.OLD_TIME)
+        l3 = make_dataset("ds.l3", "NA12878-3_4_L003", date_created=self.OLD_TIME)
+
+        result = match_datasets_by_sample(
+            "NA12878-3_4",
+            [l1_old, l1_new, l2, l3],
+            group_by_lane=True,
+            use_latest_dataset=True,
+        )
+
+        # L002 and L003 must survive
+        assert result == [l1_new, l2, l3]
+
+    def test_duplicate_lane_sibling_raises_when_disabled(self, make_dataset):
+        # Left alone these would both feed the same output, duplicating that lane's reads.
+        l1_old = make_dataset("ds.l1old", "NA12878-3_4_L001", date_created=self.OLD_TIME)
+        l1_new = make_dataset("ds.l1new", "NA12878-3_4_L001", date_created=self.NEW_TIME)
+        l2 = make_dataset("ds.l2", "NA12878-3_4_L002", date_created=self.OLD_TIME)
+
+        with pytest.raises(BaseSpaceDatasetError, match="Duplicate datasets"):
+            match_datasets_by_sample(
+                "NA12878-3_4",
+                [l1_old, l1_new, l2],
+                group_by_lane=True,
+                use_latest_dataset=False,
+            )
+
+    def test_same_run_lane_timestamps_are_not_a_tie(self, make_dataset):
+        # Different lanes created at the same instant are not a tie, since they are different datasets.
+        first = [
+            make_dataset(f"ds.a{lane}", f"NA12878-3_4_L00{lane}", date_created=self.OLD_TIME)
+            for lane in (1, 2)
+        ]
+        second = [
+            make_dataset(f"ds.b{lane}", f"NA12878-3_4_L00{lane}", date_created=self.NEW_TIME)
+            for lane in (1, 2)
+        ]
+
+        result = match_datasets_by_sample(
+            "NA12878-3_4",
+            [*first, *second],
+            group_by_lane=True,
+            use_latest_dataset=True,
+        )
+
+        assert result == second
+
+    def test_unique_names_are_returned_unchanged(self, make_dataset):
+        # The no-duplicates path is identical with the flag on, ordering included.
+        lanes = [
+            make_dataset(f"ds.l{lane}", f"NA12878-3_4_L00{lane}", date_created=self.OLD_TIME)
+            for lane in (1, 2, 3, 4)
+        ]
+        assert match_datasets_by_sample(
+            "NA12878-3_4", lanes, group_by_lane=True, use_latest_dataset=True
+        ) == lanes
+
+    def test_exact_match_ignores_duplicate_lane_siblings(self, make_dataset, caplog):
+        # Siblings are never returned when an exact match exists, so their duplicates must not raise.
+        exact = make_dataset("ds.s", "NA12878-3_4", date_created=self.OLD_TIME)
+        l1_old = make_dataset("ds.l1old", "NA12878-3_4_L001", date_created=self.OLD_TIME)
+        l1_new = make_dataset("ds.l1new", "NA12878-3_4_L001", date_created=self.NEW_TIME)
+
+        with caplog.at_level("WARNING"):
+            result = match_datasets_by_sample("NA12878-3_4", [exact, l1_old, l1_new])
+
+        assert result == [exact]
+        assert "will not be grouped together" in caplog.text
+
+    def test_flag_does_not_bypass_other_guards(self, make_dataset):
+        # use_latest_dataset only resolves duplicates; it does not relax lane grouping.
+        lanes = [
+            make_dataset(f"ds.l{lane}", f"NA12878-3_4_L00{lane}", date_created=self.OLD_TIME)
+            for lane in (1, 2)
+        ]
+        with pytest.raises(BaseSpaceDatasetError, match="(group_by_lane=False)"):
+            match_datasets_by_sample(
+                "NA12878-3_4", lanes, group_by_lane=False, use_latest_dataset=True
+            )
 
 
 class TestValidatePairedEndDatasets:
