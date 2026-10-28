@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Any, Generic, List, Literal, Optional, TypeVar, Union
 
 from pydantic import AliasPath, BaseModel, ConfigDict, Discriminator, Field, Tag
@@ -125,6 +126,7 @@ class DatasetItem(BaseSpaceAPIModel):
 
     id: str
     name: str
+    date_created: datetime
     dataset_type: Optional[DatasetType] = None
     attributes: Optional[CommonFastqAttributes] = Field(
         default=None,

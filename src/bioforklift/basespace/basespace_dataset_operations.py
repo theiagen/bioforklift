@@ -2,7 +2,8 @@ import re
 import csv
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from collections import defaultdict
 
 from .basespace_exceptions import (
     BaseSpaceMissingReadError,
@@ -153,20 +154,99 @@ def filter_dataset_types(
     )
     return filtered
 
+def _resolve_duplicate_datasets(
+    sample: str,
+    ds_items: List[DatasetItem],
+    use_latest_dataset: bool = False,
+) -> List[DatasetItem]:
+    """
+    Checks for duplicate datasets that share the exact same name. Resolves them based on the
+    `use_latest_dataset` flag. If False, raises an error if any name is duplicated, and the
+    user must resolve the ambiguity. If True, returns only the dataset(s) with the most recent
+    `DateCreated` attribute.
+
+    Args:
+        sample: The requested sample name, (only used for error messages)
+        ds_items: The candidate datasets to sort through
+        use_latest_dataset: If True, keep the most recently created dataset per name.
+
+    Returns:
+        `ds_items` with duplicates resolved to the most recent dataset per name, if `use_latest_dataset` is True.
+
+    Raises:
+        BaseSpaceDatasetError: If a name is duplicated and `use_latest_dataset` is False, or if two duplicates
+        share the same `DateCreated`.
+    """
+    # Group DatasetItems by name
+    ds_map: Dict[str, List[DatasetItem]] = defaultdict(list)
+    for ds_item in ds_items:
+        ds_map[ds_item.name].append(ds_item)
+
+    # Grab list of duplicate DatasetItems
+    dupes: List[DatasetItem] = [
+        ds_item for ds_group in ds_map.values()
+        if len(ds_group) > 1
+        for ds_item in ds_group
+    ]
+
+    if not dupes:
+        return ds_items
+
+    # Create a list of strings describing the duplicate datasets for error messages
+    dupe_details = "; ".join(
+        f"{ds_item.name} ({ds_item.id}, DateCreated: {ds_item.date_created.isoformat()})"
+        for ds_item in dupes
+    )
+
+    # Duplicates exist and the user has not requested to use_latest_dataset, raise an error
+    if not use_latest_dataset:
+        raise BaseSpaceDatasetError(
+            f"Duplicate datasets (n={len(dupes)}) found for sample `{sample}`: {dupe_details}. "
+            f"Remove the duplicate datasets in BaseSpace, provide a more specific sample name, "
+            f"or pass `use_latest_dataset`=True to use the most recently created one."
+        )
+
+    # Duplicates exist; find the DatasetItem with the most recent `DateCreated` and resolve to it, error if there's a tie
+    resolved_ds_items: List[DatasetItem] = []
+    insoluble_dupes: List[str] = []
+
+    for name, ds_group in ds_map.items():
+        latest_date_created = max(ds_item.date_created for ds_item in ds_group)
+        latest_ds_items = [ds_item for ds_item in ds_group if ds_item.date_created == latest_date_created]
+
+        # If there are still multiple datasets in this list, they share the same creation date and cannot be resolved automatically
+        if len(latest_ds_items) > 1:
+            insoluble_dupes.append(name)
+            continue
+
+        # Log the resolution of duplicates to the most recent dataset
+        if len(ds_group) > 1:
+            group_details = "; ".join(
+                f"{ds_item.name} ({ds_item.id}, DateCreated: {ds_item.date_created.isoformat()})"
+                for ds_item in ds_group
+            )
+            logger.info(
+                f"Duplicate datasets (n={len(ds_group)}) named `{name}` found for sample `{sample}`: {group_details}. "
+                f"Selecting the most recently created dataset: `{latest_ds_items[0].id}` (DateCreated: {latest_date_created.isoformat()}) "
+                f"via `use_latest_dataset`=True."
+            )
+        resolved_ds_items.append(latest_ds_items[0])
+
+    if insoluble_dupes:
+        raise BaseSpaceDatasetError(
+            f"Duplicate datasets (n={len(dupes)}) found for sample `{sample}`: {dupe_details}. "
+            f"Cannot resolve duplicates for {', '.join(f'`{name}`' for name in insoluble_dupes)} because they share the same creation date. "
+            f"Remove the duplicate datasets in BaseSpace or provide a more specific sample name."
+        )
+    return resolved_ds_items
+
 def _dataset_exact_match(
     sample: str,
     ds_items: List[DatasetItem],
 ) -> List[DatasetItem]:
-    """Return the single DatasetItem whose name exactly matches `sample`, or None."""
+    """Return every DatasetItem whose name exactly matches `sample`, or an empty list."""
 
-    match = [ds_item for ds_item in ds_items if ds_item.name == sample]
-    if len(match) > 1:
-        raise BaseSpaceDatasetError(
-            f"Multiple datasets (n={len(match)}) found for sample `{sample}`: "
-            f"({', '.join(ds_item.id for ds_item in match)}). "
-            f"Remove the duplicate datasets in BaseSpace or provide a more specific sample name."
-        )
-    return match
+    return [ds_item for ds_item in ds_items if ds_item.name == sample]
 
 def _dataset_laned_siblings(
     sample: str,
@@ -188,6 +268,7 @@ def match_datasets_by_sample(
     sample: str,
     ds_items: List[DatasetItem],
     group_by_lane: bool = False,
+    use_latest_dataset: bool = False,
 ) -> List[DatasetItem]:
     """
     Resolve one requested sample name to the dataset(s) that feed its output.
@@ -204,15 +285,21 @@ def match_datasets_by_sample(
         ds_items: DatasetItems to match against.
         group_by_lane: If True, group a lane-less sample name with its `{sample}_L###` siblings.
             Defaults to False (an exact match is required).
+        use_latest_dataset: If True, resolve datasets sharing a name to the most recently
+            created one rather than raising. Defaults to False.
 
     Returns:
         The matched DatasetItem(s): a single-item list for an exact match, or the lane-sibling
-        group when `group_by_lane` is True.
+        group (one dataset per lane) when `group_by_lane` is True.
 
     Raises:
         BaseSpaceDatasetError: If the sample matches multiple exact datasets, matches only lane
-            siblings while `group_by_lane` is False, or matches nothing.
+            siblings while `group_by_lane` is False, or matches nothing. Duplicate names raise
+            unless `use_latest_dataset` is set, and still raise when they cannot be told apart
+            by creation date.
     """
+    logger.info(f"Matching sample `{sample}` against {len(ds_items)} dataset(s)")
+
     exact_match = _dataset_exact_match(
         sample=sample,
         ds_items=ds_items,
@@ -223,33 +310,44 @@ def match_datasets_by_sample(
         ds_items=ds_items,
     )
 
-    # An exact dataset-name match always wins
+    # An exact dataset-name match always wins. Duplicates are resolved only for the datasets
+    # being returned, and before logging, so the logs reflect what will actually be used.
     if exact_match:
+        exact_match = _resolve_duplicate_datasets(
+            sample=sample,
+            ds_items=exact_match,
+            use_latest_dataset=use_latest_dataset,
+        )
         # warn if siblings also exist so the user knows those lanes won't be grouped into these datasets.
         if siblings:
             logger.warning(
-                f"Exact dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-                f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together"
+                f"Exact dataset match for `{sample}` found ({exact_match[0].id}); {len(siblings)} laned sibling(s) "
+                f"({', '.join(f'{s.name} ({s.id})' for s in siblings)}) exist, but will not be grouped together"
             )
         else:
-            logger.info(f"Exact dataset match for `{sample}` found")
+            logger.info(f"Exact dataset match for `{sample}` found ({exact_match[0].id})")
         return exact_match
 
     elif siblings and group_by_lane:
+        siblings = _resolve_duplicate_datasets(
+            sample=sample,
+            ds_items=siblings,
+            use_latest_dataset=use_latest_dataset,
+        )
         logger.info(
             f"Partial dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-            f"({', '.join(s.name for s in siblings)}) exist and will be grouped together"
+            f"({', '.join(f'{s.name} ({s.id})' for s in siblings)}) exist and will be grouped together"
         )
         return siblings
 
     elif siblings and not group_by_lane:
         raise BaseSpaceDatasetError(
             f"Partial dataset match for `{sample}` found; {len(siblings)} laned sibling(s) "
-            f"({', '.join(s.name for s in siblings)}) exist, but will not be grouped together (group_by_lane=False)"
+            f"({', '.join(f'{s.name} ({s.id})' for s in siblings)}) exist, but will not be grouped together (group_by_lane=False)"
         )
     else:
         raise BaseSpaceDatasetError(
-            f"No exact dataset match for `{sample}` found."
+            f"No exact dataset match for `{sample}` found, and no laned siblings (`{sample}_L###`) found."
         )
 
 def concatenate_dataset_files(
