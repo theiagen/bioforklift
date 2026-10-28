@@ -1797,12 +1797,14 @@ class Terra2BQ:
                     )
                 elif status == OperationStatus.NO_DATA_AFTER_CLEANUP:
                     logger.info(
-                        f"No data remaining after metadata cleanup for configuration {config.get('id')}"
+                        "No data remaining after metadata cleanup for configuration "
+                        f"{config.get('id')}"
                     )
                 elif status == OperationStatus.NO_UPDATES:
                     logger.info(
-                        f"No samples awaiting submission for configuration {config.get('id')} "
-                        f"(loaded: {result.loaded_count}, filtered: {result.filtered_count})"
+                        "No samples awaiting submission for configuration "
+                        f"{config.get('id')} (loaded: {result.loaded_count}, "
+                        f"filtered: {result.filtered_count})"
                     )
                 else:
                     logger.warning(
@@ -1845,7 +1847,9 @@ class Terra2BQ:
             1 for result in results if result.status == OperationStatus.NO_NEW_SAMPLES
         )
         no_data_after_cleanup_count = sum(
-            1 for result in results if result.status == OperationStatus.NO_DATA_AFTER_CLEANUP
+            1
+            for result in results
+            if result.status == OperationStatus.NO_DATA_AFTER_CLEANUP
         )
         no_updates_count = sum(
             1 for result in results if result.status == OperationStatus.NO_UPDATES
@@ -1853,8 +1857,10 @@ class Terra2BQ:
 
         logger.info(
             f"Completed processing {total_configs} configurations in {int(minutes)}m {int(seconds)}s - "
-            f"Success: {success_count}, Error: {error_count}, No data: {no_data_count}, "
-            f"No data after cleanup: {no_data_after_cleanup_count}, No new samples: {no_samples_count}, "
+            f"Success: {success_count}, Error: {error_count}, "
+            f"No data: {no_data_count}, "
+            f"No data after cleanup: {no_data_after_cleanup_count}, "
+            f"No new samples: {no_samples_count}, "
             f"No samples awaiting submission: {no_updates_count}"
         )
 
